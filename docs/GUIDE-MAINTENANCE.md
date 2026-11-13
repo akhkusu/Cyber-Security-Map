@@ -4,6 +4,8 @@
 
 パスワード管理・認証アプリの製品別契約は `PASSWORDS-AUTHENTICATORS-SPEC.md`、Google・Apple・Bitwardenの境界・到達モデル・削除は `MAJOR-PLATFORMS-MODEL-AUDIT.md` を併用します。`SPEC-GAP-REVIEW.md` から不足と受け入れ条件を追跡します。
 
+`DEVICE-CHANGE-LIFECYCLE-SPEC.md` は、通常のガイドと別に必要時だけ起動する機種変更・旧端末の継続利用・譲渡・売却の契約です。主ガイドの途中位置を上書きせず、共通のAccount・認証・バックアップ記録を参照します。
+
 ## ファイルの責務
 
 - `src/guideCatalog.ts`: サービス別・端末別の操作、期待表示、日英文言、分岐、公式の操作先、出典・適用範囲・確認日。
