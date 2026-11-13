@@ -38,6 +38,8 @@ docker compose down
 
 パスワード管理・認証アプリの製品差、移行・復旧、Security Mapの循環依存は[製品別補完仕様](docs/PASSWORDS-AUTHENTICATORS-SPEC.md)で詳しく定義しています。[不足点レビュー](docs/SPEC-GAP-REVIEW.md)と、現在の実装範囲を分けて管理しています。
 
+[Google・Apple・Bitwardenとモデルの再監査](docs/MAJOR-PLATFORMS-MODEL-AUDIT.md)では、端末・ソフトウェア・識別子・認証情報・セッション・権限・削除を含む到達モデルを定義しています。現行の初期実装には、未知項目の保持などのリリース前必須修正が残っています。
+
 アカウントのパスワードや認証コードは入力しないでください。
 
 ## 保存データ
