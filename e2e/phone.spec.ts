@@ -95,9 +95,15 @@ test('phone guide supports keyboard and 390px English layout without additional 
 
 test('legacy payload starts the optional workflow without re-registering accounts or resetting progress', async ({ page }) => {
   const current = dataFixture(), raw = JSON.parse(JSON.stringify(current)); raw.version = 1; delete raw.securityModel; delete raw.deviceWorkflows;
-  raw.legacyInventory = { retained: ['opaque'] }; raw.guide.steps = { 'do/apple/email-mfa/check': { status: 'done', updatedAt: '2026-11-13T12:00:00Z' } };
+  delete raw.assets[0].operatingSystem; raw.legacyInventory = { retained: ['opaque'] }; raw.guide.steps = { 'do/apple/email-mfa/check': { status: 'done', updatedAt: '2026-11-13T12:00:00Z' } };
   await openSaved(page, raw); await advance(page, 'スマホの買い替えを進める');
   const after = currentDatasetSchema.parse(await savedData(page)); expect(after.version).toBe(2); expect(after.guide).toEqual(raw.guide);
   expect(after.assets).toEqual(raw.assets); expect(after.legacyInventory).toEqual(raw.legacyInventory);
   expect(phoneSteps(after, after.deviceWorkflows[0])[0].id).toBe('stage');
+  await advance(page, 'すでに新しいスマホを使っている'); await advance(page, '旧iPhone');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('これまでのスマホの種類は？');
+  await advance(page, 'iPhone'); await expect(page.getByRole('heading', { level: 1 })).toHaveText('旧iPhoneは、今も操作できますか？');
+  const classified = currentDatasetSchema.parse(await savedData(page));
+  expect(classified.assets).toHaveLength(raw.assets.length); expect(classified.assets[0].id).toBe('old'); expect(classified.assets[0].operatingSystem).toBe('ios');
+  expect(classified.assets[0].controls).toEqual(raw.assets[0].controls); expect(classified.guide).toEqual(raw.guide);
 });

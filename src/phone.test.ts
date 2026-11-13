@@ -192,3 +192,28 @@ it('corrects a historical erasure on its original phone after another old phone 
   expect(corrected.securityModel.lifecycle['different-old']).toBeUndefined();
   expect(currentDatasetSchema.safeParse(corrected).success).toBe(true);
 });
+
+
+it('reuses a legacy phone without an OS instead of registering another physical device', () => {
+  const original = newDataset('ja'); const old = makeAsset({ kind: 'device', type: 'Smartphone', name: 'Saved phone', importance: 'critical' });
+  old.controls.backup = 'implemented'; original.assets = [old];
+  let data = startPhoneWorkflow(original, '/guide', old.id, 'workflow', now);
+  data = answerPhoneQuestion(data, 'workflow', 'using') as CurrentDataset;
+  expect(current(data).choices?.some(c => c.value === old.id)).toBe(true);
+  data = answerPhoneQuestion(data, 'workflow', old.id) as CurrentDataset;
+  expect(current(data).id).toBe('old-os');
+  data = answerPhoneQuestion(data, 'workflow', 'ios') as CurrentDataset;
+  expect(current(data).id).toBe('availability'); expect(data.assets).toHaveLength(1);
+  expect(data.assets[0].id).toBe(old.id); expect(data.assets[0].operatingSystem).toBe('ios');
+  expect(data.assets[0].controls).toEqual(old.controls); expect(data.guide).toEqual(original.guide);
+  expect(currentDatasetSchema.safeParse(data).success).toBe(true);
+});
+
+
+it('saves a terminal exception without repeatedly adding the same step to back history', () => {
+  const data = fixture(); data.deviceWorkflows[0].answers.availability = 'lost'; data.deviceWorkflows[0].cursor = 'unavailable-old';
+  const before = [...data.deviceWorkflows[0].history];
+  const saved = deferPhoneStep(data, 'workflow', now) as CurrentDataset;
+  expect(saved.deviceWorkflows[0].cursor).toBe('unavailable-old'); expect(saved.deviceWorkflows[0].history).toEqual(before);
+  expect(Object.values(saved.deviceWorkflows[0].records)[0].status).toBe('later');
+});

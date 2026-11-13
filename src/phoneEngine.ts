@@ -1,7 +1,7 @@
 import { makeAsset, upgradeDataset, type CurrentDataset, type Dataset, type Language } from './models';
 import { recordControl, undoControl } from './controlRecords';
 import { phoneWorkflowSchema, type PhoneWorkflow } from './phoneSchemas';
-import { PHONE_SOURCES, phoneName, phoneSteps, type PhoneStep } from './phoneCatalog';
+import { PHONE_SOURCES, phoneAssets, phoneName, phoneSteps, type PhoneStep } from './phoneCatalog';
 import { PROVIDERS } from './guideCatalog';
 
 export const getPhoneWorkflows = (data: Dataset): PhoneWorkflow[] => data.version === 2 ? data.deviceWorkflows : [];
@@ -9,7 +9,7 @@ export const phoneRecordKey = (workflow: PhoneWorkflow, step: PhoneStep) => JSON
 export const phoneRecord = (workflow: PhoneWorkflow, step: PhoneStep) => workflow.records[phoneRecordKey(workflow, step)];
 export function startPhoneWorkflow(data: Dataset, returnTo: '/guide' | '/map', oldDeviceRef?: string, id: string = crypto.randomUUID(), now = new Date().toISOString()): CurrentDataset {
   const next = upgradeDataset(data);
-  const old = next.assets.find(a => a.id === oldDeviceRef && a.kind === 'device' && ['ios', 'android'].includes(a.operatingSystem ?? ''));
+  const old = phoneAssets(next).find(a => a.id === oldDeviceRef);
   const workflow = phoneWorkflowSchema.parse({ id, kind: 'phone-change', createdAt: now, updatedAt: now, returnTo, oldDeviceRef: old?.id });
   return { ...next, deviceWorkflows: [...next.deviceWorkflows, workflow] };
 }
@@ -23,7 +23,7 @@ export function currentPhoneStep(data: Dataset, workflow: PhoneWorkflow): PhoneS
 function advance(data: CurrentDataset, workflow: PhoneWorkflow, previousId: string): CurrentDataset {
   const steps = phoneSteps(data, workflow), index = steps.findIndex(s => s.id === previousId);
   const cursor = steps[index + 1]?.id ?? previousId;
-  return updateWorkflow(data, { ...workflow, cursor, history: [...workflow.history, previousId] });
+  return updateWorkflow(data, { ...workflow, cursor, history: cursor === previousId ? workflow.history : [...workflow.history, previousId] });
 }
 export function answerPhoneQuestion(data: Dataset, workflowId: string, value: string): Dataset {
   if (data.version !== 2) return data;
@@ -43,16 +43,20 @@ export function answerPhoneQuestion(data: Dataset, workflowId: string, value: st
       if (ref !== workflow.oldDeviceRef) updated = { ...updated, oldDeviceRef: ref, newDeviceRef: undefined, answers: { stage: workflow.answers.stage, 'old-device': ref } };
       else updated = { ...updated, oldDeviceRef: ref, answers: { ...updated.answers, 'old-device': ref } };
     } else if (ref !== workflow.newDeviceRef) {
-      const retained = ['stage', 'old-device', 'availability', 'ownership'];
+      const retained = ['stage', 'old-device', 'old-os', 'availability', 'ownership'];
       updated = { ...updated, newDeviceRef: ref, answers: { ...Object.fromEntries(Object.entries(workflow.answers).filter(([key]) => retained.includes(key))), 'new-device': ref } };
     }
   }
   if (step.id === 'availability' && value !== workflow.answers.availability) {
-    updated = { ...updated, answers: { stage: workflow.answers.stage, 'old-device': workflow.oldDeviceRef ?? '', availability: value } };
+    updated = { ...updated, answers: { stage: workflow.answers.stage, 'old-device': workflow.oldDeviceRef ?? '', ...(workflow.answers['old-os'] ? { 'old-os': workflow.answers['old-os'] } : {}), availability: value } };
     if (workflow.oldDeviceRef && value !== 'available') {
       const now = new Date().toISOString(), ref = workflow.oldDeviceRef;
       next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [ref]: { ...next.securityModel.lifecycle[ref], state: value === 'lost' ? 'lost' : value === 'gone' ? 'retired' : 'unavailable', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now } } } };
     }
+  }
+  if ((step.id === 'old-os' || step.id === 'new-os') && ['ios', 'android', 'other'].includes(value)) {
+    const ref = step.id === 'old-os' ? workflow.oldDeviceRef : workflow.newDeviceRef;
+    next = { ...next, assets: next.assets.map(a => a.id === ref ? { ...a, operatingSystem: value as 'ios' | 'android' | 'other', updatedAt: new Date().toISOString() } : a) };
   }
   return advance(next, updated, step.id);
 }

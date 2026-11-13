@@ -34,7 +34,7 @@ const question = (id: string, title: Copy, choices: PhoneChoice[], text?: Copy):
 const action = (id: string, title: Copy, place: Copy, instruction: Copy, expected: Copy, refs: string[], sources: string[], extra: Partial<PhoneStep> = {}): PhoneStep => ({ id, kind: 'action', title, place, action: instruction, expected, refs, sources, button: c('I checked this', '確認しました'), ...extra });
 const blocked = (id: string, title: Copy, text: Copy, refs: string[] = [], sources: string[] = []): PhoneStep => ({ id, kind: 'blocked', title, text, refs, sources });
 export const phoneName = (os: Asset['operatingSystem']) => os === 'ios' ? 'iPhone' : os === 'android' ? 'Android' : 'Phone';
-export const phoneAssets = (data: Dataset) => data.assets.filter(a => a.kind === 'device' && ['ios', 'android'].includes(a.operatingSystem ?? ''));
+export const phoneAssets = (data: Dataset) => data.assets.filter(a => a.kind === 'device' && ['ios', 'android', 'other', 'unknown'].includes(a.operatingSystem ?? 'unknown'));
 export function phoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] {
   const answers = workflow.answers, stage = answers.stage;
   const old = data.assets.find(a => a.id === workflow.oldDeviceRef), fresh = data.assets.find(a => a.id === workflow.newDeviceRef);
@@ -47,6 +47,13 @@ export function phoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] 
     choice('add:ios', 'Add the previous iPhone', 'これまでのiPhoneを追加する'), choice('add:android', 'Add the previous Android', 'これまでのAndroidを追加する'),
   ]));
   if (!old) return steps;
+  if (!['ios', 'android'].includes(old.operatingSystem ?? '') || answers['old-os']) {
+    steps.push(question('old-os', c('What kind of phone is the previous device?', 'これまでのスマホの種類は？'), [choice('ios', 'iPhone', 'iPhone'), choice('android', 'Android', 'Android'), choice('other', 'Another device / not sure', '別の端末・分からない')], c('Reuse the saved device entry. This does not complete any setting.', '登録済みの端末をそのまま使います。種類を選ぶだけで、設定は完了になりません。')));
+    if (!answers['old-os'] || !['ios', 'android'].includes(old.operatingSystem ?? '')) {
+      if (answers['old-os'] === 'other') steps.push(blocked('old-os-unsupported', c('Keep this device unchanged', 'この端末の登録を残す'), c('This phone-change route covers iPhone and Android. Keep the existing entry and use its device guide when supported.', 'この機種変更の経路はiPhoneとAndroid向けです。既存の登録は残し、対応する端末ガイドで進めます。'), [old.id]));
+      return steps;
+    }
+  }
   steps.push(question('availability', c(`Can you still use ${old.name}?`, `${old.name}は、今も操作できますか？`), [
     choice('available', 'Yes, I can unlock and use it', '手元にあり、ロックを解除して使える'), choice('broken', 'It is broken or cannot be unlocked', '故障・ロックなどで操作できない'), choice('lost', 'It is lost or stolen', '紛失・盗難で手元にない'), choice('gone', 'I have already given it away, sold or reset it', 'すでに譲渡・売却・初期化した'),
   ]));
@@ -68,6 +75,13 @@ export function phoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] 
     ...phoneAssets(data).filter(a => a.id !== old.id).map(a => choice(a.id, a.name, a.name)), choice('add:ios', 'Add the new iPhone', '新しいiPhoneを追加する'), choice('add:android', 'Add the new Android', '新しいAndroidを追加する'),
   ]));
   if (!fresh) return steps;
+  if (!['ios', 'android'].includes(fresh.operatingSystem ?? '') || answers['new-os']) {
+    steps.push(question('new-os', c('What kind of phone is the next device?', 'これから使うスマホの種類は？'), [choice('ios', 'iPhone', 'iPhone'), choice('android', 'Android', 'Android'), choice('other', 'Another device / not sure', '別の端末・分からない')]));
+    if (!answers['new-os'] || !['ios', 'android'].includes(fresh.operatingSystem ?? '')) {
+      if (answers['new-os'] === 'other') steps.push(blocked('new-os-unsupported', c('Keep this device unchanged', 'この端末の登録を残す'), c('The existing entry stays saved. A verified recipe for this device is not available in the phone-change route.', '既存の登録は残ります。この端末向けの機種変更の手順はまだ用意できていません。'), [fresh.id]));
+      return steps;
+    }
+  }
   if (stage === 'new') steps.push(question('setup', c('Has the new phone finished initial setup?', '新しいスマホの初期設定は済んでいますか？'), [choice('not-started', 'Not yet; I see the welcome screen', 'まだです・最初の案内画面が出ている'), choice('ready', 'Yes; I can open the Home screen', 'はい・ホーム画面を開ける'), choice('locked', 'It asks for a previous owner or organization', '前の持ち主・組織の認証を求められる')]));
   const setup = stage === 'new' ? answers.setup : 'ready';
   if (!setup) return steps;
