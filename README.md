@@ -38,7 +38,7 @@ docker compose down
 
 パスワード管理・認証アプリの製品差、移行・復旧、Security Mapの循環依存は[製品別補完仕様](docs/PASSWORDS-AUTHENTICATORS-SPEC.md)で詳しく定義しています。[不足点レビュー](docs/SPEC-GAP-REVIEW.md)と、現在の実装範囲を分けて管理しています。
 
-[Google・Apple・Bitwardenとモデルの再監査](docs/MAJOR-PLATFORMS-MODEL-AUDIT.md)では、端末・ソフトウェア・識別子・認証情報・セッション・権限・削除を含む到達モデルを定義しています。現行の初期実装には、未知項目の保持などのリリース前必須修正が残っています。
+[Google・Apple・Bitwardenとモデルの再監査](docs/MAJOR-PLATFORMS-MODEL-AUDIT.md)では、端末・ソフトウェア・識別子・認証情報・セッション・権限・削除を含む到達モデルを定義しています。対応v1の未知項目の保持、未対応形式の書き戻し防止、元ファイルの退避は修正を実装しました。到達モデル全体は拡張対象です。
 
 [機種変更・旧端末の扱い](docs/DEVICE-CHANGE-LIFECYCLE-SPEC.md)では、新しいスマホでの利用確認と、旧端末を使い続ける・予備にする・譲る・売る経路を、基本対策と別の任意作業として定義しています。こちらも仕様段階です。
 

@@ -49,15 +49,15 @@ describe('guided assessment catalog and prioritization', () => {
     expect(finding?.priorityRationale).toContain('1 recovery-dependent asset');
   });
 
-  it('strips old agent inventory while retaining compatible profile and vault fields', () => {
+  it('preserves legacy inventory without treating it as new assessment answers', () => {
     const legacy = {
       ...newDataset('en'), softwareInventory: [{ appName: 'Sensitive app list' }], softwareSnapshot: { platform: 'Ubuntu' },
       securityAssessments: [{ host: { platform: 'Ubuntu' }, inventory: [{ appName: 'Secret inventory' }] }],
     };
     const normalized = datasetSchema.parse(legacy);
-    expect(normalized).not.toHaveProperty('softwareInventory');
-    expect(normalized).not.toHaveProperty('softwareSnapshot');
-    expect(normalized).not.toHaveProperty('securityAssessments');
+    expect(normalized.softwareInventory).toEqual(legacy.softwareInventory);
+    expect(normalized.softwareSnapshot).toEqual(legacy.softwareSnapshot);
+    expect(normalized.securityAssessments).toEqual(legacy.securityAssessments);
     expect(normalized.settings.language).toBe('en');
     expect(normalized.assessmentAnswers).toEqual({});
   });

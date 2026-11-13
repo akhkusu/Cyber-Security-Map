@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { webcrypto } from 'node:crypto';
 export const passphrase = 'test-only encrypted storage phrase';
 export async function createWorkspace(page: Page, language = 'ja') {
   await page.goto('./'); await page.locator('.language-picker select').selectOption(language);
@@ -26,4 +27,38 @@ export async function exportVault(page: Page) {
   const download = page.waitForEvent('download'); await page.getByRole('button', { name: '暗号化バックアップを保存する', exact: true }).click();
   const file = await (await download).path(); if (!file) throw new Error('missing download');
   const { readFile } = await import('node:fs/promises'); return JSON.parse(await readFile(file, 'utf8'));
+}
+
+// Build historical and newer fixtures without passing through the current app schema.
+export async function sealRawVault(value: unknown) {
+  const salt = webcrypto.getRandomValues(new Uint8Array(16)), iv = webcrypto.getRandomValues(new Uint8Array(12));
+  const material = await webcrypto.subtle.importKey('raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  const key = await webcrypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' }, material, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  const ciphertext = await webcrypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(value)));
+  return { format: 'personal-cyber-os-v1', algorithm: 'AES-256-GCM', kdf: 'PBKDF2-SHA-256', iterations: 600000, salt: Buffer.from(salt).toString('base64'), iv: Buffer.from(iv).toString('base64'), ciphertext: Buffer.from(ciphertext).toString('base64') };
+}
+
+export async function readSavedVault(page: Page) {
+  return page.evaluate(() => new Promise<unknown>((resolve, reject) => {
+    const request = indexedDB.open('personal-cyber-os', 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result, read = db.transaction('encrypted-vault').objectStore('encrypted-vault').get('primary');
+      read.onsuccess = () => { db.close(); resolve(read.result); };
+      read.onerror = () => { db.close(); reject(read.error); };
+    };
+  }));
+}
+
+export async function writeSavedVault(page: Page, value: unknown) {
+  await page.evaluate(value => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('personal-cyber-os', 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result, transaction = db.transaction('encrypted-vault', 'readwrite');
+      transaction.objectStore('encrypted-vault').put(value, 'primary');
+      transaction.oncomplete = () => { db.close(); resolve(); };
+      transaction.onabort = () => { db.close(); reject(transaction.error); };
+    };
+  }), value);
 }

@@ -17,7 +17,7 @@ export const assessmentAnswerSchema = z.object({
   response: z.enum(['yes', 'no', 'unsure', 'not-applicable']),
   evidence: z.enum(['user-reported', 'user-confirmed']).default('user-reported'),
   updatedAt: z.string(),
-});
+}).passthrough();
 export type AssessmentAnswer = z.infer<typeof assessmentAnswerSchema>;
 
 export const assetSchema = z.object({
@@ -35,7 +35,7 @@ export const assetSchema = z.object({
   provider: z.enum(['apple', 'google', 'microsoft', 'proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx', 'bitwarden', '1password', 'other']).optional(),
   purpose: z.enum(['personal', 'work']).optional(),
   services: z.array(z.enum(['mail', 'cloud', 'manager'])).default([]),
-});
+}).passthrough();
 export type Asset = z.infer<typeof assetSchema>;
 
 export const dependencySchema = z.object({
@@ -45,27 +45,27 @@ export const dependencySchema = z.object({
   relation: z.string().max(80),
   createdAt: z.string(),
   relationType: z.enum(['recovery-email', 'authentication', 'backup', 'offline-recovery']).optional(),
-});
+}).passthrough();
 export type RecoveryDependency = z.infer<typeof dependencySchema>;
 
 export const actionSchema = z.object({
   id: z.string(), completedAt: z.string().optional(), titleEn: z.string().optional(), titleJa: z.string().optional(), assetName: z.string().optional(),
   status: z.enum(['in-progress', 'completed', 'remind-me-later', 'not-applicable']).optional(), updatedAt: z.string().optional(),
-});
+}).passthrough();
 export type SecurityActionRecord = z.infer<typeof actionSchema>;
-export const reviewSchema = z.object({ id: z.string(), completedAt: z.string(), kind: z.enum(['weekly', 'monthly']) });
+export const reviewSchema = z.object({ id: z.string(), completedAt: z.string(), kind: z.enum(['weekly', 'monthly']) }).passthrough();
 export type SecurityReview = z.infer<typeof reviewSchema>;
 export const validationRecordSchema = z.object({
   id: z.string(), validationId: z.string(), status: z.enum(['tested', 'passed', 'failed', 'partially-tested', 'not-tested', 'unknown']),
   testedAt: z.string(), method: z.string().max(160), note: z.string().max(300).optional(),
-});
+}).passthrough();
 export type ValidationRecord = z.infer<typeof validationRecordSchema>;
 
 export const threatModelSchema = z.object({
   concerns: z.array(z.string()).default([]), audience: z.enum(['self', 'family']).default('self'),
   knowledge: z.enum(['beginner', 'comfortable', 'advanced']).default('beginner'),
   priority: z.enum(['convenience', 'balanced', 'strongest']).default('balanced'),
-});
+}).passthrough();
 export type ThreatModel = z.infer<typeof threatModelSchema>;
 
 export const settingsSchema = z.object({
@@ -74,7 +74,7 @@ export const settingsSchema = z.object({
   threatProfile: z.enum(['essential', 'advanced', 'high-assurance']).default('essential'),
   reviewIntervalDays: z.union([z.literal(30), z.literal(90), z.literal(180)]).default(90),
   autoLockMinutes: z.number().min(1).max(60),
-});
+}).passthrough();
 
 export const guideSchema = z.object({
   cursor: z.string().default('start'),
@@ -85,12 +85,12 @@ export const guideSchema = z.object({
   draftAccountId: z.string().optional(),
   pendingProvider: z.enum(['apple', 'google', 'microsoft', 'proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx', 'bitwarden', '1password', 'other']).optional(),
   answers: z.record(z.string(), z.string()).default({}),
-  steps: z.record(z.string(), z.object({ status: z.enum(['done', 'later']), updatedAt: z.string(), beforeControl: z.enum(CONTROL_STATES).optional(), beforeEvidence: controlEvidenceSchema.optional(), beforeAnswer: assessmentAnswerSchema.optional() })).default({}),
-}).default({ cursor: 'start', history: [], answers: {}, steps: {} });
+  steps: z.record(z.string(), z.object({ status: z.enum(['done', 'later']), updatedAt: z.string(), beforeControl: z.enum(CONTROL_STATES).optional(), beforeEvidence: controlEvidenceSchema.optional(), beforeAnswer: assessmentAnswerSchema.optional() }).passthrough()).default({}),
+}).passthrough().default({ cursor: 'start', history: [], answers: {}, steps: {} });
 export type GuideState = z.infer<typeof guideSchema>;
 
-// Zod strips unknown properties by default. This intentionally discards legacy agent
-// snapshots and software inventory while allowing compatible local vault data to open.
+// Preserve opaque legacy fields when reading and writing a supported payload version.
+// UI and help prompts use known fields only; retained data does not enable old integrations.
 export const datasetSchema = z.object({
   version: z.literal(1),
   guide: guideSchema,
@@ -101,19 +101,19 @@ export const datasetSchema = z.object({
   workflowProgress: z.record(z.string(), z.array(z.string())),
   reviews: z.array(reviewSchema),
   assessmentAnswers: z.record(z.string(), assessmentAnswerSchema).default({}),
-  checkupProgress: z.object({ activeDomain: z.string().default('identity'), startedAt: z.string().optional(), lastCompletedAt: z.string().optional() }).default({ activeDomain: 'identity' }),
+  checkupProgress: z.object({ activeDomain: z.string().default('identity'), startedAt: z.string().optional(), lastCompletedAt: z.string().optional() }).passthrough().default({ activeDomain: 'identity' }),
   threatModel: threatModelSchema.default({ concerns: [], audience: 'self', knowledge: 'beginner', priority: 'balanced' }),
   validationRecords: z.array(validationRecordSchema).default([]),
-  onboarding: z.object({ complete: z.boolean(), goals: z.array(z.string()), completedAt: z.string().optional() }),
+  onboarding: z.object({ complete: z.boolean(), goals: z.array(z.string()), completedAt: z.string().optional() }).passthrough(),
   settings: settingsSchema,
-});
+}).passthrough();
 export type Dataset = z.infer<typeof datasetSchema>;
 
 // Keep the persisted format ID stable for compatibility with existing backups.
 export const envelopeSchema = z.object({
   format: z.literal('personal-cyber-os-v1'), algorithm: z.literal('AES-256-GCM'), kdf: z.literal('PBKDF2-SHA-256'),
   iterations: z.number().min(600_000), salt: z.string(), iv: z.string(), ciphertext: z.string(),
-});
+}).passthrough();
 export type VaultEnvelope = z.infer<typeof envelopeSchema>;
 
 export const CONTROL_CATALOG: Record<AssetKind, { id: string; en: string; ja: string }[]> = {

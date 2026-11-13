@@ -1,8 +1,7 @@
 import { expect, test } from '@playwright/test';
-import { createWorkspace, chooseApple, mfaState, advance, passphrase, exportVault } from './helpers';
+import { createWorkspace, chooseApple, mfaState, advance, passphrase, exportVault, readSavedVault, sealRawVault, writeSavedVault } from './helpers';
 import { decryptVault } from '../src/crypto';
 import { newDataset, makeAsset } from '../src/models';
-import { webcrypto } from 'node:crypto';
 
 test.setTimeout(60000);
 for (const platform of ['ios', 'macos', 'web'] as const) test(`iCloud ${platform}: inline setup, confirmation, next task and map`, async ({ page, context }) => {
@@ -94,19 +93,48 @@ test('legacy encrypted backup restores existing data and completion without re-r
   const d = newDataset('ja'), old = makeAsset({ kind: 'account', type: 'Primary email', name: '<img src=x onerror=alert(1)>', importance: 'critical' });
   old.controls.mfa = 'verified'; old.controlEvidence.mfa = 'user-confirmed'; d.assets = [old]; d.workflowProgress = { legacy: ['saved-step'] };
   const raw = JSON.parse(JSON.stringify(d)); delete raw.guide; delete raw.assets[0].services;
-  const salt = webcrypto.getRandomValues(new Uint8Array(16)), iv = webcrypto.getRandomValues(new Uint8Array(12));
-  const material = await webcrypto.subtle.importKey('raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']);
-  const key = await webcrypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' }, material, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
-  const ciphertext = await webcrypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(raw)));
-  const envelope = { format: 'personal-cyber-os-v1', algorithm: 'AES-256-GCM', kdf: 'PBKDF2-SHA-256', iterations: 600000, salt: Buffer.from(salt).toString('base64'), iv: Buffer.from(iv).toString('base64'), ciphertext: Buffer.from(ciphertext).toString('base64') };
+  raw.softwareInventory = [{ appName: 'Legacy application', metadata: { kept: true } }];
+  raw.assets[0].historicalRecord = { original: true }; raw.settings.legacyPreference = { original: true };
+  const envelope = { ...await sealRawVault(raw), historicalMetadata: { original: true } };
   await page.goto('./'); await page.locator('.language-picker select').selectOption('ja'); await page.getByText('暗号化バックアップから復元する', { exact: true }).click();
   await page.getByLabel('暗号化バックアップファイル', { exact: true }).setInputFiles({ name: 'legacy.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(envelope)) });
   await page.getByLabel('バックアップのパスフレーズ', { exact: true }).fill(passphrase); await advance(page, 'バックアップを復元する');
   await expect(page.getByRole('button', { name: /<img src=x/ })).toBeVisible(); await expect(page.locator('img[src="x"]')).toHaveCount(0);
   await page.getByRole('button', { name: /<img src=x/ }).click(); await page.getByRole('button', { name: /iCloud \/ Apple Account/ }).click(); await advance(page, 'Webの設定画面で進める');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('以前の記録を引き継いでいます');
-  const restored = (await decryptVault(await exportVault(page), passphrase)).data;
+  const exported = await exportVault(page); expect(exported.historicalMetadata).toEqual(envelope.historicalMetadata);
+  const restored = (await decryptVault(exported, passphrase)).data;
   expect(restored.assets).toHaveLength(1); expect(restored.assets[0].id).toBe(old.id); expect(restored.assets[0].controls.mfa).toBe('verified'); expect(restored.workflowProgress).toEqual(d.workflowProgress);
+  expect(restored.softwareInventory).toEqual(raw.softwareInventory); expect(restored.assets[0].historicalRecord).toEqual({ original: true }); expect(restored.settings.legacyPreference).toEqual({ original: true });
+});
+
+test('restoring a newer payload preserves the existing encrypted vault and its exact guide position', async ({ page }) => {
+  await createWorkspace(page); await chooseApple(page);
+  const original = await readSavedVault(page), heading = await page.getByRole('heading', { level: 1 }).textContent();
+  const future = await sealRawVault({ ...newDataset('ja'), version: 2, futureEntities: [{ id: 'newer-data' }] });
+  await page.getByRole('link', { name: '設定', exact: true }).click(); await page.getByText('バックアップから復元する', { exact: true }).click();
+  await page.getByLabel('暗号化バックアップファイル', { exact: true }).setInputFiles({ name: 'future.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(future)) });
+  await page.getByLabel('バックアップのパスフレーズ', { exact: true }).fill(passphrase); page.once('dialog', dialog => dialog.accept());
+  await advance(page, 'バックアップを復元する');
+  await expect(page.getByRole('alert')).toContainText('この版のアプリでは');
+  expect(await readSavedVault(page)).toEqual(original);
+  await page.getByRole('link', { name: '対策を進める', exact: true }).click(); await expect(page.getByRole('heading', { level: 1 })).toHaveText(heading!);
+});
+
+for (const format of ['newer-payload', 'unsupported-envelope']) test(`${format}: original stored data can be exported without opening or replacing it`, async ({ page }) => {
+  await page.goto('./'); await page.locator('.language-picker select').selectOption('ja');
+  const original = format === 'newer-payload'
+    ? await sealRawVault({ ...newDataset('ja'), version: 2, futureEntities: [{ id: 'keep-original' }] })
+    : { format: 'future-envelope-format', ciphertext: 'opaque-original-data', metadata: { keep: true } };
+  await writeSavedVault(page, original); await page.reload();
+  if (format === 'newer-payload') {
+    await page.getByLabel('アプリの保存用パスフレーズ', { exact: true }).fill(passphrase); await page.getByRole('button', { name: '開いて再開する', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('この版のアプリでは');
+  } else await expect(page.getByRole('heading', { name: '保管庫を読み取れませんでした', exact: true })).toBeVisible();
+  const download = page.waitForEvent('download'); await page.getByRole('button', { name: '元の保存ファイルを書き出す', exact: true }).click();
+  const file = await (await download).path(); if (!file) throw new Error('missing original export');
+  const { readFile } = await import('node:fs/promises'); expect(JSON.parse(await readFile(file, 'utf8'))).toEqual(original);
+  expect(await readSavedVault(page)).toEqual(original);
 });
 
 for (const provider of ['Gmail / Google', 'Outlook / Microsoft', 'Proton Mail', 'Fastmail', 'Tuta / Tutanota', 'Zoho Mail', 'Yahoo.com', 'StartMail', 'mail.com', 'GMX.com']) test(`${provider}: service-specific MFA, recovery, and map records`, async ({ page }) => {
