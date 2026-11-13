@@ -299,10 +299,10 @@ function Onboarding({ language, onLanguage, onCreate, onDemo, onRestore }: {
         <WizardButtons language={language} back={() => setStep(1)} next={next} />
       </section>}
       {step === 3 && <section className="wizard-panel wide-panel">
-        <div className="step-icon"><GitBranch size={25} /></div><div className="eyebrow">{tx(language, 'A QUICK INVENTORY', 'かんたんな初期登録')}</div>
-        <h1>{tx(language, 'What is part of your digital life?', '普段使うものを選んでください')}</h1><p className="lead">{tx(language, 'Use recognizable nicknames. You do not need to enter email addresses, usernames, or any secrets.', 'メールアドレス、ユーザー名、秘密情報は入力しないでください。')}</p>
+        <div className="step-icon"><GitBranch size={25} /></div><div className="eyebrow">{tx(language, 'CHOOSE WHAT YOU USE', 'チェックする対象を選ぶ')}</div>
+        <h1>{tx(language, 'Which devices and services do you use?', '使っている端末やサービスを選んでください')}</h1><p className="lead">{tx(language, 'Select all that apply, such as your phone, computer or email account. Your choices determine which security checks we suggest. No account details or passwords are needed.', 'スマホ・PC・メールなど、使っている項目を選んでください。選んだ項目に合ったセキュリティチェックをご案内します。アドレスやパスワードの入力は不要です。')}</p>
         <div className="selection-grid quick-grid">{quickOptions.map((item) => { const Icon = item.icon; return <button key={item.id} className={`selection-card quick-card ${quick.includes(item.id) ? 'selected' : ''}`} onClick={() => toggle(item.id, quick, setQuick)}><span className="quick-icon"><Icon size={19} /></span><span>{tx(language, item.name, item.ja)}</span><span className="selection-check">{quick.includes(item.id) && <Check size={15} />}</span></button>; })}</div>
-        <div className="inline-hint"><CircleHelp size={15} />{tx(language, 'Skip anything you do not want to add yet. You can add more later.', '今は登録したくない項目は飛ばせます。後から追加できます。')}</div>
+        <div className="inline-hint"><CircleHelp size={15} />{tx(language, 'Click a card to select or deselect it. You can change this list later.', 'カードを押すと、選択・解除できます。登録する項目は後から追加・変更できます。')}</div>
         <WizardButtons language={language} back={() => setStep(2)} next={next} />
       </section>}
       {step === 4 && <section className="wizard-panel wide-panel">
@@ -320,7 +320,7 @@ function Onboarding({ language, onLanguage, onCreate, onDemo, onRestore }: {
         <div className="wizard-actions"><button className="button button-secondary" onClick={() => setStep(4)}>{tx(language, 'Back', '戻る')}</button><button className="button button-primary" onClick={finish} disabled={busy}>{busy ? tx(language, 'Creating your vault…', '保管庫を作成中…') : tx(language, 'Open my workspace', 'ワークスペースを開く')}<ArrowRight size={17} /></button></div>
       </section>}
       {error && step !== 5 && <p className="error-message center-error">{error}</p>}
-      <footer className="onboarding-footer">{tx(language, 'Your data belongs to you.', 'データはあなたのものです。')} <span>{tx(language, 'Stored locally · encrypted by default', '端末内に保存 · 常に暗号化')}</span></footer>
+      <footer className="onboarding-footer">{tx(language, 'Your data is encrypted before it is saved in this browser.', 'データは暗号化して、このブラウザー内に保存します。')}</footer>
     </div>
   </main>;
 }
