@@ -32,6 +32,9 @@ export const assetSchema = z.object({
   controlEvidence: z.record(z.string(), controlEvidenceSchema).default({}),
   operatingSystem: z.enum(OPERATING_SYSTEMS).optional(),
   notes: z.string().max(300).optional(),
+  provider: z.enum(['apple', 'google', 'microsoft', 'proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx', 'bitwarden', '1password', 'other']).optional(),
+  purpose: z.enum(['personal', 'work']).optional(),
+  services: z.array(z.enum(['mail', 'cloud', 'manager'])).default([]),
 });
 export type Asset = z.infer<typeof assetSchema>;
 
@@ -41,6 +44,7 @@ export const dependencySchema = z.object({
   recoveryAssetId: z.string().min(1),
   relation: z.string().max(80),
   createdAt: z.string(),
+  relationType: z.enum(['recovery-email', 'authentication', 'backup', 'offline-recovery']).optional(),
 });
 export type RecoveryDependency = z.infer<typeof dependencySchema>;
 
@@ -72,10 +76,24 @@ export const settingsSchema = z.object({
   autoLockMinutes: z.number().min(1).max(60),
 });
 
+export const guideSchema = z.object({
+  cursor: z.string().default('start'),
+  history: z.array(z.string()).default([]),
+  accountId: z.string().optional(),
+  managerId: z.string().optional(),
+  deviceId: z.string().optional(),
+  draftAccountId: z.string().optional(),
+  pendingProvider: z.enum(['apple', 'google', 'microsoft', 'proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx', 'bitwarden', '1password', 'other']).optional(),
+  answers: z.record(z.string(), z.string()).default({}),
+  steps: z.record(z.string(), z.object({ status: z.enum(['done', 'later']), updatedAt: z.string(), beforeControl: z.enum(CONTROL_STATES).optional(), beforeEvidence: controlEvidenceSchema.optional(), beforeAnswer: assessmentAnswerSchema.optional() })).default({}),
+}).default({ cursor: 'start', history: [], answers: {}, steps: {} });
+export type GuideState = z.infer<typeof guideSchema>;
+
 // Zod strips unknown properties by default. This intentionally discards legacy agent
 // snapshots and software inventory while allowing compatible local vault data to open.
 export const datasetSchema = z.object({
   version: z.literal(1),
+  guide: guideSchema,
   assets: z.array(assetSchema),
   dependencies: z.array(dependencySchema),
   actions: z.array(actionSchema),
@@ -121,7 +139,7 @@ export const CONTROL_CATALOG: Record<AssetKind, { id: string; en: string; ja: st
 };
 
 export const newDataset = (language: Language = 'en', goals: string[] = []): Dataset => ({
-  version: 1, assets: [], dependencies: [], actions: [], incidentProgress: {}, workflowProgress: {}, reviews: [],
+  version: 1, guide: guideSchema.parse(undefined), assets: [], dependencies: [], actions: [], incidentProgress: {}, workflowProgress: {}, reviews: [],
   assessmentAnswers: {}, checkupProgress: { activeDomain: 'identity' },
   threatModel: { concerns: [], audience: 'self', knowledge: 'beginner', priority: 'balanced' }, validationRecords: [],
   onboarding: { complete: false, goals },
@@ -133,6 +151,7 @@ export const makeAsset = (input: Pick<Asset, 'kind' | 'type' | 'name' | 'importa
   const catalog = CONTROL_CATALOG[input.kind];
   return {
     id: crypto.randomUUID(), ...input, createdAt: now, updatedAt: now,
+    services: [],
     controls: Object.fromEntries(catalog.map((control) => [control.id, controls[control.id] ?? 'unknown'])), controlEvidence: {},
   };
 };
@@ -161,7 +180,7 @@ const demoAssets = [
 ];
 const demoAssetKey = (controlId: string, name: string) => `${controlId}@${demoAssets.find((asset) => asset.name === name)!.id}`;
 export const DEMO_DATA: Dataset = {
-  version: 1,
+  version: 1, guide: guideSchema.parse(undefined),
   assets: demoAssets,
   dependencies: [], actions: [], incidentProgress: {}, workflowProgress: {}, reviews: [],
   assessmentAnswers: {

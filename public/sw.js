@@ -1,6 +1,6 @@
 const APP_BASE = new URL(self.registration.scope);
 const CACHE_PREFIX = `cyber-security-map-shell:${APP_BASE.pathname}:`;
-const CACHE_NAME = `${CACHE_PREFIX}v6`;
+const CACHE_NAME = `${CACHE_PREFIX}v7`;
 const STATIC_PATH = /^(?:assets\/[^/]+\.(?:js|css)|manifest\.webmanifest|icons\/[^/]+\.svg|favicon\.svg)$/;
 const appUrl = (path) => new URL(path, APP_BASE).href;
 const isAppStatic = (url) => url.origin === APP_BASE.origin && url.pathname.startsWith(APP_BASE.pathname) && STATIC_PATH.test(url.pathname.slice(APP_BASE.pathname.length));
