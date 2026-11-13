@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createWorkspace, chooseApple, mfaState, advance, passphrase, exportVault, readSavedVault, sealRawVault, writeSavedVault } from './helpers';
+import { createWorkspace, prepareAuthenticator, chooseApple, mfaState, advance, passphrase, exportVault, readSavedVault, sealRawVault, writeSavedVault } from './helpers';
 import { decryptVault } from '../src/crypto';
 import { newDataset, makeAsset } from '../src/models';
 
@@ -62,9 +62,9 @@ test('a new user can finish Bitwarden, save a generated important password and c
   await advance(page); await advance(page, '初めて作る');
   await expect(page.getByText(/12文字/)).toBeVisible(); await expect(page.getByText(/5語以上/)).toBeVisible();
   await advance(page); await expect(page.getByRole('link', { name: /公式の設定・アプリを開く/ })).toHaveAttribute('href', 'https://vault.bitwarden.eu/');
-  await advance(page); await advance(page, '安全な場所へ保管しました'); await advance(page, '確認しました'); await advance(page, 'これから設定する'); await advance(page);
+  await advance(page); await advance(page, '安全な場所へ保管しました'); await advance(page, '確認しました'); await advance(page, 'これから設定する'); await prepareAuthenticator(page); await advance(page); await advance(page, 'コードが受け付けられました');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('2段階ログインの復旧コードを保管する');
-  await advance(page, '復旧コードを保管しました'); await advance(page, 'ログインできました'); await advance(page, '分からない・つながりを記録しない');
+  await advance(page, '復旧コードを保管しました'); await advance(page, 'ログインできました');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('現在のログイン情報を先に保存する');
   await advance(page); await advance(page); await advance(page); await advance(page); await advance(page); await advance(page, 'ログインできました');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('次に、どの端末を対策しますか？');
@@ -141,15 +141,17 @@ for (const provider of ['Gmail / Google', 'Outlook / Microsoft', 'Proton Mail', 
   await createWorkspace(page); await advance(page, 'メールサービスを選ぶ');
   await page.getByRole('button', { name: provider, exact: true }).click(); await advance(page, '別のアカウントとして追加する'); await advance(page, '個人用');
   let count = 0;
-  while ((await page.getByRole('heading', { level: 1 }).textContent()) !== 'どの端末でログインを承認しますか？') {
-    if (++count > 24) throw new Error('MFA route did not finish');
+  while (true) {
+    if (++count > 30) throw new Error('MFA route did not finish');
     const heading = page.getByRole('heading', { level: 1 }), before = await heading.textContent();
     const notEnabled = page.getByRole('button', { name: 'まだ有効になっていない', exact: true });
-    if (await notEnabled.count()) await notEnabled.click();
+    if (before === 'どの認証アプリを使いますか？') await prepareAuthenticator(page);
+    else if (await notEnabled.count()) await notEnabled.click();
     else await page.locator('.primary-actions button').first().click();
     await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy', 'false'); await expect(heading).not.toHaveText(before!);
+    if (before === '有効になった状態を確認する' || before === '有効な状態を確認する') break;
   }
-  await advance(page, '分からない・つながりを記録しない');
+  if (await page.getByRole('heading', { level: 1, name: 'どの端末でログインを承認しますか？', exact: true }).isVisible()) await advance(page, '分からない・つながりを記録しない');
   count = 0;
   // A previously secured recovery method may be carried forward without resetting it.
   if (await page.getByRole('heading', { name: '以前の記録を引き継いでいます', exact: true }).count()) await advance(page, '続きへ進む');
@@ -172,8 +174,8 @@ test('1Password keeps emergency recovery before authenticator activation', async
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('アカウントの復旧コードを保管する');
   await advance(page, '確認しました'); await advance(page, '確認しました'); await advance(page, 'これから設定する');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('認証アプリの予備情報を先に保管する');
-  await advance(page, '安全な場所へ保管しました'); await advance(page); await advance(page, 'ログインできました');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('どの端末でログインを承認しますか？');
+  await advance(page, '安全な場所へ保管しました'); await prepareAuthenticator(page); await advance(page); await advance(page, 'コードが受け付けられました'); await advance(page, 'ログインできました');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('次に、どの端末を対策しますか？');
 });
 
 for (const platform of ['iPhone / iPad', 'Android', 'Mac', 'Windows']) test(`${platform}: lock, successful backup and updates are separate recorded operations`, async ({ page }) => {

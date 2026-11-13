@@ -20,7 +20,7 @@ export function NativeManagerQuestions({ data, language, save, route, id }: Prop
   };
   if (route === 'native-choice' && NATIVE_PRODUCTS.includes(id as NativeProduct)) {
     const product = id as NativeProduct;
-    const existing = data.version === 2 ? data.securityModel.entities.filter(e => e.kind === 'vault' && e.productId === product) : [];
+    const existing = data.version === 2 ? data.securityModel.entities.filter(e => e.kind === 'vault' && !e.mergedIntoRef && e.productId === product) : [];
     return <><h1>{tx(language, 'Which password store will you use?', 'どのパスワード保管庫を使いますか？')}</h1><p>{NATIVE_NAMES[product][language]}</p><div className="choices">{existing.map(e => choose(e.label, () => resume({ ...data, guide: { ...data.guide, managerId: e.id } }), tx(language, 'Reuse this saved entry', '登録済みの項目をそのまま使う')))}{choose(tx(language, 'Add a store for this account or profile', 'このアカウント・利用場所の保管庫を追加する'), () => { try { resume(makeNativeVault(data, product, language)); } catch (e) { setError(tx(language, e instanceof DataUpgradeConflict ? 'Existing saved fields conflict with this feature. Your data has not changed; export its encrypted backup before resolving the format.' : 'Could not prepare this store. Your records have not advanced.', e instanceof DataUpgradeConflict ? '既存データの項目と新機能が競合しています。元のデータは変更していません。設定から暗号化バックアップを保存し、データ形式を確認する必要があります。' : '保管庫を準備できませんでした。作業の位置は進めていません。')); } }, tx(language, 'No password or secret will be entered in this app', 'このアプリにパスワードや秘密情報は入力しません'))}</div>{error && <p role="alert" className="error">{error}</p>}</>;
   }
   if (!vault) return <><h1>{tx(language, 'Choose a password manager again', 'パスワード管理の製品を選び直す')}</h1>{choose(tx(language, 'Choose a product', '製品を選ぶ'), () => void save(move(data, 'manager-select')))}</>;

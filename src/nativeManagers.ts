@@ -10,12 +10,23 @@ export const NATIVE_NAMES: Record<NativeProduct, { en: string; ja: string }> = {
 };
 export type NativeVault = Extract<SecurityEntity, { kind: 'vault' }>;
 export type NativeInstallation = Extract<SecurityEntity, { kind: 'installation' }>;
+function resolvedEntity(data: Dataset, id: string | undefined, kind: 'vault' | 'installation'): SecurityEntity | undefined {
+  if (data.version !== 2) return;
+  const seen = new Set<string>(); let ref = id;
+  while (ref && !seen.has(ref)) {
+    seen.add(ref);
+    const entity = data.securityModel.entities.find(e => e.id === ref && e.kind === kind);
+    if (!entity) return;
+    if (!entity.mergedIntoRef) return entity;
+    ref = entity.mergedIntoRef as string;
+  }
+}
 export function nativeVault(data: Dataset, id?: string): NativeVault | undefined {
-  const vault = data.version === 2 ? data.securityModel.entities.find(e => e.id === id && e.kind === 'vault' && NATIVE_PRODUCTS.includes(e.productId as NativeProduct)) : undefined;
-  return vault?.kind === 'vault' ? vault : undefined;
+  const vault = resolvedEntity(data, id, 'vault');
+  return vault?.kind === 'vault' && NATIVE_PRODUCTS.includes(vault.productId as NativeProduct) ? vault : undefined;
 }
 export function nativeInstallation(data: Dataset, id: string): NativeInstallation | undefined {
-  const e = data.version === 2 ? data.securityModel.entities.find(e => e.id === id && e.kind === 'installation') : undefined;
+  const e = resolvedEntity(data, id, 'installation');
   return e?.kind === 'installation' && nativeVault(data, e.vaultRef) ? e : undefined;
 }
 export function selectedNativeInstallation(data: Dataset, vaultId: string): NativeInstallation | undefined {
@@ -40,12 +51,35 @@ export function configureNativeStorage(data: Dataset, vaultId: string, mode: 'ac
   const provider = vault.productId === 'apple-passwords' ? 'apple' : 'google';
   if (mode === 'account' && rootId && !data.assets.some(a => a.id === rootId && a.kind === 'account' && a.provider === provider)) return data;
   if (vault.productId === 'apple-passwords' && mode === 'local') return data;
+  const selectedDevice = selectedNativeInstallation(data, vault.id)?.deviceRef ?? vault.primaryDeviceRef;
+  const matching = mode === 'account' && rootId ? data.securityModel.entities.find(e => e.kind === 'vault' && !e.mergedIntoRef && e.id !== vault.id && e.productId === vault.productId && e.storageMode === 'account' && e.authenticationAccountRef === rootId) : undefined;
+  if (matching?.kind === 'vault') {
+    // The user selected the exact same backing identity. Reuse that cloud store,
+    // but keep local profiles separate and never copy proofs between devices.
+    let next = selectedDevice ? chooseNativeDevice(data, matching.id, selectedDevice) : { ...data, guide: { ...data.guide, managerId: matching.id } };
+    if (next.version !== 2 || vault.authenticationAccountRef) return next;
+    const provisional = next.securityModel.entities.filter(e => e.id === vault.id || (e.kind === 'installation' && e.vaultRef === vault.id));
+    const ids = provisional.map(e => e.id);
+    const observed = JSON.stringify({ actions: next.actions, steps: next.guide.steps, dependencies: next.dependencies, workflows: next.deviceWorkflows, model: { ...next.securityModel, entities: next.securityModel.entities.filter(e => !ids.includes(e.id)) } });
+    const hasRecords = provisional.some(e => (e.kind === 'installation' || e.kind === 'vault') && Object.keys(e.controls ?? {}).length > 0) || ids.some(id => observed.includes(id));
+    if (hasRecords) return next;
+    // Retain provisional IDs for Back/resume and opaque data. These redirects
+    // contain no confirmations and are omitted from the visible map.
+    const model = next.securityModel;
+    next = { ...next, securityModel: { ...model, entities: model.entities.map(e => {
+      if (e.id === vault.id) return { ...e, mergedIntoRef: matching.id };
+      if (e.kind !== 'installation' || e.vaultRef !== vault.id) return e;
+      const target = model.entities.find(i => i.kind === 'installation' && i.vaultRef === matching.id && i.deviceRef === e.deviceRef);
+      return target ? { ...e, mergedIntoRef: target.id } : e;
+    }) } };
+    return next;
+  }
   // A different cloud account is a different vault. Preserve the old vault and
   // all its observations rather than transferring its completion flags.
   let next: Dataset = data, chosenId = vaultId;
   if ((vault.authenticationAccountRef && rootId && vault.authenticationAccountRef !== rootId) || (vault.storageMode && vault.storageMode !== mode)) {
     next = makeNativeVault(data, vault.productId as NativeProduct, data.settings.language); chosenId = next.guide.managerId!;
-    if (vault.primaryDeviceRef) next = chooseNativeDevice(next, chosenId, vault.primaryDeviceRef);
+    if (selectedDevice) next = chooseNativeDevice(next, chosenId, selectedDevice);
   }
   if (next.version !== 2) return data;
   return { ...next, securityModel: { ...next.securityModel, entities: next.securityModel.entities.map(e => e.id === chosenId && e.kind === 'vault' ? { ...e, storageMode: mode, authenticationAccountRef: mode === 'account' ? rootId ?? e.authenticationAccountRef : undefined } : e) }, guide: { ...next.guide, managerId: chosenId } };

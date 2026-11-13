@@ -191,3 +191,65 @@ it('does not fall back to another provider’s password-change menu for unsuppor
     expect(currentTask(next)).toBeUndefined();
   }
 });
+
+it.each(['apple-passwords', 'google-password-manager'] as const)('reuses the actual %s cloud store after selecting its same backing account', product => {
+  const f = fixture(product, product === 'apple-passwords' ? 'ios' : 'android');
+  let data = finishSetup(f.data, f.installId);
+  data = makeNativeVault(data, product, 'ja'); const pending = data.guide.managerId!;
+  data = chooseNativeDevice(data, pending, f.deviceId) as CurrentDataset;
+  const pendingInstall = selectedNativeInstallation(data, pending)!;
+  data = configureNativeStorage(data, pending, 'account', f.rootId) as CurrentDataset;
+  expect(data.guide.managerId).toBe(f.vaultId);
+  expect(selectedNativeInstallation(data, f.vaultId)?.id).toBe(f.installId);
+  expect(nativeVault(data, pending)?.id).toBe(f.vaultId);
+  expect(nativeInstallation(data, pendingInstall.id)?.id).toBe(f.installId);
+  expect(mapItems(data, 'ja').filter(n => n.entityKind === 'vault')).toHaveLength(1);
+  expect(managerReady(data)).toBe(true);
+  expect(currentDatasetSchema.safeParse(data).success).toBe(true);
+});
+it('keeps the actual main-guide device when choosing a different account after a phone move', () => {
+  const f = fixture(); let data = finishSetup(f.data, f.installId);
+  const fresh = makeAsset({ kind: 'device', type: 'Smartphone', name: 'Replacement', importance: 'critical', operatingSystem: 'ios' });
+  const originalGuide = data.guide;
+  data = chooseNativeDevice({ ...data, assets: [...data.assets, fresh] }, f.vaultId, fresh.id) as CurrentDataset;
+  data.guide = originalGuide;
+  const changed = addNativeRoot(data, f.vaultId, 'personal') as CurrentDataset;
+  expect(selectedNativeInstallation(changed, changed.guide.managerId!)?.deviceRef).toBe(f.deviceId);
+  expect(nativeInstallation(changed, f.installId)?.controls?.opened).toBe('verified');
+});
+it('does not combine local profiles or hide an unbound store that has observations', () => {
+  const f = fixture('google-password-manager', 'android');
+  let data = makeNativeVault(f.data, 'google-password-manager', 'ja'); const localId = data.guide.managerId!;
+  data = chooseNativeDevice(data, localId, f.deviceId) as CurrentDataset;
+  data = configureNativeStorage(data, localId, 'local') as CurrentDataset;
+  expect(data.guide.managerId).toBe(localId);
+  data = makeNativeVault(data, 'google-password-manager', 'ja'); const pending = data.guide.managerId!;
+  data = chooseNativeDevice(data, pending, f.deviceId) as CurrentDataset;
+  data = recordControl(data, selectedNativeInstallation(data, pending)!.id, 'opened', { id: 'pending-opened' }) as CurrentDataset;
+  data = configureNativeStorage(data, pending, 'account', f.rootId) as CurrentDataset;
+  expect(data.guide.managerId).toBe(f.vaultId);
+  expect(data.securityModel.entities.find(e => e.id === pending)?.mergedIntoRef).toBeUndefined();
+  expect(currentDatasetSchema.safeParse(data).success).toBe(true);
+});
+it('rejects cyclic aliases and aliases to a different entity type, physical device or store', () => {
+  const f = fixture();
+  for (const mode of ['cycle', 'different-kind', 'different-device', 'different-store'] as const) {
+    const data = structuredClone(f.data);
+    const original = data.securityModel.entities.find(e => e.id === f.installId)!;
+    if (mode === 'cycle') Object.assign(original, { mergedIntoRef: f.installId });
+    if (mode === 'different-kind') Object.assign(original, { mergedIntoRef: f.vaultId });
+    if (mode === 'different-device') {
+      const second = makeAsset({ kind: 'device', type: 'Smartphone', name: 'Another phone', importance: 'critical', operatingSystem: 'ios' });
+      data.assets.push(second);
+      data.securityModel.entities.push({ ...original, id: 'another-installation', deviceRef: second.id } as typeof original);
+      Object.assign(original, { mergedIntoRef: 'another-installation' });
+    }
+    if (mode === 'different-store') {
+      data.assets.push({ ...data.assets.find(a => a.id === f.rootId)!, id: 'other-root' });
+      data.securityModel.entities.push({ ...data.securityModel.entities.find(e => e.id === f.vaultId)!, id: 'another-vault', authenticationAccountRef: 'other-root' } as typeof original);
+      data.securityModel.entities.push({ ...original, id: 'another-installation', vaultRef: 'another-vault' } as typeof original);
+      Object.assign(original, { mergedIntoRef: 'another-installation' });
+    }
+    expect(currentDatasetSchema.safeParse(data).success).toBe(false);
+  }
+});

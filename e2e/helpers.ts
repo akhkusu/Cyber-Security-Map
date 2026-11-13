@@ -62,3 +62,21 @@ export async function writeSavedVault(page: Page, value: unknown) {
     };
   }), value);
 }
+
+export async function prepareAuthenticator(page: Page, product = 'Bitwarden Authenticator（単独アプリ）', mode: 'local' | 'account' = 'local', rootName?: string, manual = false) {
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('どの認証アプリを使いますか？');
+  await advance(page, product);
+  await page.locator('.guide-card .choice').first().click(); await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy', 'false');
+  if (product === 'Google 認証システム') {
+    await advance(page, mode === 'local' ? 'アカウントなしで使う' : 'Google アカウントと同期する');
+    if (mode === 'account') await advance(page, rootName!);
+  } else await advance(page);
+  for (let i = 0; i < 8; i++) {
+    if (await page.getByRole('heading', { level: 1, name: '登録用のQRコードは、どの画面にありますか？', exact: true }).isVisible()) break;
+    const buttons = page.locator('.guide-card .primary-actions button'); await expect(buttons).toHaveCount(1); await buttons.click();
+    await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy', 'false');
+  }
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('登録用のQRコードは、どの画面にありますか？');
+  await advance(page, manual ? '同じスマホにあり、手入力用の設定キーも表示されている' : '別の画面にあり、このスマホで読み取れる');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('選んだアプリへ今回のアカウントを追加する');
+}

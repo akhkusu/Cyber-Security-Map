@@ -1,4 +1,5 @@
 import type { Asset, Dataset, Language, RecoveryDependency } from './models';
+import { authenticator, authenticatorReady } from './authenticatorGuide';
 import { evaluateAccess, type SecurityEntity } from './securityModel';
 
 export type MapItem = Asset & { entityKind?: SecurityEntity['kind'] };
@@ -7,7 +8,7 @@ export const entityKindLabel = (kind: SecurityEntity['kind'], language: Language
   person: ['Person', '利用者・協力者'], organization: ['Organization', '組織'], installation: ['App on a device', '端末上のアプリ'], vault: ['Password store', 'パスワード保管庫'], credential: ['Login credential', 'ログインの手段'], identifier: ['Identifier', '識別子'], 'phone-line': ['Phone line', '電話回線'], 'security-key': ['Security key', 'セキュリティキー'], 'data-set': ['Stored data', '保存データ'], grant: ['Access permission', 'アクセス権限'], 'recovery-arrangement': ['Recovery arrangement', '復旧の取り決め'], })[kind][language === 'ja' ? 1 : 0];
 export function mapItems(data: Dataset, language: Language): MapItem[] {
   if (data.version !== 2) return data.assets;
-  return [...data.assets, ...data.securityModel.entities.map((e): MapItem => {
+  return [...data.assets, ...data.securityModel.entities.filter(e => !((e.kind === 'vault' || e.kind === 'installation') && e.mergedIntoRef)).map((e): MapItem => {
     const installs = e.kind === 'vault' ? data.securityModel.entities.filter(i => i.kind === 'installation' && i.vaultRef === e.id) : [];
     const controls = e.kind === 'vault' ? Object.fromEntries(['opened', 'storageChecked', 'autofill', 'loginUse'].map(c => [c, installs.some(i => i.kind === 'installation' && i.controls?.[c] === 'verified') ? 'verified' as const : 'unknown' as const])) : e.kind === 'installation' ? e.controls ?? {} : {};
     return { id: e.id, name: e.label, entityKind: e.kind, kind: e.kind === 'installation' || e.kind === 'security-key' ? 'device' : e.kind === 'vault' || e.kind === 'data-set' ? 'backup' : 'identity', type: entityKindLabel(e.kind, language), importance: 'important', createdAt: e.createdAt, updatedAt: typeof e.updatedAt === 'string' ? e.updatedAt : e.createdAt, controls, controlEvidence: e.kind === 'vault' || e.kind === 'installation' ? e.controlEvidence ?? {} : {}, services: [] };
@@ -25,6 +26,11 @@ export function mapConnections(data: Dataset): MapConnection[] {
 export function typedMapStatus(data: Dataset, node: MapItem, language: Language) {
   const yes = language === 'ja';
   const entity = data.version === 2 ? data.securityModel.entities.find(e => e.id === node.id) : undefined;
+  const app = authenticator(data, node.id);
+  if (app) {
+    const recorded = authenticatorReady(data, app) && app.controls?.codeAccepted === 'verified';
+    return { tone: recorded ? 'recorded' : 'unknown', label: yes ? recorded ? 'コード登録の記録あり' : 'コードの確認待ち' : recorded ? 'Code registration recorded' : 'Code check needed', reason: yes ? 'この端末のアプリと、サービス側の登録確認' : 'App on this device and service-side registration' };
+  }
   if (entity?.kind === 'installation' || entity?.kind === 'vault') {
     const required = ['opened', 'storageChecked', 'autofill', 'loginUse'];
     const completeOnOneDevice = entity.kind === 'vault' && data.version === 2 ? data.securityModel.entities.some(e => e.kind === 'installation' && e.vaultRef === entity.id && required.every(c => e.controls?.[c] === 'verified')) : required.every(c => node.controls[c] === 'verified');
@@ -44,7 +50,7 @@ export function mapAffectedItems(data: Dataset, missing: string, language: Langu
     for (const r of data.securityModel.relations) if (r.evidence === 'user-confirmed' && r.kind === 'installed-on' && r.toRef === missing) affected.add(r.fromRef);
     const now = new Date().toISOString();
     for (const r of data.securityModel.routes) {
-      const context = r.contexts.includes('new-device') ? 'new-device' : 'normal';
+      const context = r.contexts.includes('enrollment') ? 'enrollment' : r.contexts.includes('new-device') ? 'new-device' : 'normal';
       const before = evaluateAccess(data.securityModel, r.id, { context, now });
       const after = evaluateAccess(data.securityModel, r.id, { context, now, unavailableRefs: [missing] });
       if (before.state === 'available' && after.state !== 'available') affected.add(r.targetRef);

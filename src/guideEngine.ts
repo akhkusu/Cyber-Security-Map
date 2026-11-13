@@ -1,3 +1,5 @@
+import { AUTHENTICATORS, authSources, authenticatorPrerequisiteRoute, authenticatorConfirmation, authenticatorScan, authenticatorScanStep, authenticatorSetupRecipe, authenticatorSetupRoute, requireAuthenticatorRoots, selectedAuthenticator, type AuthenticatorProduct } from './authenticatorGuide';
+import { recordAuthenticatorObservation, undoAuthenticatorObservation } from './authenticatorObservations';
 import { makeAsset, type Asset, type Dataset, type Language, type RecoveryDependency } from './models';
 import { controlKey, CHECKUP_CONTROLS } from './checkupCatalog';
 import { recordNativeObservation, undoNativeObservation } from './nativeObservations';
@@ -18,7 +20,7 @@ export function back(data: Dataset): Dataset {
   const cursor = history.pop();
   return cursor ? { ...data, guide: { ...data.guide, cursor, history } } : data;
 }
-export function recipeFor(data: Dataset, asset: Asset, recipeId: string): Recipe | undefined {
+function baseRecipeFor(data: Dataset, asset: Asset, recipeId: string): Recipe | undefined {
   if (recipeId.startsWith('native-password:')) return builtinPasswordRecipe(data, asset, recipeId.slice('native-password:'.length));
   if (recipeId === 'builtin-manager') return builtinManagerRecipe(data, asset.id);
   const platform = data.guide.answers[`${asset.id}:platform`] ?? asset.operatingSystem ?? 'web';
@@ -33,6 +35,22 @@ export function recipeFor(data: Dataset, asset: Asset, recipeId: string): Recipe
   }
   if (recipeId === 'device' && ['ios', 'android', 'macos', 'windows'].includes(platform)) return deviceRecipe(platform);
 }
+export function recipeFor(data: Dataset, asset: Asset, recipeId: string): Recipe | undefined {
+  if (recipeId.startsWith('authenticator-setup:')) {
+    const recipe = authenticatorSetupRecipe(data, asset);
+    return recipe;
+  }
+  const recipe = baseRecipeFor(data, asset, recipeId), app = selectedAuthenticator(data, asset.id);
+  if (!recipe || !app) return recipe;
+  const steps = recipe.steps.flatMap(step => {
+    if (!authenticatorScan(recipeId, step.id)) return [step];
+    const scan = authenticatorScanStep(data, asset, step);
+    if (recipeId !== 'manager') return [scan];
+    const bw = asset.provider === 'bitwarden';
+    return [scan, { id: 'auth-activate', title: { en: 'Confirm the code on the service', ja: 'サービス側でコードを確認する' }, place: step.place, action: { en: bw ? 'In Bitwarden, enter the current code from the selected authenticator and select Enable. Keep this session open.' : 'In 1Password select Next, enter the current code from the selected authenticator, then Confirm. Keep this session open.', ja: bw ? 'Bitwardenの画面に、選んだ認証アプリの現在のコードを入力し、「Enable」を選んでください。このログインは残します。' : '1Passwordの「Next」で、選んだ認証アプリの現在のコードを入力し、「Confirm」を選んでください。このログインは残します。' }, expected: { en: 'The official service accepts this code and enables the authenticator.', ja: '正規のサービスが今回のコードを受け付け、認証アプリが有効になること。' }, sources: step.sources, button: { en: 'The code was accepted', ja: 'コードが受け付けられました' } }];
+  });
+  return { ...recipe, steps };
+}
 export function currentTask(data: Dataset): { asset: Asset; recipe: Recipe; step: GuideStep; index: number; needsPrerequisites?: boolean; redirectTo?: string } | undefined {
   const [kind, assetId, recipeId, stepId] = data.guide.cursor.split('/');
   if (kind !== 'do') return;
@@ -40,9 +58,15 @@ export function currentTask(data: Dataset): { asset: Asset; recipe: Recipe; step
   if (!asset) return;
   const recipe = recipeFor(data, asset, recipeId);
   const index = recipe?.steps.findIndex(s => s.id === stepId) ?? -1;
+  if (recipe && recipeId.startsWith('authenticator-setup:') && recipe.id !== recipeId) return { asset, recipe, step: recipe.steps[0], index: 0, redirectTo: authenticatorSetupRoute(data, assetId) };
   if (!recipe || index < 0) return;
+  if (recipeId.startsWith('authenticator-setup:')) { const prerequisite = authenticatorPrerequisiteRoute(data, assetId); if (prerequisite) return { asset, recipe, step: recipe.steps[index], index, redirectTo: prerequisite }; }
   const bound = recipeId.startsWith('native-password:') ? nativeInstallation(data, recipeId.slice('native-password:'.length)) : undefined;
   const needsPrerequisites = (recipeId === 'password' || recipeId.startsWith('native-password:')) && (!isRecorded(asset, 'recovery') || !managerReady(data, bound?.vaultRef, bound?.id));
+  if (authenticatorScan(recipeId, stepId)) {
+    const route = authenticatorSetupRoute(data, assetId, data.guide.cursor);
+    return { asset, recipe, step: recipe.steps[index], index, redirectTo: route !== data.guide.cursor ? route : undefined };
+  }
   const setup = recipeId === 'builtin-manager' ? nativeSetupRoute(data, nativeInstallation(data, assetId)?.vaultRef ?? '', assetId) : undefined;
   return { asset, recipe, step: recipe.steps[index], index, needsPrerequisites, redirectTo: setup && !setup.startsWith('do/') ? setup : undefined };
 }
@@ -76,11 +100,13 @@ export function beginRecipe(data: Dataset, assetId: string, recipeId: string, re
 }
 export function afterRecipe(data: Dataset, asset: Asset, recipeId: string): Dataset {
   const returnKey = `return/${asset.id}/${recipeId}`, returnTo = data.guide.answers[returnKey];
+  if (returnTo?.startsWith('authenticator-root-security/')) { const answers = { ...data.guide.answers }; delete answers[returnKey]; const origin = returnTo.split('/')[1]; const next = { ...data, guide: { ...data.guide, answers } }; return requireAuthenticatorRoots(next, origin, answers[`auth:${origin}:security-return`] ?? 'manager-select'); }
   if (returnTo?.startsWith('native-resume/')) { const answers = { ...data.guide.answers }; delete answers[returnKey]; return move({ ...data, guide: { ...data.guide, answers } }, nativeSetupRoute(data, returnTo.split('/')[1])); }
+  if (recipeId.startsWith('authenticator-setup:')) return move(data, authenticatorSetupRoute(data, asset.id));
   if (recipeId === 'builtin-manager') { const email = data.assets.find(a => a.id === data.guide.accountId); return email ? beginRecipe(data, email.id, 'password') : move(data, 'start'); }
-  if (recipeId === 'email-mfa') return move(data, `auth-location/${asset.id}`);
+  if (recipeId === 'email-mfa') return selectedAuthenticator(data, asset.id) ? beginRecipe(data, asset.id, 'recovery') : move(data, `auth-location/${asset.id}`);
   if (recipeId === 'recovery') return move(data, `recovery-location/${asset.id}`);
-  if (recipeId === 'manager') return move(data, `auth-location/${asset.id}`);
+  if (recipeId === 'manager') { const email = data.assets.find(a => a.id === data.guide.accountId); if (!selectedAuthenticator(data, asset.id)) return move(data, `auth-location/${asset.id}`); const next = email ? beginRecipe(data, email.id, 'password') : move(data, 'device-select'); return requireAuthenticatorRoots(next, asset.id, next.guide.cursor); }
   if (recipeId === 'password' || recipeId.startsWith('native-password:')) return move(data, 'device-select');
   if (recipeId === 'device') return move(data, `backup-location/${asset.id}`);
   return move(data, 'finish');
@@ -96,18 +122,24 @@ export function completeStep(data: Dataset, jump?: string): Dataset {
   const definition = CHECKUP_CONTROLS.find(c => c.assetKind === asset.kind && c.assetControl === step.control);
   const answerKey = definition ? controlKey(definition.id, asset.id) : undefined;
   const old = data.guide.steps[key];
-  const record = { ...old, status: 'done' as const, updatedAt: now, ...(step.control ? {
+  const selectedApp = selectedAuthenticator(data, asset.id);
+  const enrollment = data.guide.steps[data.guide.answers[`auth:${asset.id}:enrollment`]];
+  const record = { ...old, ...(selectedApp && (authenticatorScan(recipe.id, step.id) || authenticatorConfirmation(recipe.id, step.id)) ? { authenticatorRef: selectedApp.id } : {}), status: 'done' as const, updatedAt: now, ...(step.control ? {
     beforeControl: old?.beforeControl ?? asset.controls[step.control] ?? 'unknown',
     beforeEvidence: old?.beforeEvidence ?? asset.controlEvidence[step.control] ?? 'not-assessed',
     beforeAnswer: old ? old.beforeAnswer : (answerKey ? data.assessmentAnswers[answerKey] : undefined),
   } : {}) };
-  let next: Dataset = { ...data, guide: { ...data.guide, steps: { ...data.guide.steps, [key]: record } } };
+  if (selectedApp && authenticatorScan(recipe.id, step.id)) record.authenticatorEnrollment = crypto.randomUUID();
+  if (selectedApp && authenticatorConfirmation(recipe.id, step.id)) record.authenticatorEnrollment = enrollment?.authenticatorRef === selectedApp.id ? enrollment.authenticatorEnrollment : undefined;
+  let next: Dataset = { ...data, guide: { ...data.guide, ...(selectedApp && authenticatorScan(recipe.id, step.id) ? { answers: { ...data.guide.answers, [`auth:${asset.id}:task`]: key, [`auth:${asset.id}:enrollment`]: key } } : {}), steps: { ...data.guide.steps, [key]: record } } };
+  if (selectedApp && authenticatorConfirmation(recipe.id, step.id)) next = { ...next, guide: { ...next.guide, answers: { ...next.guide.answers, [`auth:${asset.id}:confirmation`]: key } } };
   if (step.control) {
     next = recordControl(next, asset.id, step.control, { id: key, origin: 'guide', titleEn: step.title.en, titleJa: step.title.ja, assetName: asset.name }, now);
   }
   for (const effect of step.extraControls ?? []) next = recordControl(next, effect.targetRef, effect.controlId, { id: `${key}#${effect.targetRef}#${effect.controlId}`, parentId: key, origin: 'guide', titleEn: step.title.en, titleJa: step.title.ja }, now);
   if (next.version === 2 && (recipe.id === 'password' || recipe.id.startsWith('native-password:')) && step.id === 'apply') next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [asset.id]: { ...next.securityModel.lifecycle[asset.id], state: 'in-use', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now } } } };
   next = recordNativeObservation(next, key, asset.id, recipe.id, step, now);
+  next = recordAuthenticatorObservation(next, key, asset.id, recipe.id, step, now);
   const nextStep = jump ? recipe.steps.find(s => s.id === jump) : recipe.steps[index + 1];
   return nextStep ? move(next, taskCursor(asset.id, recipe.id, nextStep.id)) : afterRecipe(next, asset, recipe.id);
 }
@@ -122,13 +154,14 @@ export function undoStep(data: Dataset, key: string): Dataset {
     next = undoControl(next, key, task.asset.id, control, { state: record.beforeControl ?? 'unknown', evidence: record.beforeEvidence ?? 'not-assessed', answer: record.beforeAnswer });
   }
   for (const action of data.actions.filter(a => a.parentId === key)) if (action.targetId && action.controlId) next = undoControl(next, action.id, action.targetId, action.controlId, { state: 'unknown', evidence: 'not-assessed' });
-  return move(undoNativeObservation(next, key), key);
+  for (const action of data.actions.filter(a => Array.isArray(a.requiredGuideSteps) && a.requiredGuideSteps.includes(key))) if (action.targetId && action.controlId) next = undoControl(next, action.id, action.targetId, action.controlId, { state: 'unknown', evidence: 'not-assessed' });
+  return move(undoAuthenticatorObservation(undoNativeObservation(next, key), key), key);
 }
 export function deferStep(data: Dataset): Dataset {
   const task = currentTask(data);
   const key = data.guide.cursor;
   const next = { ...data, guide: { ...data.guide, steps: { ...data.guide.steps, [key]: data.guide.steps[key]?.status === 'done' ? data.guide.steps[key] : { status: 'later' as const, updatedAt: new Date().toISOString() } } } };
-  if (task) return move(next, task.recipe.id === 'email-mfa' || task.recipe.id === 'recovery' ? 'manager-select' : task.recipe.id === 'manager' || task.recipe.id === 'builtin-manager' || (task.recipe.id === 'password' || task.recipe.id.startsWith('native-password:')) ? 'device-select' : 'finish');
+  if (task) return move(next, task.recipe.id === 'email-mfa' || task.recipe.id === 'recovery' ? 'manager-select' : task.recipe.id === 'manager' || task.recipe.id === 'builtin-manager' || task.recipe.id.startsWith('authenticator-setup:') || (task.recipe.id === 'password' || task.recipe.id.startsWith('native-password:')) ? 'device-select' : 'finish');
   return move(next, key.startsWith('device') ? 'finish' : 'device-select');
 }
 export function selectAccount(data: Dataset, provider: NonNullable<Asset['provider']>, language: Language, existingId?: string, purpose?: 'personal' | 'work'): Dataset {
@@ -160,22 +193,25 @@ export function helpPrompt(data: Dataset, problem: string, language: Language): 
   const asset = task?.asset ?? data.assets.find(a => a.id === data.guide.cursor.split('/')[1]);
   // Only allowlisted catalog labels are exported. No nicknames, notes, raw answers or credentials.
   const native = nativeVault(data, nativeInstallation(data, asset?.id ?? '')?.vaultRef ?? data.guide.managerId);
+  const authApp = asset && selectedAuthenticator(data, asset.id);
+  const authOS = data.assets.find(a => a.id === authApp?.deviceRef)?.operatingSystem;
+  const authLabel = authApp && AUTHENTICATORS[authApp.productId as AuthenticatorProduct];
   const managerLabel = native && NATIVE_NAMES[native.productId as NativeProduct];
   const service = task?.recipe.id === 'builtin-manager' && managerLabel ? managerLabel[language] : asset?.provider ? PROVIDERS[asset.provider] : 'Unspecified';
   const platform = asset ? data.guide.answers[`${asset.id}:platform`] ?? asset.operatingSystem ?? 'unknown' : 'unknown';
   const attempted = data.guide.cursor.split('/')[2];
   const attemptedTask = attempted === 'password' || attempted?.startsWith('native-password:') ? { en: 'Generate, save and use this account’s password', ja: 'このアカウントのパスワードを生成・保存して使う' } : attempted === 'device' ? { en: 'Protect this device', ja: 'この端末の対策を進める' } : { en: 'Find supported authentication instructions', ja: '対応する認証手順を確認する' };
-  const sourceIds = task?.step.sources ?? (asset ? recipeFor(data, asset, 'email-mfa')?.steps[0].sources ?? [] : []);
+  const sourceIds = [...new Set([...(task?.step.sources ?? (asset ? recipeFor(data, asset, 'email-mfa')?.steps[0].sources ?? [] : [])), ...(authApp ? authSources(authApp.productId as AuthenticatorProduct) : [])])];
   const allowedPlatforms = ['ios', 'macos', 'android', 'windows', 'web', 'ubuntu', 'chromeos'];
   return language === 'ja' ? [
     '最新の公式資料を確認し、一度に一つの質問または操作だけを案内してください。最新情報を確認できない場合は、その旨を明示してください。秘密情報の入力・共有は求めないでください。',
-    `サービス: ${service}`, ...(managerLabel ? [`パスワード管理: ${managerLabel.ja}`] : []), `端末・OSの種類: ${allowedPlatforms.includes(platform) ? platform : '未確認'}（詳細バージョンは未確認。必要なら質問してください）`,
+    `サービス: ${service}`, ...(authLabel ? [`認証アプリ: ${authLabel.ja}`, `認証アプリの端末OS: ${authOS === 'ios' || authOS === 'android' ? authOS : '未確認'}（詳細版は未確認）`] : []), ...(managerLabel ? [`パスワード管理: ${managerLabel.ja}`] : []), `端末・OSの種類: ${allowedPlatforms.includes(platform) ? platform : '未確認'}（詳細バージョンは未確認。必要なら質問してください）`,
     `作業: ${task?.recipe.title.ja ?? attemptedTask.ja}`, `現在のステップ: ${task?.step.title.ja ?? 'この環境に対応する手順がない'}`, `想定される表示: ${task?.step.expected.ja ?? '未確認'}`, `困りごと: ${problem}`,
     '根拠となる公式資料:', ...sourceIds.map(s => `${s}: ${sourcelink(s)}`),
     'パスワード・認証コード・復旧コード・個人情報は共有しません。既存の認証方法を削除する前に、復旧手段と新しい方法の動作を確認してください。',
   ].join('\n') : [
     'Check current official documentation. Guide me through one question or action at a time. Say explicitly if you cannot check current information. Never request secrets or personal data.',
-    `Service: ${service}`, ...(managerLabel ? [`Password manager: ${managerLabel.en}`] : []), `Device / OS family: ${allowedPlatforms.includes(platform) ? platform : 'unknown'} (exact version unknown; ask if needed)`,
+    `Service: ${service}`, ...(authLabel ? [`Authenticator: ${authLabel.en}`, `Authenticator device OS: ${authOS === 'ios' || authOS === 'android' ? authOS : 'unknown'} (exact version unconfirmed)`] : []), ...(managerLabel ? [`Password manager: ${managerLabel.en}`] : []), `Device / OS family: ${allowedPlatforms.includes(platform) ? platform : 'unknown'} (exact version unknown; ask if needed)`,
     `Task: ${task?.recipe.title.en ?? attemptedTask.en}`, `Current step: ${task?.step.title.en ?? 'Unsupported environment'}`, `Expected display: ${task?.step.expected.en ?? 'Unknown'}`, `Problem: ${problem}`,
     'Official sources:', ...sourceIds.map(s => `${s}: ${sourcelink(s)}`),
     'Keep existing authentication until recovery and a new method have been tested. I will not share passwords, authentication codes, recovery codes or personal data.',

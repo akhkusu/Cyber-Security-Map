@@ -3,6 +3,7 @@ import { currentDatasetSchema, makeAsset, newDataset, type CurrentDataset } from
 import { recordControl, undoControl } from '../src/controlRecords';
 import { decryptVault } from '../src/crypto';
 import { advance, mfaState, passphrase, readSavedVault, sealRawVault, writeSavedVault } from './helpers';
+import { beginRecipe, completeStep, currentTask } from '../src/guideEngine';
 import { NATIVE_NAMES, type NativeProduct } from '../src/nativeManagers';
 
 function fixture(product: NativeProduct, os: 'ios' | 'macos' | 'android' | 'windows') {
@@ -161,3 +162,23 @@ for (const [product, os] of [['apple-passwords', 'ios'], ['google-password-manag
     expect(external).toEqual([]);
   });
 }
+
+test('selecting the same Apple Account reuses its existing store and app without repeating setup', async ({ page }) => {
+  let data = fixture('apple-passwords', 'ios');
+  data = makeNativeVault(data, 'apple-passwords', 'ja'); const originalVault = data.guide.managerId!;
+  data = chooseNativeDevice(data, originalVault, data.assets[1].id) as CurrentDataset;
+  data = configureNativeStorage(data, originalVault, 'account', data.assets[0].id) as CurrentDataset;
+  const app = selectedNativeInstallation(data, originalVault)!;
+  data.guide.answers[`${app.id}:version`] = 'ios18plus';
+  data = beginRecipe(data, app.id, 'builtin-manager') as CurrentDataset;
+  for (let i = 0; i < 15 && currentTask(data)?.recipe.id === 'builtin-manager'; i++) data = completeStep(data) as CurrentDataset;
+  data.guide.cursor = 'manager-select'; const originalSteps = structuredClone(data.guide.steps);
+  await open(page, data); await pick(page, NATIVE_NAMES['apple-passwords'].ja); await pick(page, 'このアカウント・利用場所の保管庫を追加する');
+  await advance(page, 'いつもの端末'); await advance(page, 'iOS / iPadOS 18以降'); await advance(page, '登録済みの個人用アカウント');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('現在のログイン情報を保存する・見つける');
+  const restored = currentDatasetSchema.parse((await decryptVault(await readSavedVault(page), passphrase)).data);
+  expect(restored.assets).toHaveLength(2); expect(restored.guide.managerId).toBe(originalVault); expect(restored.guide.steps).toEqual(originalSteps);
+  expect(restored.securityModel.entities.filter(e => e.kind === 'vault' && !e.mergedIntoRef)).toHaveLength(1);
+  expect(restored.securityModel.entities.filter(e => e.kind === 'installation' && !e.mergedIntoRef)).toHaveLength(1);
+  await page.getByRole('link', { name: 'Security Map', exact: true }).click(); await expect(page.locator('.map-node')).toHaveCount(4);
+});

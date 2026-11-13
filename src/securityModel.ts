@@ -5,7 +5,7 @@ const id = z.string().min(1);
 const label = z.string().min(1).max(80);
 const time = z.string().datetime({ offset: true });
 export const EVIDENCE = ['unknown', 'user-reported', 'user-confirmed'] as const;
-export const ACCESS_CONTEXTS = ['normal', 'new-device', 'after-restart', 'no-existing-session', 'all-devices-lost'] as const;
+export const ACCESS_CONTEXTS = ['normal', 'enrollment', 'new-device', 'after-restart', 'no-existing-session', 'all-devices-lost'] as const;
 export type AccessContext = (typeof ACCESS_CONTEXTS)[number];
 const entityBase = { id, label, createdAt: time, scopeId: id.optional() };
 
@@ -14,8 +14,8 @@ const entityBase = { id, label, createdAt: time, scopeId: id.optional() };
 export const securityEntitySchema = z.discriminatedUnion('kind', [
   z.object({ ...entityBase, kind: z.literal('person'), role: z.enum(['self', 'trusted-contact', 'administrator', 'other']) }).passthrough(),
   z.object({ ...entityBase, kind: z.literal('organization') }).passthrough(),
-  z.object({ ...entityBase, kind: z.literal('installation'), productId: id, deviceRef: id, profileLabel: label.optional(), appVersion: z.string().max(40).optional(), vaultRef: id.optional(), platformVariant: z.enum(['ios18plus', 'mac15plus']).optional(), controls: z.record(z.string(), controlStateSchema).optional(), controlEvidence: z.record(z.string(), controlEvidenceSchema).optional() }).passthrough(),
-  z.object({ ...entityBase, kind: z.literal('vault'), productId: id, ownerRef: id.optional(), authenticationAccountRef: id.optional(), primaryDeviceRef: id.optional(), storageMode: z.enum(['account', 'local']).optional(), controls: z.record(z.string(), controlStateSchema).optional(), controlEvidence: z.record(z.string(), controlEvidenceSchema).optional() }).passthrough(),
+  z.object({ ...entityBase, kind: z.literal('installation'), codeStorage: z.enum(['local', 'account']).optional(), syncAccountRef: id.optional(), mergedIntoRef: id.optional(), productId: id, deviceRef: id, profileLabel: label.optional(), appVersion: z.string().max(40).optional(), vaultRef: id.optional(), platformVariant: z.enum(['ios18plus', 'mac15plus']).optional(), controls: z.record(z.string(), controlStateSchema).optional(), controlEvidence: z.record(z.string(), controlEvidenceSchema).optional() }).passthrough(),
+  z.object({ ...entityBase, kind: z.literal('vault'), mergedIntoRef: id.optional(), productId: id, ownerRef: id.optional(), authenticationAccountRef: id.optional(), primaryDeviceRef: id.optional(), storageMode: z.enum(['account', 'local']).optional(), controls: z.record(z.string(), controlStateSchema).optional(), controlEvidence: z.record(z.string(), controlEvidenceSchema).optional() }).passthrough(),
   z.object({ ...entityBase, kind: z.literal('credential'), credentialType: z.enum(['password', 'totp', 'passkey', 'security-key-registration', 'app-password', 'recovery-code', 'recovery-key', 'api-token', 'ssh-key', 'certificate', 'other']), subjectRef: id, storageRef: id.optional(), replicaGroupId: id.optional(), roles: z.array(z.enum(['sign-in', 'second-step', 'decrypt', 'local-unlock', 'restore'])).min(1) }).passthrough(),
   z.object({ ...entityBase, kind: z.literal('identifier'), identifierType: z.enum(['email-alias', 'phone-number', 'domain', 'login-id', 'other']), subjectRef: id.optional(), roles: z.array(z.enum(['sign-in', 'recovery', 'contact', 'routing'])).min(1) }).passthrough(),
   z.object({ ...entityBase, kind: z.literal('phone-line'), deviceRef: id.optional(), carrierAccountRef: id.optional(), carrierProductId: id.optional(), simType: z.enum(['physical', 'esim', 'unknown']).default('unknown') }).passthrough(),
@@ -84,7 +84,7 @@ export function entityIndex(model: SecurityModel, legacy: readonly LegacyEntity[
   return new Map([...legacy.map(e => ({ id: e.id, label: e.name, kind: e.kind, legacy: true })), ...model.entities.map(e => ({ id: e.id, label: e.label, kind: e.kind, legacy: false }))].map(e => [e.id, e]));
 }
 
-export type ModelIssue = { code: 'duplicate-id' | 'missing-entity' | 'missing-fact' | 'missing-route' | 'condition-limit'; recordId: string; referenceId: string };
+export type ModelIssue = { code: 'duplicate-id' | 'missing-entity' | 'missing-fact' | 'missing-route' | 'condition-limit' | 'invalid-alias'; recordId: string; referenceId: string };
 export function securityModelIssues(model: SecurityModel, legacy: readonly LegacyEntity[]): ModelIssue[] {
   const issues: ModelIssue[] = [], ids = new Set<string>();
   for (const item of [...legacy, ...model.entities, ...model.relations, ...model.facts, ...model.routes]) {
@@ -92,10 +92,27 @@ export function securityModelIssues(model: SecurityModel, legacy: readonly Legac
     ids.add(item.id);
   }
   const entities = new Set([...legacy, ...model.entities].map(e => e.id));
+  const canonicalVault = (ref: string | undefined) => {
+    const seen = new Set<string>();
+    while (ref && !seen.has(ref)) {
+      seen.add(ref); const vault = model.entities.find(e => e.id === ref && e.kind === 'vault');
+      if (!vault || vault.kind !== 'vault') return;
+      if (!vault.mergedIntoRef) return vault.id;
+      ref = vault.mergedIntoRef;
+    }
+  };
+  for (const e of model.entities) if ((e.kind === 'vault' || e.kind === 'installation') && e.mergedIntoRef) {
+    const seen = new Set([e.id]); let current = e;
+    while (current.mergedIntoRef) {
+      const target = model.entities.find(t => t.id === current.mergedIntoRef);
+      if (!target || target.kind !== e.kind || target.productId !== e.productId || (e.kind === 'installation' && target.kind === 'installation' && (e.deviceRef !== target.deviceRef || (e.syncAccountRef && e.syncAccountRef !== target.syncAccountRef) || (e.codeStorage && e.codeStorage !== target.codeStorage) || (e.vaultRef && canonicalVault(e.vaultRef) !== canonicalVault(target.vaultRef)))) || (e.kind === 'vault' && target.kind === 'vault' && ((e.authenticationAccountRef && e.authenticationAccountRef !== target.authenticationAccountRef) || (e.storageMode && e.storageMode !== target.storageMode))) || seen.has(target.id)) { issues.push({ code: 'invalid-alias', recordId: e.id, referenceId: current.mergedIntoRef as string }); break; }
+      seen.add(target.id); current = target;
+    }
+  }
   const check = (recordId: string, ref: string | undefined) => { if (ref && !entities.has(ref)) issues.push({ code: 'missing-entity', recordId, referenceId: ref }); };
   for (const e of model.entities) {
-    if (e.kind === 'installation') { check(e.id, e.deviceRef); check(e.id, e.vaultRef); }
-    if (e.kind === 'vault') { check(e.id, e.ownerRef); check(e.id, e.authenticationAccountRef); check(e.id, e.primaryDeviceRef); }
+    if (e.kind === 'installation') { check(e.id, e.mergedIntoRef); check(e.id, e.syncAccountRef); check(e.id, e.deviceRef); check(e.id, e.vaultRef); }
+    if (e.kind === 'vault') { check(e.id, e.mergedIntoRef); check(e.id, e.ownerRef); check(e.id, e.authenticationAccountRef); check(e.id, e.primaryDeviceRef); }
     if (e.kind === 'credential') { check(e.id, e.subjectRef); check(e.id, e.storageRef); }
     if (e.kind === 'identifier') check(e.id, e.subjectRef);
     if (e.kind === 'phone-line') { check(e.id, e.deviceRef); check(e.id, e.carrierAccountRef); }

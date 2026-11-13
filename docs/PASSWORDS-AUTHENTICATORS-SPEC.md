@@ -1,6 +1,6 @@
 # パスワード管理・認証アプリ 製品別補完仕様
 
-版: 1.1 / 調査日: 2026-11-13
+版: 1.2 / 調査日: 2026-11-13
 
 この文書は `PRODUCT-SPEC.md` の7・8・11・12・14・17章を補完する必須仕様です。製品名を列挙しただけでは対応完了としません。具体的な操作・保存先・復旧・移行・利用テストを一つの単位として実装します。既存の製品を利用する人にも、OS組込みの機能だけを使う人にも対応します。
 
@@ -312,7 +312,11 @@ Google Accountを開くためのコードが同じAccountに同期されてい�
 
 個人用TOTP・他サービスのTOTPと、仕事／学校のアカウントやパスワードレスの登録を区別します。バックアップを復元しただけで、すべての登録がそのまま使えると説明しません。Microsoftは、仕事・学校では再サインイン・再登録が必要で、OSの種類をまたぐ復元にも制限があると説明しています。[公式復元説明](https://support.microsoft.com/en-us/authenticator/restore-account-credentials-from-microsoft-authenticator)
 
-旧端末を残した移行と、紛失した状態からの復旧を別にします。勤務先の再登録が必要なら管理者の手順へ分岐します。
+旧端末を残した移行と、紛失した状態からの復旧を別にします。勤務先の再登録が必要なら管理者の手順へ分岐します。同じOS間の復元と、異なるOSで各サービスへ登録し直す作業を分けます。名前が戻ったことをコード・通知・パスワードレスが使えた確認にしません。
+
+2026-11-13の公式資料では、Androidの現行バックアップはSettingsのCloud Backupから個人Microsoft Accountを選ぶ方式です。**2027年1月からGoogle One側のMicrosoft Authenticatorバックアップへ変更する予定**が明記されています。日付だけで利用者のアプリを新版と決めず、アプリ版・実際の表示・OSバックアップの対象を確認するレシピへ分けます。iOSはiCloud Drive・キーチェーン・バックアップとAuthenticatorの対象指定が前提です。旧端末の6.8.33以降への更新と一度起動する条件も、適用版を明示して扱います。[公式バックアップ説明](https://support.microsoft.com/en-us/authenticator/back-up-your-accounts-in-microsoft-authenticator)。資料確認日: 2026-11-13。
+
+現行の復元資料にはOS・版で異なる開始操作が掲載されています。iOSの復元と、Microsoft Accountで「Restore from backup / Begin recovery」へ進む経路を一つに混ぜません。新端末に唯一のコードがある場合、再インストール・サインアウト・バックアップ削除を一般的な解決策として勧めません。元のコードを残せる適用条件と復元元を確認してから案内します。[公式復元説明](https://support.microsoft.com/en-us/authenticator/restore-account-credentials-from-microsoft-authenticator)。これらのバックアップ・復元専用経路は未実装です。
 
 ### A4.3 2FAS Auth
 
@@ -336,7 +340,11 @@ iOSのiCloudとAndroidのGoogle Driveの同期先を別に記録します。同�
 
 ### A4.7 Bitwarden Authenticator
 
-ローカルコード、Password Managerとの同期、OSの端末バックアップを分けます。独立したアプリだから常に保管庫と独立している、と扱いません。保管庫自身のMFAを同じ保管庫へ同期しない経路と、復旧コードの外部保管を案内します。[公式の保存先・違いの説明](https://bitwarden.com/help/bitwarden-authenticator/)
+ローカルコード、Password Managerとの同期、OSの端末バックアップを分けます。独立したアプリだから常に保管庫と独立している、と扱いません。保管庫自身のMFAを同じ保管庫へ同期しない経路と、復旧コードの外部保管を案内します。新規追加は「Save here」と「Save to Bitwarden」を区別し、同じアプリにローカル・同期コードが混在し得ることをモデルに残します。[公式の保存先・違いの説明](https://bitwarden.com/help/bitwarden-authenticator/)
+
+ローカルの移行は、旧端末のSettings → ExportでJSON / CSVを選び、Export itemsから書き出し、新端末で対象形式を読み込む経路です。このエクスポートに同期中の保管庫項目は含まれません。ファイルは秘密キーを含む読取り可能な形式として扱い、暗号化エクスポートとは案内しません。安全な転送・保管と、新端末での読込み・サービス側の受け付け確認後の一時コピー整理を一連にします。保管庫同期のコードは別の復元元・ログイン・復号条件を確認します。[公式のImport and Export](https://bitwarden.com/help/authenticator-import-export/)。資料確認日: 2026-11-13。
+
+OSによるバックアップ、アプリ内データの保護、読取り可能な書き出しファイルの保護を同じ「暗号化済み」にまとめません。今回の登録ガイドでは新しいコードを端末内へ保存しますが、既存の同期項目・OSバックアップの有無は未確認のまま保持します。バックアップ・移行・復元専用経路は追加対象です。
 
 ### A4.8 Authy
 
@@ -609,3 +617,5 @@ FirefoxではPrimary PasswordとMozilla Accountによる同期を別の役割と
 登録する製品名の数を完了率の分母にしません。本人が選んだアカウント・役割・経路の必要作業だけを進捗として扱います。
 
 Apple・Google組込みの段階的な実装は、[組込み管理の実装契約](BUILTIN-MANAGERS-GUIDE.md)で管理します。本仕様の全経路を完了した状態とは区別し、公開済みOS・保存方式・機種変更・未対応の復元を明記します。
+
+認証アプリの段階的な実装は、[認証アプリの実装契約](AUTHENTICATOR-GUIDE.md)で管理します。Google・Microsoft・Bitwardenの新規コード登録と、製品別のバックアップ・復元・機種変更は別の対応範囲です。

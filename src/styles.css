@@ -25,3 +25,7 @@
 .phone-guide .guide-actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-block: 1.5rem; }
 .phone-guide .guide-back a { min-height: 44px; display: inline-flex; align-items: center; }
 .phone-guide .help-panel { border: 1px solid var(--line); border-radius: 12px; padding: 1rem; margin-block: 1rem; }
+
+.choice > span:only-of-type { flex: 1; min-width: 0; }
+:lang(ja) .choice strong { line-break: strict; overflow-wrap: break-word; }
+:lang(ja) .guide-card h1 { text-wrap: balance; line-break: strict; }
