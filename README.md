@@ -1,4 +1,4 @@
-# Personal Cybersecurity OS
+# Cyber-Security-Map
 
 アカウントや端末の保護状態を自分で確認し、必要な対策を整理するアプリです。
 

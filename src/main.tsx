@@ -13,8 +13,9 @@ function OfflineRegistration() {
   return null;
 }
 
-const labPath = '/lab/personal-cyber-os';
-const routerBase = window.location.pathname === labPath || window.location.pathname.startsWith(`${labPath}/`) ? labPath : '/';
+// Retain the previous base path so existing bookmarks and installed apps still open.
+const labPaths = ['/lab/cyber-security-map', '/lab/personal-cyber-os'];
+const routerBase = labPaths.find((path) => window.location.pathname === path || window.location.pathname.startsWith(`${path}/`)) ?? '/';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

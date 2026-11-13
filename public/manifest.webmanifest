@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Personal Cybersecurity OS",
-  "short_name": "Personal Cyber",
-  "description": "A private, local-first guide to your personal cybersecurity.",
+  "name": "Cyber-Security-Map",
+  "short_name": "Cyber-Security-Map",
+  "description": "Cyber-Security-Map helps you review your digital security and plan your next steps.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

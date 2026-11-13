@@ -2,6 +2,7 @@ import { datasetSchema, envelopeSchema, type Dataset, type VaultEnvelope } from 
 import { CHECKUP_CONTROLS, controlKey } from './checkupCatalog';
 
 const ITERATIONS = 600_000;
+// Stable storage ID: existing installations must keep finding their encrypted vault.
 const DB_NAME = 'personal-cyber-os';
 const STORE_NAME = 'encrypted-vault';
 const VAULT_KEY = 'primary';
@@ -135,7 +136,7 @@ export function downloadEncryptedBackup(envelope: VaultEnvelope): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `personal-cyber-os-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  anchor.download = `cyber-security-map-backup-${new Date().toISOString().slice(0, 10)}.json`;
   anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }

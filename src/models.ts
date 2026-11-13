@@ -91,6 +91,7 @@ export const datasetSchema = z.object({
 });
 export type Dataset = z.infer<typeof datasetSchema>;
 
+// Keep the persisted format ID stable for compatibility with existing backups.
 export const envelopeSchema = z.object({
   format: z.literal('personal-cyber-os-v1'), algorithm: z.literal('AES-256-GCM'), kdf: z.literal('PBKDF2-SHA-256'),
   iterations: z.number().min(600_000), salt: z.string(), iv: z.string(), ciphertext: z.string(),

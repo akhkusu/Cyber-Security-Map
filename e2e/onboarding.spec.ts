@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 test.setTimeout(60_000);
 
 async function createWorkspace(page: Page) {
-  await page.goto('/lab/personal-cyber-os');
+  await page.goto('/lab/cyber-security-map');
   await page.locator('.language-picker select').selectOption('en');
   await page.getByRole('button', { name: 'Start Security Checkup' }).click();
   await page.getByLabel('App passphrase', { exact: true }).fill('my private app phrase');
@@ -61,7 +61,7 @@ test('a new user receives a tailored plan and can manage a digital asset', async
   await expect(page.getByText(/mark it lost or lock it/)).toBeVisible();
   const planReady = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export offline emergency plan' }).click();
-  expect((await planReady).suggestedFilename()).toContain('personal-cyber-os-emergency-plan');
+  expect((await planReady).suggestedFilename()).toContain('cyber-security-map-emergency-plan');
 });
 
 test('the vault encrypts saved data and rejects a wrong passphrase', async ({ page }) => {
@@ -103,7 +103,7 @@ test('an encrypted backup can be exported and restored', async ({ page }) => {
   const download = await downloadReady;
   const backupPath = await download.path();
   if (!backupPath) throw new Error('Backup download did not create a file');
-  expect(download.suggestedFilename()).toContain('personal-cyber-os-backup');
+  expect(download.suggestedFilename()).toContain('cyber-security-map-backup');
 
   page.on('dialog', (dialog) => dialog.accept());
   await page.getByLabel('Choose backup file').setInputFiles(backupPath);

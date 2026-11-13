@@ -15,6 +15,7 @@ type Notice = { kind: 'success' | 'error'; text: string } | null;
 const tx = (language: Language, en: string, ja: string) => language === 'ja' ? ja : en;
 const detectedLanguage = (): Language => {
   let saved: string | null = null;
+  // Preserve the existing preference key across display-name changes.
   try { saved = localStorage.getItem('pcos-language'); } catch { /* Storage can be disabled by the browser. */ }
   if (saved === 'en' || saved === 'ja') return saved;
   try {
@@ -139,7 +140,7 @@ function StorageRecovery({ language, onLanguage, onRestore, onReset }: { languag
 }
 
 function Brand({ compact = false }: { compact?: boolean }) {
-  return <div className={`brand ${compact ? 'brand-compact' : ''}`}><span className="brand-mark"><ShieldCheck size={20} strokeWidth={2.3} /></span><span className="brand-copy"><strong>personal cyber OS</strong><small>your private security coach</small></span></div>;
+  return <div className={`brand ${compact ? 'brand-compact' : ''}`}><span className="brand-mark"><ShieldCheck size={20} strokeWidth={2.3} /></span><span className="brand-copy"><strong>Cyber-Security-Map</strong><small>your private security coach</small></span></div>;
 }
 
 function LanguagePicker({ language, onChange, small = false }: { language: Language; onChange: (language: Language) => void; small?: boolean }) {
