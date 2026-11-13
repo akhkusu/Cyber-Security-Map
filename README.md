@@ -18,6 +18,12 @@ docker compose up --build -d --wait
 docker compose down
 ```
 
+## GitHub Pages
+
+`Settings → Pages → Source` を `GitHub Actions` に設定すると、`main` の更新時にビルド・テスト後のアプリを公開します。
+
+公開先: <https://akhkusu.github.io/Cyber-Security-Map/>（Pages設定とデプロイ完了後）。非公開リポジトリでの利用にはGitHub Pro等の対応プランが必要です。公開時の制約は [SECURITY.md](./SECURITY.md#公開ホスティング) を確認してください。
+
 ## 使い方
 
 1. 初回ガイドでアカウントや端末をニックネームで登録します。

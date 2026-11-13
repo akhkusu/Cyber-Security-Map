@@ -1,15 +1,14 @@
 {
-  "id": "/",
   "name": "Cyber-Security-Map",
   "short_name": "Cyber-Security-Map",
   "description": "Cyber-Security-Map helps you review your digital security and plan your next steps.",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#f5f5ef",
   "theme_color": "#f5f5ef",
   "lang": "ja",
   "icons": [
-    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    { "src": "./icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]
 }
