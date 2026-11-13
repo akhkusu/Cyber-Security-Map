@@ -64,8 +64,10 @@ describe('optional personal phone change', () => {
   });
 
   it('lets the user keep a phone without any wipe or handover requirement', () => {
-    const data = fixture(); data.deviceWorkflows[0].answers['old-fate'] = 'spare';
+    let data = fixture(); data.deviceWorkflows[0].answers['old-fate'] = 'spare';
     expect(phoneSteps(data, data.deviceWorkflows[0]).some(s => s.id === 'erase-old')).toBe(false);
+    expect(confirmAt(data, 'keep-old').securityModel.lifecycle.old).toBeUndefined();
+    data = confirmBefore(data, 'keep-old');
     const next = confirmAt(data, 'keep-old');
     expect(next.securityModel.lifecycle.old).toMatchObject({ state: 'backup', evidence: 'user-confirmed' });
     expect(next.guide).toEqual(data.guide);

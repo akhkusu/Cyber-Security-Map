@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { lifecycleSchema } from './securityModel';
 
 export const phoneWorkflowSchema = z.object({
   id: z.string().min(1), kind: z.literal('phone-change'), createdAt: z.string(), updatedAt: z.string(),
@@ -13,6 +14,8 @@ export const phoneWorkflowSchema = z.object({
     targetRef: z.string().optional(), controlId: z.string().optional(),
     factIds: z.array(z.string()).default([]), sourceIds: z.array(z.string()).default([]),
     physicalEffect: z.boolean().default(false),
+    roleEffect: z.object({ targetRef: z.string(), state: z.enum(['in-use', 'backup']), baseline: lifecycleSchema.optional() }).passthrough().optional(),
+    requiredPhoneRecords: z.array(z.string()).optional(),
   }).passthrough()).default({}),
 }).passthrough();
 export type PhoneWorkflow = z.infer<typeof phoneWorkflowSchema>;

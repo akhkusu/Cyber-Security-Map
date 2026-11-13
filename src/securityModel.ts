@@ -63,7 +63,7 @@ export const accessRouteSchema = z.object({
   sourceIds: z.array(id).default([]),
 }).passthrough();
 export type AccessRoute = z.infer<typeof accessRouteSchema>;
-const lifecycleSchema = z.object({
+export const lifecycleSchema = z.object({
   state: z.enum(['unknown', 'in-use', 'backup', 'unavailable', 'lost', 'transferred', 'retired', 'revoked', 'deleted']), evidence: z.enum(EVIDENCE), updatedAt: time, accessResetAt: time.optional(),
 }).passthrough();
 const controlBaselineSchema = z.object({

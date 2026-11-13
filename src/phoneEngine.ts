@@ -122,8 +122,14 @@ export function confirmPhoneStep(data: Dataset, workflowId: string, now = new Da
   }
   if (step.id === 'erase-old' && workflow.oldDeviceRef) next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [workflow.oldDeviceRef]: { ...next.securityModel.lifecycle[workflow.oldDeviceRef], state: 'retired', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now } } } };
   if (step.id === 'handoff-check' && workflow.oldDeviceRef) next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [workflow.oldDeviceRef]: { ...next.securityModel.lifecycle[workflow.oldDeviceRef], state: 'transferred', evidence: 'user-confirmed', updatedAt: now, accessResetAt: next.securityModel.lifecycle[workflow.oldDeviceRef]?.accessResetAt ?? now } } } };
-  if (step.id === 'keep-old' && workflow.oldDeviceRef) next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [workflow.oldDeviceRef]: { ...next.securityModel.lifecycle[workflow.oldDeviceRef], state: workflow.answers['old-fate'] === 'spare' ? 'backup' : 'in-use', evidence: 'user-confirmed', updatedAt: now } } } };
-  const records = { ...workflow.records, [key]: { ...workflow.records[key], stepId: step.id, titleEn: step.title.en, titleJa: step.title.ja, status: 'confirmed' as const, updatedAt: now, extraControls: step.extraControls, targetRef: step.control?.targetRef ?? (step.physicalEffect ? workflow.oldDeviceRef : undefined), controlId: step.control?.id, factIds, sourceIds: step.sources, physicalEffect: !!step.physicalEffect } };
+  let roleEffect: PhoneWorkflow['records'][string]['roleEffect'];
+  if (step.id === 'keep-old' && workflow.oldDeviceRef && ['keep', 'spare'].includes(workflow.answers['old-fate'])) {
+    const ref = workflow.oldDeviceRef, previous = next.securityModel.lifecycle[ref];
+    const original = next.deviceWorkflows.flatMap(w => Object.values(w.records)).find(r => r.status === 'confirmed' && r.roleEffect?.targetRef === ref && (!previous?.accessResetAt || Date.parse(r.updatedAt) > Date.parse(previous.accessResetAt)))?.roleEffect;
+    roleEffect = { targetRef: ref, state: workflow.answers['old-fate'] === 'spare' ? 'backup' : 'in-use', baseline: original ? original.baseline : previous };
+    next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [ref]: { ...previous, state: roleEffect.state, evidence: 'user-confirmed', updatedAt: now, phoneRoleRecordId: key } } } };
+  }
+  const records = { ...workflow.records, [key]: { ...workflow.records[key], stepId: step.id, titleEn: step.title.en, titleJa: step.title.ja, status: 'confirmed' as const, updatedAt: now, extraControls: step.extraControls, targetRef: step.control?.targetRef ?? (step.physicalEffect ? workflow.oldDeviceRef : undefined), controlId: step.control?.id, factIds, sourceIds: step.sources, physicalEffect: !!step.physicalEffect, roleEffect, requiredPhoneRecords } };
   return advance(next, { ...workflow, records }, step.id);
 }
 export function deferPhoneStep(data: Dataset, workflowId: string, now = new Date().toISOString()): Dataset {
@@ -150,6 +156,21 @@ export function backPhoneStep(data: Dataset, workflowId: string): Dataset {
 }
 export function undoPhoneRecord(data: Dataset, workflowId: string, key: string, now = new Date().toISOString()): Dataset {
   if (data.version !== 2) return data;
+  if (!data.deviceWorkflows.find(w => w.id === workflowId)?.records[key]) return data;
+  // A role confirmation cannot outlive a withdrawn check it depended on.
+  const roles = data.deviceWorkflows.flatMap(w => Object.entries(w.records).filter(([, r]) => r.roleEffect).map(([id, r]) => ({ workflowId: w.id, id, requires: r.requiredPhoneRecords ?? [] })));
+  const pending = [{ workflowId, id: key }], ordered: typeof pending = [], visited = new Set<string>();
+  while (pending.length) {
+    const item = pending.pop()!, visitKey = JSON.stringify([item.workflowId, item.id]);
+    if (visited.has(visitKey)) continue;
+    visited.add(visitKey); ordered.push(item);
+    pending.push(...roles.filter(r => r.requires.includes(item.id) && !visited.has(JSON.stringify([r.workflowId, r.id]))));
+  }
+  for (const item of ordered.reverse()) data = undoSinglePhoneRecord(data, item.workflowId, item.id, now);
+  return data;
+}
+function undoSinglePhoneRecord(data: Dataset, workflowId: string, key: string, now: string): Dataset {
+  if (data.version !== 2) return data;
   const workflow = data.deviceWorkflows.find(w => w.id === workflowId), record = workflow?.records[key];
   if (!workflow || !record) return data;
   let next: CurrentDataset = data;
@@ -160,6 +181,19 @@ export function undoPhoneRecord(data: Dataset, workflowId: string, key: string, 
   const facts = next.securityModel.facts.map(f => record.factIds.includes(f.id) ? { ...f, state: 'unknown' as const, evidence: 'unknown' as const } : f);
   const routes = next.securityModel.routes;
   const records = { ...workflow.records }; delete records[key];
+  if (record.roleEffect) {
+    const ref = record.roleEffect.targetRef, life = next.securityModel.lifecycle[ref];
+    if (life?.phoneRoleRecordId === key && life.state === record.roleEffect.state && life.updatedAt === record.updatedAt) {
+      const remaining = next.deviceWorkflows.flatMap(w => Object.entries(w.records))
+        .filter(([id, r]) => id !== key && r.status === 'confirmed' && r.roleEffect?.targetRef === ref && (!life.accessResetAt || Date.parse(r.updatedAt) > Date.parse(life.accessResetAt)))
+        .sort(([idA, a], [idB, b]) => a.updatedAt.localeCompare(b.updatedAt) || idA.localeCompare(idB)).at(-1);
+      const lifecycle = { ...next.securityModel.lifecycle };
+      if (remaining) lifecycle[ref] = { ...life, state: remaining[1].roleEffect!.state, updatedAt: remaining[1].updatedAt, phoneRoleRecordId: remaining[0] };
+      else if (record.roleEffect.baseline) lifecycle[ref] = record.roleEffect.baseline;
+      else delete lifecycle[ref];
+      next = { ...next, securityModel: { ...next.securityModel, lifecycle } };
+    }
+  }
   // A corrected record cannot undo a real wipe or revive an old authentication
   // device. Keep it retired until its current role has been explicitly checked.
   let physicalTarget = record.targetRef;

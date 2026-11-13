@@ -4,6 +4,7 @@ import { builtinManagerRecipe } from './nativeManagerCatalog';
 import { nativeInstallation, nativeVault, NATIVE_NAMES, type NativeProduct } from './nativeManagers';
 import { c, deviceRecipe, emailRecipe, SOURCES, type Copy, type Source, type GuideStep } from './guideCatalog';
 import { authenticatorInventory, authenticatorMigrationSteps, hasRecordedAuthenticators, needsGoogleTransfer, recordedAuthenticators } from './phoneAuthenticators';
+import { retainedPhoneSteps } from './phoneRetention';
 
 const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-13', reviewMethod: 'official-documentation' });
 export const PHONE_SOURCES: Record<string, Source> = {
@@ -222,7 +223,14 @@ export function phoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] 
   steps.push(question('old-fate', c('What will you do with the previous phone?', 'これまでのスマホを、どうしますか？'), [choice('keep', 'Keep using it', '自分で使い続ける'), choice('spare', 'Keep it as a backup phone', '予備として残す'), choice('give', 'Give it to someone else', '家族などへ譲る'), choice('sell', 'Sell or trade it in', '売る・下取りに出す'), choice('recycle', 'Recycle or dispose of it', '処分する'), choice('undecided', 'Decide later', 'まだ決めていない')]));
   if (!answers['old-fate']) return steps;
   if (['keep', 'spare', 'undecided'].includes(answers['old-fate'])) {
-    steps.push(action('keep-old', c(answers['old-fate'] === 'spare' ? 'Check that your backup phone is usable' : 'Keep the previous phone protected', answers['old-fate'] === 'spare' ? '予備のスマホを使える状態にする' : '旧端末の保護を続ける'), c(`Previous phone · ${old.name}`, `これまでのスマホ · ${old.name}`), c('Keep its screen lock and updates enabled. Unlock it and confirm the functions you intend to keep still work. Two phones depending on the same cloud account are not independent recovery for loss of that account. Do not manually delete synced passwords, photos or contacts to tidy this phone.', '画面ロックと更新を維持してください。実際に解除し、残す用途を使えるか確認します。同じクラウドに頼る2台は、そのアカウントを失ったときの独立した予備にはなりません。整理のために同期中のパスワード・写真・連絡先を手作業で消さないでください。'), c('The old phone works for the role you are keeping. No erasure is required.', '旧端末を、残す用途で利用できること。初期化は必要ありません。'), [old.id], ['appleSale', 'googleAuth']));
+    // Preserve prior summary confirmations without inventing the new detailed checks.
+    const legacy = workflow.records[JSON.stringify([workflow.id, 'keep-old', [old.id], ''])];
+    const previousRole = data.version === 2 ? data.securityModel.lifecycle[old.id]?.state : undefined;
+    const expectedRole = answers['old-fate'] === 'spare' ? 'backup' : 'in-use';
+    const hasDetailedSummary = ['keep', 'spare'].some(fate => !!workflow.records[JSON.stringify([workflow.id, 'keep-old', [old.id], fate])]);
+    if (legacy?.status === 'confirmed' && !hasDetailedSummary && answers.availability === 'available' && answers['old-fate'] !== 'undecided' && previousRole === expectedRole) {
+      steps.push(action('keep-old', c('Your previous phone-role confirmation is saved', '旧端末の用途の確認を保存しています'), c(`Previous phone · ${old.name}`, `これまでのスマホ · ${old.name}`), c('The earlier summary confirmation remains saved. It does not create separate screen-lock, update or account-use checks. Correct the record if the phone’s role has changed.', '以前のまとめた確認を保持しています。画面ロック・更新・アカウント利用の個別確認は追加しません。用途が変わった場合は、この記録を訂正できます。'), c('The recorded role still matches your intention.', '保存した用途が今の意図と一致していること。'), [old.id], []));
+    } else steps.push(...retainedPhoneSteps(old, workflow));
   } else {
     if (answers.availability !== 'available') steps.push(blocked('inaccessible-handoff', c('The old phone cannot be cleared through this route', '操作できない旧端末の情報を、まだ消去確認できていません'), c('A broken or locked phone needs an appropriate remote or manufacturer-specific procedure. Do not hand it over as cleared. Keep this task unfinished until its data and ownership protection can be verified.', '故障・ロックなどで操作できない端末には、遠隔操作やメーカー固有の対応が必要です。情報を消去済みとして渡さず、データと所有者の保護を確認できるまで未完了で残します。'), [old.id, fresh.id], old.operatingSystem === 'ios' ? ['appleSale'] : ['androidReset']));
     steps.push({ id: 'handoff-gate', kind: 'gate', title: c('Check what remains before erasing', '消去前に、残っている作業を確認する'), refs: [old.id, fresh.id], sources: [], button: c('Continue to handover preparation', '手放す準備へ進む') });

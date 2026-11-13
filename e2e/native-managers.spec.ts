@@ -84,7 +84,7 @@ test('native setup returns from missing account authentication without changing 
 });
 
 import { chooseNativeDevice, configureNativeStorage, makeNativeVault, selectedNativeInstallation } from '../src/nativeManagers';
-import { startPhoneWorkflow } from '../src/phoneEngine';
+import { confirmPhoneStep, jumpPhoneStep, startPhoneWorkflow } from '../src/phoneEngine';
 function phoneFixture(product: NativeProduct, newOs: 'ios' | 'android') {
   let data = fixture(product, product === 'apple-passwords' ? 'ios' : 'android');
   const old = data.assets[1], root = data.assets[0];
@@ -97,6 +97,9 @@ function phoneFixture(product: NativeProduct, newOs: 'ios' | 'android') {
   data.assets.push(fresh);
   data = startPhoneWorkflow(data, '/guide', old.id, 'native-phone-task');
   Object.assign(data.deviceWorkflows[0], { newDeviceRef: fresh.id, cursor: `native-use:${vaultId}`, answers: { stage: 'using', availability: 'available', ownership: 'personal', authenticator: 'none', [`use:${root.id}`]: 'yes' } });
+  // This fixture starts after preparation, with the previous phone's backup checked.
+  data = confirmPhoneStep(jumpPhoneStep(data, 'native-phone-task', 'old-backup-check'), 'native-phone-task') as CurrentDataset;
+  data = jumpPhoneStep(data, 'native-phone-task', `native-use:${vaultId}`) as CurrentDataset;
   return { data, vaultId, root, fresh, old };
 }
 async function phoneConfirmUntil(page: Page, heading: string, limit = 20) {
@@ -146,7 +149,8 @@ for (const [product, os] of [['apple-passwords', 'ios'], ['google-password-manag
     await expect(page.getByRole('link', { name: '正規のアプリ・設定画面を開く' })).toHaveAttribute('href', product === 'apple-passwords' ? 'https://account.apple.com/' : 'https://myaccount.google.com/');
     await advance(page, '保存したパスワードで利用できました');
     await advance(page, '決済・電子ID・トーク履歴・仕事用認証などは使っていない'); await advance(page, 'これらの端末では電話回線を使わない');
-    await phoneConfirmUntil(page, 'これまでのスマホを、どうしますか？'); await advance(page, '予備として残す'); await advance(page, '確認しました');
+    await phoneConfirmUntil(page, 'これまでのスマホを、どうしますか？'); await advance(page, '予備として残す');
+    await phoneConfirmUntil(page, '機種変更の作業を保存しました');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('機種変更の作業を保存しました');
     const data = currentDatasetSchema.parse((await decryptVault(await readSavedVault(page), passphrase)).data);
     expect(data.guide).toEqual(main); expect(data.assets).toHaveLength(3);

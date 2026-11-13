@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { decryptVault } from '../src/crypto';
 import { currentDatasetSchema, makeAsset, newDataset, type Dataset } from '../src/models';
-import { startPhoneWorkflow } from '../src/phoneEngine';
+import { confirmPhoneStep, jumpPhoneStep, startPhoneWorkflow } from '../src/phoneEngine';
 import { phoneSteps } from '../src/phoneCatalog';
 import { advance, passphrase, readSavedVault, sealRawVault, writeSavedVault } from './helpers';
 
@@ -45,7 +45,8 @@ test('optional phone change: inline checks, resume, keep as spare, shared map an
   await advance(page, '認証アプリは使っていない'); await advance(page, 'はい・新端末で確認する'); await advance(page, 'ログインできました');
   await advance(page, '決済・電子ID・トーク履歴・仕事用認証などは使っていない'); await advance(page, 'これらの端末では電話回線を使わない');
   await confirmUntil(page, '消去する端末の外で、このガイドを続けられるようにする');
-  await advance(page, '確認しました'); await advance(page, '予備として残す'); await advance(page, '確認しました');
+  await advance(page, '確認しました'); await advance(page, '予備として残す');
+  await confirmUntil(page, '機種変更の作業を保存しました');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('機種変更の作業を保存しました');
   const final = currentDatasetSchema.parse(await savedData(page));
   expect(final.guide).toEqual(original.guide); expect(final.securityModel.lifecycle.old.state).toBe('backup');
@@ -65,11 +66,14 @@ test('handover gate blocks missing app transfer, keeps work saved, and supports 
   data = startPhoneWorkflow(data, '/map', 'old', 'test-workflow');
   const workflow = data.deviceWorkflows[0]; workflow.newDeviceRef = 'fresh'; workflow.cursor = 'handoff-gate';
   workflow.answers = { stage: 'using', availability: 'available', ownership: 'personal', authenticator: 'other', 'use:apple': 'yes', 'special-apps': 'none', 'phone-line': 'working', imessage: 'no', 'old-fate': 'sell', 'ios-generation': '18' };
+  const backup = phoneSteps(data, workflow).find(s => s.id === 'old-backup-check')!;
+  workflow.records[JSON.stringify([workflow.id, backup.id, backup.refs, ''])] = { stepId: backup.id, titleEn: backup.title.en, titleJa: backup.title.ja, status: 'confirmed', updatedAt: '2026-11-13T12:00:00Z', factIds: [], sourceIds: backup.sources, physicalEffect: false };
   await openSaved(page, data); await page.locator('.phone-launcher a').first().click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('消去前に、残っている作業を確認する');
   await expect(page.getByRole('button', { name: '手放す準備へ進む', exact: true })).toBeDisabled();
   await expect(page.locator('.handoff-gate')).toContainText('認証アプリごとの移行手順が必要です');
-  await advance(page, '今は旧端末を残す'); await advance(page, '自分で使い続ける'); await advance(page, '確認しました');
+  await advance(page, '今は旧端末を残す'); await advance(page, '自分で使い続ける');
+  await confirmUntil(page, '機種変更の作業を保存しました');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('機種変更の作業を保存しました');
   await expect(page.locator('.phone-guide')).toContainText('未完了です');
   const final = currentDatasetSchema.parse(await savedData(page)); expect(final.securityModel.lifecycle.old.state).toBe('in-use');
@@ -106,4 +110,34 @@ test('legacy payload starts the optional workflow without re-registering account
   const classified = currentDatasetSchema.parse(await savedData(page));
   expect(classified.assets).toHaveLength(raw.assets.length); expect(classified.assets[0].id).toBe('old'); expect(classified.assets[0].operatingSystem).toBe('ios');
   expect(classified.assets[0].controls).toEqual(raw.assets[0].controls); expect(classified.guide).toEqual(raw.guide);
+});
+
+test('retained spare checks resume in place, support English keyboard use and withdraw an undone role', async ({ page }) => {
+  const original = dataFixture();
+  original.assets.push({ ...makeAsset({ kind: 'device', type: 'Smartphone', name: '新iPhone', importance: 'critical', operatingSystem: 'ios' }), id: 'fresh' });
+  let data: Dataset = startPhoneWorkflow(original, '/guide', 'old', 'retained-spare');
+  const workflow = data.deviceWorkflows[0];
+  Object.assign(workflow, { newDeviceRef: 'fresh', answers: { stage: 'using', availability: 'available', ownership: 'personal', authenticator: 'none', 'use:apple': 'yes', 'special-apps': 'none', 'phone-line': 'no-line', 'old-fate': 'spare' } });
+  data = confirmPhoneStep(jumpPhoneStep(data, workflow.id, 'old-backup-check'), workflow.id);
+  data = jumpPhoneStep(data, workflow.id, 'keep-lock');
+  await openSaved(page, data); await page.locator('.phone-launcher a').first().click();
+  await confirmUntil(page, '旧端末だけで使えるか確認する');
+  expect(currentDatasetSchema.parse(await savedData(page)).securityModel.lifecycle.old).toBeUndefined();
+  await page.reload(); await page.getByLabel('アプリの保存用パスフレーズ', { exact: true }).fill(passphrase); await advance(page, '開いて再開する');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('旧端末だけで使えるか確認する');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: `${process.env.ARTIFACT_DIR ?? '/tmp'}/security-map-retained-spare-ja.png`, fullPage: true });
+  await page.locator('.language-picker select').selectOption('en');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Try the old phone on its own');
+  const metrics = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth })); expect(metrics.scroll).toBeLessThanOrEqual(metrics.width);
+  await page.screenshot({ path: `${process.env.ARTIFACT_DIR ?? '/tmp'}/security-map-retained-spare-en.png`, fullPage: true });
+  await page.getByRole('button', { name: 'It worked', exact: true }).focus(); await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Store the spare where you can retrieve it');
+  await advance(page, 'I stored the spare');
+  let final = currentDatasetSchema.parse(await savedData(page)); expect(final.securityModel.lifecycle.old.state).toBe('backup');
+  expect({ ...final.guide }).toEqual(original.guide); expect(final.securityModel.routes).toEqual([]);
+  await page.getByText('Saved confirmations', { exact: true }).click();
+  await page.locator('.records div').filter({ hasText: 'Store the spare where you can retrieve it' }).getByRole('button', { name: 'Undo', exact: true }).click();
+  final = currentDatasetSchema.parse(await savedData(page)); expect(final.securityModel.lifecycle.old).toBeUndefined();
+  expect(final.guide).toEqual(original.guide);
 });
