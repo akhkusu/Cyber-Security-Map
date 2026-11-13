@@ -47,7 +47,7 @@ test('offline shell caches static app files but never assessment records', async
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   const cached = await page.evaluate(async () => {
-    const cache = await caches.open('personal-cyber-os-shell-v4');
+    const cache = await caches.open('cyber-security-map-shell-v5');
     return (await cache.keys()).map((request) => new URL(request.url).pathname);
   });
   expect(cached.some((path) => path.endsWith('.js'))).toBe(true);

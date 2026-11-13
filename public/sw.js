@@ -1,4 +1,4 @@
-const CACHE_NAME = 'personal-cyber-os-shell-v4';
+const CACHE_NAME = 'cyber-security-map-shell-v5';
 const STATIC_PATH = /^\/(?:assets\/[^/]+\.(?:js|css)|manifest\.webmanifest|icons\/[^/]+\.svg|favicon\.svg)$/;
 
 self.addEventListener('install', (event) => {

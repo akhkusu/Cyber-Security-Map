@@ -30,7 +30,7 @@ const importanceLabel = (language: Language, value: Importance) => ({
   critical: tx(language, 'Critical', '最重要'), important: tx(language, 'Important', '重要'), useful: tx(language, 'Useful', '参考'),
 }[value]);
 function Brand({ compact = false }: { compact?: boolean }) {
-  return <div className={`brand ${compact ? 'brand-compact' : ''}`}><span className="brand-mark"><ShieldCheck size={20} strokeWidth={2.3} /></span><span className="brand-copy"><strong>personal cyber OS</strong><small>your private security coach</small></span></div>;
+  return <div className={`brand ${compact ? 'brand-compact' : ''}`}><span className="brand-mark"><ShieldCheck size={20} strokeWidth={2.3} /></span><span className="brand-copy"><strong>Cyber-Security-Map</strong><small>your private security coach</small></span></div>;
 }
 
 function LanguagePicker({ language, onChange, small = false }: { language: Language; onChange: (language: Language) => void; small?: boolean }) {
@@ -116,7 +116,7 @@ export function Workspace({ data, language, isDemo, notice, setNotice, persist, 
   const findings = useMemo(() => buildGuidedFindings(data, language), [data, language]);
   const location = useLocation();
   const activePage = navigation.find((item) => item.to === location.pathname);
-  const pageTitle = location.pathname === '/settings' ? tx(language, 'Settings & help', '設定・ヘルプ') : activePage ? tx(language, activePage.en, activePage.ja) : tx(language, 'Personal Cyber OS', 'パーソナル・サイバーOS');
+  const pageTitle = location.pathname === '/settings' ? tx(language, 'Settings & help', '設定・ヘルプ') : activePage ? tx(language, activePage.en, activePage.ja) : 'Cyber-Security-Map';
   const shared = { data, language, persist, findings, onEdit: openEdit, onAdd: openAdd, onComplete: completeFinding, updateIncident, addDependency, deleteDependency, addReview, updateWorkflow };
 
   return <div className={`app-shell ${data.settings.theme === 'dark' ? 'theme-dark' : ''}`}>
@@ -355,7 +355,7 @@ function downloadEmergencyPlan(data: Dataset, language: Language) {
     ['network', 'Home network', 'ホームネットワーク'], ['identity', 'Identity services', 'デジタルID'],
   ];
   const content = [
-    tx(language, 'PERSONAL CYBERSECURITY OS — OFFLINE EMERGENCY PLAN', 'PERSONAL CYBERSECURITY OS — オフライン緊急計画'),
+    tx(language, 'Cyber-Security-Map — OFFLINE EMERGENCY PLAN', 'Cyber-Security-Map — オフライン緊急計画'),
     tx(language, 'This sheet contains sensitive security context. Store it securely and separately from your main device.', 'この用紙には機微なセキュリティ情報が含まれます。メイン端末とは別に安全に保管してください。'),
     tx(language, 'It does not contain passwords, recovery codes, private keys, authentication tokens, or seed phrases.', 'パスワード、復旧コード、秘密鍵、認証トークン、シードフレーズは含みません。'),
     '', tx(language, 'YOUR PREPARATION SUMMARY', '事前準備の概要'),
@@ -388,7 +388,7 @@ function downloadEmergencyPlan(data: Dataset, language: Language) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `personal-cyber-os-emergency-plan-${new Date().toISOString().slice(0, 10)}.txt`;
+  anchor.download = `cyber-security-map-emergency-plan-${new Date().toISOString().slice(0, 10)}.txt`;
   anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -428,7 +428,7 @@ function SettingsPage({ data, language, persist, onLanguage, onLock, onPassphras
     {error && <p className="error-message">{error}</p>}
     <section className="settings-security-note"><ShieldCheck size={20} /><div><strong>{tx(language, 'Local-first by design', 'ローカルファースト設計')}</strong><p>{tx(language, 'No analytics, no cloud sync, no external scripts, and no account credentials. App data is encrypted in IndexedDB while locked.', '分析、クラウド同期、外部スクリプト、アカウント認証情報はありません。ロック中のアプリデータはIndexedDB内で暗号化されています。')}</p></div></section>
     <section className="danger-zone"><div><div className="eyebrow">{tx(language, 'PERMANENT ACTION', '取り消せない操作')}</div><h2>{tx(language, 'Delete local data', 'ローカルデータを削除')}</h2><p>{tx(language, 'This removes the encrypted vault from this browser. Keep a backup first if you may need it.', 'このブラウザーから暗号化保管庫を削除します。必要な場合は先にバックアップを保存してください。')}</p></div><Button variant="danger" onClick={() => void erase()} icon={<Trash2 size={15} />}>{tx(language, 'Delete vault', '保管庫を削除')}</Button></section>
-    <p className="version-footnote">{tx(language, 'Personal Cybersecurity OS · Local workspace · On-demand checkups only', 'Personal Cybersecurity OS · ローカルワークスペース · オンデマンド検査のみ')}</p>
+    <p className="version-footnote">{tx(language, 'Cyber-Security-Map · Local workspace · On-demand checkups only', 'Cyber-Security-Map · ローカルワークスペース · オンデマンド検査のみ')}</p>
   </>;
 }
 function GlobeSymbol() { return <span className="globe-symbol">あ<br />A</span>; }
