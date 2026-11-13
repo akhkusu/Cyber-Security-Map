@@ -28,8 +28,9 @@ export function typedMapStatus(data: Dataset, node: MapItem, language: Language)
   const entity = data.version === 2 ? data.securityModel.entities.find(e => e.id === node.id) : undefined;
   const app = authenticator(data, node.id);
   if (app) {
-    const recorded = authenticatorReady(data, app) && app.controls?.codeAccepted === 'verified';
-    return { tone: recorded ? 'recorded' : 'unknown', label: yes ? recorded ? 'コード登録の記録あり' : 'コードの確認待ち' : recorded ? 'Code registration recorded' : 'Code check needed', reason: yes ? 'この端末のアプリと、サービス側の登録確認' : 'App on this device and service-side registration' };
+    const used = data.version === 2 && app.controls?.codeUse === 'verified' && data.securityModel.routes.some(r => r.purpose === 'second-step' && r.contexts.includes('new-device') && data.securityModel.facts.some(f => f.id === (r.requirements.kind === 'fact' ? r.requirements.factId : '') && f.requiredRefs.includes(app.id)) && evaluateAccess(data.securityModel, r.id, { context: 'new-device', now: new Date().toISOString() }).state === 'available');
+    const recorded = used || (authenticatorReady(data, app) && app.controls?.codeAccepted === 'verified');
+    return { tone: recorded ? 'recorded' : 'unknown', label: yes ? used ? '新端末でコード利用の記録あり' : recorded ? 'コード登録の記録あり' : 'コードの確認待ち' : used ? 'Code used on new phone' : recorded ? 'Code registration recorded' : 'Code check needed', reason: yes ? used ? '新端末のコードを正規サービスが受け付けた記録' : 'この端末のアプリと、サービス側の登録確認' : used ? 'Official service accepted the new phone’s code' : 'App on this device and service-side registration' };
   }
   if (entity?.kind === 'installation' || entity?.kind === 'vault') {
     const required = ['opened', 'storageChecked', 'autofill', 'loginUse'];

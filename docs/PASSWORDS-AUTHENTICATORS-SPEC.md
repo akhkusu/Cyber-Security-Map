@@ -316,7 +316,7 @@ Google Accountを開くためのコードが同じAccountに同期されてい�
 
 2026-11-13の公式資料では、Androidの現行バックアップはSettingsのCloud Backupから個人Microsoft Accountを選ぶ方式です。**2027年1月からGoogle One側のMicrosoft Authenticatorバックアップへ変更する予定**が明記されています。日付だけで利用者のアプリを新版と決めず、アプリ版・実際の表示・OSバックアップの対象を確認するレシピへ分けます。iOSはiCloud Drive・キーチェーン・バックアップとAuthenticatorの対象指定が前提です。旧端末の6.8.33以降への更新と一度起動する条件も、適用版を明示して扱います。[公式バックアップ説明](https://support.microsoft.com/en-us/authenticator/back-up-your-accounts-in-microsoft-authenticator)。資料確認日: 2026-11-13。
 
-現行の復元資料にはOS・版で異なる開始操作が掲載されています。iOSの復元と、Microsoft Accountで「Restore from backup / Begin recovery」へ進む経路を一つに混ぜません。新端末に唯一のコードがある場合、再インストール・サインアウト・バックアップ削除を一般的な解決策として勧めません。元のコードを残せる適用条件と復元元を確認してから案内します。[公式復元説明](https://support.microsoft.com/en-us/authenticator/restore-account-credentials-from-microsoft-authenticator)。これらのバックアップ・復元専用経路は未実装です。
+現行の復元資料にはOS・版で異なる開始操作が掲載されています。iOSの復元と、Microsoft Accountで「Restore from backup / Begin recovery」へ進む経路を一つに混ぜません。新端末に唯一のコードがある場合、再インストール・サインアウト・バックアップ削除を一般的な解決策として勧めません。元のコードを残せる適用条件と復元元を確認してから案内します。[公式復元説明](https://support.microsoft.com/en-us/authenticator/restore-account-credentials-from-microsoft-authenticator)。機種変更の同じOS・確認済み版の経路を[機種変更の実装契約](AUTHENTICATOR-PHONE-MOVE.md)として追加しました。異なるOS・Google One・仕事用等の残る経路は未完了です。
 
 ### A4.3 2FAS Auth
 
@@ -344,7 +344,7 @@ iOSのiCloudとAndroidのGoogle Driveの同期先を別に記録します。同�
 
 ローカルの移行は、旧端末のSettings → ExportでJSON / CSVを選び、Export itemsから書き出し、新端末で対象形式を読み込む経路です。このエクスポートに同期中の保管庫項目は含まれません。ファイルは秘密キーを含む読取り可能な形式として扱い、暗号化エクスポートとは案内しません。安全な転送・保管と、新端末での読込み・サービス側の受け付け確認後の一時コピー整理を一連にします。保管庫同期のコードは別の復元元・ログイン・復号条件を確認します。[公式のImport and Export](https://bitwarden.com/help/authenticator-import-export/)。資料確認日: 2026-11-13。
 
-OSによるバックアップ、アプリ内データの保護、読取り可能な書き出しファイルの保護を同じ「暗号化済み」にまとめません。今回の登録ガイドでは新しいコードを端末内へ保存しますが、既存の同期項目・OSバックアップの有無は未確認のまま保持します。バックアップ・移行・復元専用経路は追加対象です。
+OSによるバックアップ、アプリ内データの保護、読取り可能な書き出しファイルの保護を同じ「暗号化済み」にまとめません。今回の登録ガイドでは新しいコードを端末内へ保存しますが、既存の同期項目・OSバックアップの有無は未確認のまま保持します。機種変更のJSON・対応端末への転送・取込み・実利用・一時ファイル整理と、実際の保管庫Accountの同期確認を追加しました。常設のバックアップ運用・単独復旧等の残る経路は追加対象です。[機種変更の実装契約](AUTHENTICATOR-PHONE-MOVE.md)
 
 ### A4.8 Authy
 
@@ -618,4 +618,4 @@ FirefoxではPrimary PasswordとMozilla Accountによる同期を別の役割と
 
 Apple・Google組込みの段階的な実装は、[組込み管理の実装契約](BUILTIN-MANAGERS-GUIDE.md)で管理します。本仕様の全経路を完了した状態とは区別し、公開済みOS・保存方式・機種変更・未対応の復元を明記します。
 
-認証アプリの段階的な実装は、[認証アプリの実装契約](AUTHENTICATOR-GUIDE.md)で管理します。Google・Microsoft・Bitwardenの新規コード登録と、製品別のバックアップ・復元・機種変更は別の対応範囲です。
+認証アプリの段階的な実装は、[認証アプリの実装契約](AUTHENTICATOR-GUIDE.md)で管理します。Google・Microsoft・Bitwardenの新規コード登録と、製品別のバックアップ・復元・機種変更は別の対応範囲として管理します。

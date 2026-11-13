@@ -5,6 +5,7 @@ import { PHONE_SOURCES, phoneAssets, phoneName, phoneSteps, type PhoneStep } fro
 import { recordNativeObservation, undoNativeObservation } from './nativeObservations';
 import { chooseNativeDevice, nativeVault, NATIVE_NAMES, setNativeVariant, type NativeProduct } from './nativeManagers';
 import { PROVIDERS } from './guideCatalog';
+import { answerAuthenticatorQuestion, recordPhoneAuthenticator, undoPhoneAuthenticator } from './phoneAuthenticatorRecords';
 
 export const getPhoneWorkflows = (data: Dataset): PhoneWorkflow[] => data.version === 2 ? data.deviceWorkflows : [];
 export const phoneRecordKey = (workflow: PhoneWorkflow, step: PhoneStep) => JSON.stringify([workflow.id, step.id, step.refs, step.variant ?? '']);
@@ -75,7 +76,22 @@ export function answerPhoneQuestion(data: Dataset, workflowId: string, value: st
     const installationRef = workflow.answers[`native-install:${step.id.slice('native-version:'.length)}`];
     if (installationRef) next = setNativeVariant(next, installationRef, 'ios18plus') as CurrentDataset;
   }
-  return advance(next, updated, step.id);
+  const auth = answerAuthenticatorQuestion(next, updated, step, value, workflow);
+  return advance(auth.data, auth.workflow, step.id);
+}
+function phonePrerequisites(data: Dataset, workflow: PhoneWorkflow, step: PhoneStep): PhoneStep[] {
+  const all = new Map(phoneSteps(data, workflow).map(s => [s.id, s])), seen = new Set<string>([step.id]), pending = [...(step.requires ?? [])], result: PhoneStep[] = [];
+  while (pending.length) {
+    const id = pending.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const dependency = all.get(id) ?? { id, kind: 'blocked' as const, title: { en: 'Required transfer confirmation is missing', ja: '必要な移行の確認が見つかりません' }, refs: [], sources: [] };
+    result.push(dependency); pending.push(...(dependency.requires ?? []));
+  }
+  return result;
+}
+export function phoneStepBlockers(data: Dataset, workflow: PhoneWorkflow, step: PhoneStep): PhoneStep[] {
+  return phonePrerequisites(data, workflow, step).filter(s => s.kind === 'blocked' || phoneRecord(workflow, s)?.status !== 'confirmed');
 }
 export function phoneBlockingSteps(data: Dataset, workflow: PhoneWorkflow, beforeId = 'handoff-gate'): PhoneStep[] {
   const steps = phoneSteps(data, workflow), index = steps.findIndex(s => s.id === beforeId);
@@ -88,16 +104,19 @@ export function confirmPhoneStep(data: Dataset, workflowId: string, now = new Da
   if (!workflow) return data;
   const step = currentPhoneStep(data, workflow);
   if (!['action', 'gate'].includes(step.kind)) return data;
+  if (phoneStepBlockers(data, workflow, step).length) return data;
   if ((step.kind === 'gate' || step.physicalEffect) && phoneBlockingSteps(data, workflow, step.id).length) return data;
   const key = phoneRecordKey(workflow, step);
+  const requiredPhoneRecords = phonePrerequisites(data, workflow, step).map(s => phoneRecordKey(workflow, s));
   let next: CurrentDataset = data;
-  if (step.control) next = recordControl(next, step.control.targetRef, step.control.id, { id: key, titleEn: step.title.en, titleJa: step.title.ja, origin: `phone:${workflow.id}` }, now) as CurrentDataset;
-  for (const effect of step.extraControls ?? []) next = recordControl(next, effect.targetRef, effect.controlId, { id: `${key}#${effect.targetRef}#${effect.controlId}`, parentId: key, origin: `phone:${workflow.id}` }, now) as CurrentDataset;
+  if (step.control) next = recordControl(next, step.control.targetRef, step.control.id, { id: key, titleEn: step.title.en, titleJa: step.title.ja, origin: `phone:${workflow.id}`, requiredPhoneRecords }, now) as CurrentDataset;
+  for (const effect of step.extraControls ?? []) next = recordControl(next, effect.targetRef, effect.controlId, { id: `${key}#${effect.targetRef}#${effect.controlId}`, parentId: key, origin: `phone:${workflow.id}`, requiredPhoneRecords }, now) as CurrentDataset;
   if (step.nativeContext) next = recordNativeObservation(next, key, step.nativeContext.subjectRef, step.nativeContext.recipeId, step.nativeContext.step, now) as CurrentDataset;
+  next = recordPhoneAuthenticator(next, workflow, step, key, requiredPhoneRecords, now);
   const factIds: string[] = [];
   if (step.access) {
     const factId = `${key}:observation`, routeId = `${key}:route`; factIds.push(factId);
-    const fact = { ...next.securityModel.facts.find(f => f.id === factId), id: factId, label: step.access.purpose === 'decrypt' ? 'Vault opened on new phone' : 'New-phone sign-in accepted', state: 'available' as const, evidence: 'user-confirmed' as const, checkedAt: now, requiredRefs: step.refs, contexts: ['new-device' as const], sourceIds: step.sources };
+    const fact = { ...next.securityModel.facts.find(f => f.id === factId), id: factId, label: step.access.purpose === 'decrypt' ? 'Vault opened on new phone' : 'New-phone sign-in accepted', state: 'available' as const, evidence: 'user-confirmed' as const, checkedAt: now, requiredRefs: step.refs, contexts: ['new-device' as const], sourceIds: step.sources, observationActionId: key, requiredPhoneRecords };
     const route = { ...next.securityModel.routes.find(r => r.id === routeId), id: routeId, label: fact.label, targetRef: step.access.targetRef, purpose: step.access.purpose, contexts: ['new-device' as const], requirements: { kind: 'fact' as const, factId }, sourceIds: step.sources };
     next = { ...next, securityModel: { ...next.securityModel, facts: [...next.securityModel.facts.filter(f => f.id !== factId), fact], routes: [...next.securityModel.routes.filter(r => r.id !== routeId), route] } };
   }
@@ -137,6 +156,7 @@ export function undoPhoneRecord(data: Dataset, workflowId: string, key: string, 
   if (record.controlId && record.targetRef) next = undoControl(next, key, record.targetRef, record.controlId, { state: 'unknown', evidence: 'not-assessed' }, now) as CurrentDataset;
   for (const effect of record.extraControls ?? []) next = undoControl(next, `${key}#${effect.targetRef}#${effect.controlId}`, effect.targetRef, effect.controlId, { state: 'unknown', evidence: 'not-assessed' }, now) as CurrentDataset;
   next = undoNativeObservation(next, key) as CurrentDataset;
+  next = undoPhoneAuthenticator(next, key, now);
   const facts = next.securityModel.facts.map(f => record.factIds.includes(f.id) ? { ...f, state: 'unknown' as const, evidence: 'unknown' as const } : f);
   const routes = next.securityModel.routes;
   const records = { ...workflow.records }; delete records[key];

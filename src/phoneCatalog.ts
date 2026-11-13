@@ -3,6 +3,7 @@ import type { PhoneWorkflow } from './phoneSchemas';
 import { builtinManagerRecipe } from './nativeManagerCatalog';
 import { nativeInstallation, nativeVault, NATIVE_NAMES, type NativeProduct } from './nativeManagers';
 import { c, deviceRecipe, emailRecipe, SOURCES, type Copy, type Source, type GuideStep } from './guideCatalog';
+import { authenticatorInventory, authenticatorMigrationSteps, hasRecordedAuthenticators, needsGoogleTransfer, recordedAuthenticators } from './phoneAuthenticators';
 
 const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-13', reviewMethod: 'official-documentation' });
 export const PHONE_SOURCES: Record<string, Source> = {
@@ -22,17 +23,26 @@ export const PHONE_SOURCES: Record<string, Source> = {
   bwMobile: source('Bitwarden · Mobile apps', 'https://bitwarden.com/help/getting-started-mobile/', 'iOS / Android / existing vault'),
   opAdd: source('1Password · Add an account', 'https://support.1password.com/add-account/', '1Password 8 / iOS / Android'),
   appleKeychain: source('Apple · iCloud Keychain', 'https://support.apple.com/en-ca/109016', 'iPhone / Passwords / iOS 17 and earlier names'),
+  bwAuthSync: source('Bitwarden · Sync verification codes', 'https://bitwarden.com/help/totp-sync/', 'iOS / Android 12+ / each actual vault account'),
+  msAuthRestore: source('Microsoft · Restore Authenticator codes', 'https://support.microsoft.com/en-us/authenticator/restore-account-credentials-from-microsoft-authenticator', 'Same OS / eligible changing codes / separate work enrollment'),
+  iCloudDrive: { ...source('Apple · Set up iCloud Drive on iPhone', 'https://support.apple.com/guide/iphone/set-up-icloud-drive-iphbbcf8827d/ios', 'Settings / Drive / Sync this iPhone'), reviewMethod: 'official-search-excerpt' },
+  iCloudApps: source('Apple · Apps using iCloud', 'https://support.apple.com/en-us/118225', 'Saved to iCloud / See All'),
+  airDrop: source('Apple · AirDrop files', 'https://support.apple.com/en-ie/119857', 'Nearby devices / Wi-Fi and Bluetooth / iOS 26.2 code if prompted'),
+  quickShare: source('Google · Quick Share', 'https://support.google.com/android/answer/9286773?hl=en', 'Nearby transfer / Android / cross-platform device restrictions'),
 };
 export type PhoneChoice = { value: string; label: Copy; description?: Copy };
 export type PhoneStep = {
   id: string; kind: 'question' | 'action' | 'blocked' | 'gate' | 'finish'; title: Copy;
-  text?: Copy; place?: Copy; action?: Copy; expected?: Copy; button?: Copy;
+  text?: Copy; context?: Copy; place?: Copy; action?: Copy; expected?: Copy; button?: Copy;
   answerKey?: string; choices?: PhoneChoice[]; sources: string[]; url?: string;
   refs: string[]; variant?: string; control?: { targetRef: string; id: string };
   extraControls?: { targetRef: string; controlId: string }[];
   setupHelp?: GuideStep['setupHelp'];
   nativeContext?: { installationRef: string; subjectRef: string; recipeId: string; step: GuideStep };
   access?: { targetRef: string; purpose: 'sign-in' | 'decrypt' }; physicalEffect?: boolean;
+  requires?: string[];
+  authenticatorEffect?: { kind: 'open' | 'items' | 'sync' | 'backup' | 'export' | 'code' | 'cleanup'; sourceRef: string; installationRef?: string; accountRef?: string; rootRef?: string };
+  authenticatorQuestion?: { kind: 'product' | 'destination' | 'root' | 'target'; sourceRef?: string; index?: number; provider?: 'apple' | 'microsoft' | 'bitwarden' };
 };
 const choice = (value: string, en: string, ja: string, description?: Copy): PhoneChoice => ({ value, label: c(en, ja), description });
 const question = (id: string, title: Copy, choices: PhoneChoice[], text?: Copy): PhoneStep => ({ id, kind: 'question', title, answerKey: id, choices, text, refs: [], sources: [] });
@@ -99,9 +109,13 @@ export function phoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] 
   }
   if (setup === 'ready') steps.push(action('already-ready', c('Keep the data already on the new phone', '新端末のデータを残して続ける'), c(`New phone · ${fresh.name}`, `新しいスマホ · ${fresh.name}`), c('Open the Home screen. We will check accounts and apps individually. Do not erase this phone merely to run the initial transfer again.', 'ホーム画面を開いてください。これからアカウント・アプリを個別に確認します。初期転送をやり直すために、今あるデータを消す必要はありません。'), c('The new phone is usable without deleting its existing data.', '既存のデータを残したまま、新端末を使えること。'), [fresh.id], []));
   steps.push(action('data-check', c('Check the data you need outside the old phone', '必要なデータが旧端末の外にあるか確認する'), c(`New phone · ${fresh.name} / your preserved backup`, `新端末 · ${fresh.name} ／ 保存したバックアップ`), c('Open your important recent photos, files and other data at the location you will keep. Check for items that exist only on the old phone or are still syncing. A completed phone copy or backup does not cover every app. If anything is missing, keep this task unfinished and retain the old phone.', '残して使う場所で、重要な最近の写真・ファイルなどを開いてください。旧端末だけにある情報や、同期中の情報が残っていないか確かめます。端末のコピーやバックアップだけで、すべてのアプリの情報が移るとは限りません。不足があれば未完了で残し、旧端末を保持してください。'), c('The important data you need is accessible outside the previous phone, with no unresolved local-only or pending-sync data.', '必要な重要データを旧端末の外で利用でき、端末内だけの情報・同期待ちの情報を残していないこと。'), [old.id, fresh.id], ['appleSale', 'androidCopy']));
-  steps.push(question('authenticator', c('Which app holds your verification codes?', '認証コードは、どのアプリにありますか？'), [choice('google', 'Google Authenticator', 'Google 認証システム'), choice('other', 'Another app / several apps', '別の認証アプリ・複数のアプリ'), choice('none', 'I do not use an authenticator app', '認証アプリは使っていない'), choice('unsure', 'I am not sure', '分からない')]));
+  const recordedApps = hasRecordedAuthenticators(data, old.id);
+  steps.push(question('authenticator', recordedApps ? c('Do you use any other authenticators?', '登録済みのほかに、認証アプリはありますか？') : c('Which app holds your verification codes?', '認証コードは、どのアプリにありますか？'), [choice('google', 'Google Authenticator', 'Google 認証システム'), choice('microsoft', 'Microsoft Authenticator', 'Microsoft Authenticator'), choice('bitwarden', 'Bitwarden Authenticator (standalone)', 'Bitwarden Authenticator（単独アプリ）'), choice('other', 'Another app / several apps', '別の認証アプリ・複数のアプリ'), choice('none', recordedApps ? 'No other authenticator apps' : 'I do not use an authenticator app', recordedApps ? 'ほかの認証アプリは使っていない' : '認証アプリは使っていない'), choice('unsure', 'I am not sure', '分からない')], recordedApps ? c('Recorded apps on this old phone will be checked individually next.', 'この旧端末で確認したアプリは、この後に一つずつ引き継ぎを確認します。') : undefined));
   if (!answers.authenticator) return steps;
-  if (answers.authenticator === 'google') {
+  const inventory = authenticatorInventory(data, workflow); steps.push(...inventory.steps); if (!inventory.ready) return steps;
+  const googleTransfer = needsGoogleTransfer(data, workflow);
+  if (googleTransfer && recordedAuthenticators(data, old.id).filter(a => a.productId === 'google-authenticator').length > 1) steps.push(blocked('google-profiles', c('Check each Google Authenticator profile separately', 'Google 認証システムの保存先を個別に確認する'), c('Several actual profiles are registered on the old phone. The single-profile transfer cannot confirm all of them. Keep the old phone until every profile has its own transfer and service checks.', '旧端末に複数の保存先が登録されています。一つの保存先向けの移行で、すべてを完了扱いにはしません。各保存先の移行・サービスでの確認が済むまで、旧端末を残してください。'), [old.id, fresh.id], ['googleAuth', 'googleAuthIos']));
+  if (googleTransfer) {
     steps.push(question('google-auth-mode', c('How does Google Authenticator save your codes?', 'Google 認証システムの保存方法は？'), [choice('sync', 'Synced with a Google Account', 'Google アカウントと同期している'), choice('local', 'Used without an account', 'アカウントなしで使っている'), choice('unsure', 'I am not sure', '分からない')]));
     if (!answers['google-auth-mode']) return steps;
     if (answers['google-auth-mode'] === 'unsure' || (answers['google-auth-mode'] === 'local' && answers.availability !== 'available')) steps.push(blocked('google-auth-recovery', c('Keep authenticator recovery unfinished', '認証アプリの復旧を未完了で残す'), c('A local-only copy needs the old app or each service’s recovery method. Do not assume the phone backup includes these codes. Use help to identify the available method.', '端末内だけに保存したコードは、旧アプリか各サービスの復旧手段が必要です。端末のバックアップにコードも含まれるとは扱いません。「うまくいかない」から利用できる方法を確認します。'), [old.id, fresh.id], ['googleAuth', 'googleAuthIos']));
@@ -113,16 +127,23 @@ export function phoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] 
         steps.push(action('google-auth-import', c('Read the transfer QR with the new phone', '新端末で移行用のQRコードを読み取る'), c('New phone · Google Authenticator', '新端末 · Google 認証システム'), c('In the app menu choose Transfer accounts → Import accounts. Scan every transfer QR displayed on the old phone.', fresh.operatingSystem === 'ios' ? 'メニュー→「アカウントを移行」→「アカウントのインポート」から、旧端末の移行用QRコードをすべて読み取ってください。' : 'メニュー→「コードを移行」→「コードをインポート」から、旧端末の移行用QRコードをすべて読み取ってください。'), c('The app confirms transfer and shows the expected entries. This alone does not prove sign-in works.', '移行の確認と必要な項目が表示されること。この表示だけでは、ログインの成功とは扱いません。'), [old.id, fresh.id], ['googleAuth', 'googleAuthIos']));
       }
     }
-  } else if (answers.authenticator !== 'none') steps.push(blocked('other-authenticator', c('This authenticator needs its own transfer steps', '認証アプリごとの移行手順が必要です'), c('Restore conditions differ between products and operating systems. This recipe is not available yet. Keep the previous phone; do not mark its codes as transferred or continue to erasure.', '製品とOSにより復元の条件が異なります。この組み合わせの手順はまだ準備中です。旧端末を残し、コードを移行済みとしたり、消去へ進んだりしないでください。'), [old.id, fresh.id]));
+  }
+  if (['other', 'unsure'].includes(answers.authenticator)) steps.push(blocked('other-authenticator', c('This authenticator needs its own transfer steps', '認証アプリごとの移行手順が必要です'), c('Restore conditions differ between products and operating systems. This recipe is not available yet. Keep the previous phone; do not mark its codes as transferred or continue to erasure.', '製品とOSにより復元の条件が異なります。この組み合わせの手順はまだ準備中です。旧端末を残し、コードを移行済みとしたり、消去へ進んだりしないでください。'), [old.id, fresh.id]));
+  const authenticatorMoves = authenticatorMigrationSteps(data, workflow, accountSteps); steps.push(...authenticatorMoves.steps); if (!authenticatorMoves.ready) return steps;
   for (const account of data.assets.filter(a => a.kind === 'account')) {
+    const checkedHere = steps.some(s => s.access?.targetRef === account.id && s.access.purpose === 'sign-in' && (s.authenticatorEffect?.kind === 'code' || s.id.startsWith('auth:')));
+    if (checkedHere) {
+      for (const remaining of accountSteps(account, fresh).filter(s => s.access?.purpose === 'decrypt')) if (!steps.some(s => s.access?.targetRef === account.id && s.access.purpose === 'decrypt')) steps.push(remaining);
+      continue;
+    }
     const key = `use:${account.id}`;
     steps.push(question(key, c(`Will you use ${account.name} on the new phone?`, `${account.name}を新しいスマホで使いますか？`), [choice('yes', 'Yes, check it on the new phone', 'はい・新端末で確認する'), choice('elsewhere', 'I will keep using it elsewhere', '別の端末で使う')]));
     if (!answers[key]) return steps;
-    if (answers.authenticator === 'google' && account.provider !== 'apple') {
+    if (googleTransfer && account.provider !== 'apple') {
       steps.push(question(`auth-code:${account.id}`, c(`Does Google Authenticator have a code for ${account.name}?`, `Google 認証システムに${account.name}のコードはありますか？`), [choice('yes', 'Yes, check the new phone’s code with this service', 'はい・新端末のコードで確認する'), choice('no', 'No, this account uses another method', 'いいえ・別の方法で利用する')]));
       if (!answers[`auth-code:${account.id}`]) return steps;
     }
-    const useCode = account.provider !== 'apple' && answers[`auth-code:${account.id}`] === 'yes' && answers.authenticator === 'google';
+    const useCode = account.provider !== 'apple' && answers[`auth-code:${account.id}`] === 'yes' && googleTransfer;
     if (answers[key] === 'yes') steps.push(...accountSteps(account, fresh).map(s => useCode && s.id === `signin:${account.id}` ? { ...s, action: c(`${s.action?.en} When the service asks for an authenticator code, enter this account’s current code from the NEW phone’s Google Authenticator. If you cannot choose that method, keep this task unfinished.`, `${s.action?.ja} 認証コードを求められたら、新端末のGoogle 認証システムにある今回のアカウントの現在のコードを入力してください。その方法を選べなければ未完了で残します。`), expected: c('The official service accepts the authenticator code from the new phone and completes this exact account’s sign-in.', '正規のサービスが新端末の認証コードを受け付け、今回のアカウントのログインが完了すること。'), variant: 'new-totp-code', sources: [...s.sources, 'googleAuth', 'googleAuthIos'] } : s));
     else steps.push(action(`elsewhere:${account.id}`, c('Check access somewhere other than the old phone', '旧端末以外で利用できるか確認する'), c('Your other device · official service', '別の利用端末 · 正規のサービス'), c(useCode ? 'On the device you will keep, sign in to the official service using this account’s code from Google Authenticator on the new phone. Confirm the service accepts it. Keep working sign-in and recovery outside the old phone.' : 'On the device you plan to keep, open this account and confirm its important data is accessible. Keep a usable sign-in and recovery method outside the old phone.', useCode ? '今後使う別の端末で正規のサービスへログインし、新端末のGoogle 認証システムにある今回のコードを入力してください。サービスが受け付けたことを確認し、使えるログイン・復旧手段を旧端末の外に残します。' : '今後使う別の端末で、このアカウントを開き、必要な情報を利用できるか確かめてください。旧端末の外に、使えるログイン・復旧手段を残します。'), c(useCode ? 'The service accepts this account’s code from the new phone and completes sign-in on the device you will keep.' : 'You can still use this account after handing over the old phone.', useCode ? '今後使う端末の正規のサービスが、新端末の今回の認証コードを受け付け、ログインが完了すること。' : '旧端末を手放した後も、このアカウントを利用できること。'), useCode ? [account.id, old.id, fresh.id] : [account.id, old.id], useCode ? ['googleAuth', 'googleAuthIos'] : [], { variant: useCode ? 'new-totp-code' : '' }));
   }
@@ -167,7 +188,7 @@ export function phoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] 
     s.sources = [...s.sources, ...accountPage.sources];
     steps.push(action(`native-test:${vault.id}:${account.id}`, s.title, c(`New phone · ${fresh.name} · ${account.name}`, `新端末 · ${fresh.name} · ${account.name}`), s.action, s.expected, [vault.id, install.id, fresh.id, account.id], s.sources, { url: accountPage.url, control: { targetRef: install.id, id: 'loginUse' }, nativeContext: { installationRef: install.id, subjectRef: account.id, recipeId: `native-password:${install.id}`, step: s }, button: c('I used the saved password', '保存したパスワードで利用できました') }));
   }
-  if (answers.authenticator === 'google') {
+  if (googleTransfer) {
     steps.push(question('google-auth-coverage', c('Have you checked every transferred code?', '移したコードを、すべて確認できましたか？'), [choice('registered', 'Every code belongs to an account checked above', 'すべて、上で確認したアカウントのコードです'), choice('other', 'Other codes remain / I am not sure', 'ほかのコードがある・分からない')]));
     if (!answers['google-auth-coverage']) return steps;
     if (answers['google-auth-coverage'] !== 'registered' || !data.assets.some(a => a.kind === 'account' && a.provider !== 'apple' && answers[`auth-code:${a.id}`] === 'yes')) steps.push(blocked('unchecked-codes', c('Some authenticator codes still need service checks', 'サービス側での確認が残っています'), c('A displayed code is not proof of a working sign-in. Keep the previous phone until each transferred code is accepted by its service. Add missing accounts to the main guide when their recipes are available; this transfer remains unfinished.', 'コードの表示だけではログインできる証拠になりません。それぞれのサービスで新端末のコードを使えると確認するまで、旧端末を残してください。未登録のアカウントは、対応する手順が用意できたら通常ガイドへ追加します。この移行は未完了で残します。'), [old.id, fresh.id], ['googleAuth', 'googleAuthIos']));
@@ -233,11 +254,11 @@ function transferSteps(old: Asset, fresh: Asset): PhoneStep[] {
   ];
 }
 function accountSteps(account: Asset, fresh: Asset): PhoneStep[] {
-  const refs = [account.id, fresh.id], manager = account.services.includes('manager') || account.type === 'Password manager';
+  const refs = [account.id, fresh.id], manager = ['bitwarden', '1password'].includes(account.provider ?? '') || account.services.includes('manager') || account.type === 'Password manager';
   if (account.purpose === 'work') return [blocked(`account:${account.id}`, c('Check your work account’s enrollment requirements', '仕事用アカウントの再登録条件を確認する'), c('Your administrator may require device registration, a managed app, certificate or a new authenticator registration. This personal-account recipe cannot confirm those requirements.', '端末登録・管理アプリ・証明書・認証アプリの再登録などを管理者が指定している場合があります。個人アカウント向けの手順では、これらを完了扱いにしません。'), refs)];
   if (manager && account.provider === 'bitwarden') return [
     action(`install:${account.id}`, c('Open Bitwarden on the new phone', '新端末でBitwardenを開く'), c(`New phone · ${fresh.name}`, `新端末 · ${fresh.name}`), c('Use the official Bitwarden download page to install or open the mobile app. Keep the old app signed in.', '正規のBitwardenダウンロード画面からモバイルアプリを入れるか、インストール済みのアプリを開いてください。旧端末のアプリはログインしたまま残します。'), c('The official mobile app is open.', '正規のモバイルアプリが開いていること。'), refs, ['bwMobile'], { url: 'https://get.bitwarden.com/' }),
-    action(`signin:${account.id}`, c('Sign in to your existing Bitwarden account', '既存のBitwardenへログインする'), c('New phone · Bitwarden', '新端末 · Bitwarden'), c('Select the same server as your existing account: US, EU or your own host. Log in using the existing account and its configured authentication. Do not create an empty replacement account. If email verification is requested, open that mailbox through an independent method.', '既存のアカウントと同じサーバー（US・EU・セルフホスト）を選び、今のアカウントと登録済みの認証方法でログインします。空のアカウントを作り直さないでください。メール確認を求められたら、別の利用手段でメールを開きます。'), c('Bitwarden accepts your sign-in on the new phone.', '新端末のログインが受け付けられること。'), refs, ['bwMobile', 'bwCreate'], { access: { targetRef: account.id, purpose: 'sign-in' }, button: c('I could sign in', 'ログインできました') }),
+    action(`signin:${account.id}`, c('Sign in to your existing Bitwarden account', '既存のBitwardenへログインする'), c('New phone · Bitwarden', '新端末 · Bitwarden'), c('Select the same server as your existing account: US, EU or your own host. If the correct account is already signed in, keep that session. Otherwise log in using the existing account and its configured authentication. Do not create an empty replacement account. If email verification is requested, open that mailbox through an independent method.', '既存のアカウントと同じサーバー（US・EU・セルフホスト）を選び、すでに正しいアカウントでログインしていれば、その状態を使います。未ログインなら、今のアカウントと登録済みの認証方法でログインします。空のアカウントを作り直さないでください。メール確認を求められたら、別の利用手段でメールを開きます。'), c('Bitwarden accepts your sign-in on the new phone.', '新端末のログインが受け付けられること。'), refs, ['bwMobile', 'bwCreate'], { access: { targetRef: account.id, purpose: 'sign-in' }, button: c('I could sign in', 'ログインできました') }),
     action(`decrypt:${account.id}`, c('Open the correct Bitwarden vault', '元のBitwarden保管庫を開く'), c('New phone · Bitwarden vault', '新端末 · Bitwardenの保管庫'), c('Unlock the vault with your existing supported method. Open an important saved login and confirm it is the correct current item. A successful server sign-in alone does not prove you can decrypt your vault.', '今までの対応する方法で保管庫を解除してください。重要な保存済みログインを一つ開き、元の最新の項目であることを確かめます。サーバーへのログイン成功だけでは、保管庫を復号できたとは扱いません。'), c('Your existing important login is readable in the correct vault.', '元の正しい保管庫で、重要なログイン情報を利用できること。'), refs, ['bwMobile'], { access: { targetRef: account.id, purpose: 'decrypt' }, button: c('I opened my vault', '保管庫を開けました') }),
   ];
   if (manager && account.provider === '1password') return [
