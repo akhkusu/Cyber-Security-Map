@@ -81,7 +81,7 @@ export function confirmPhoneStep(data: Dataset, workflowId: string, now = new Da
   if (step.id === 'erase-old' && workflow.oldDeviceRef) next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [workflow.oldDeviceRef]: { ...next.securityModel.lifecycle[workflow.oldDeviceRef], state: 'retired', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now } } } };
   if (step.id === 'handoff-check' && workflow.oldDeviceRef) next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [workflow.oldDeviceRef]: { ...next.securityModel.lifecycle[workflow.oldDeviceRef], state: 'transferred', evidence: 'user-confirmed', updatedAt: now, accessResetAt: next.securityModel.lifecycle[workflow.oldDeviceRef]?.accessResetAt ?? now } } } };
   if (step.id === 'keep-old' && workflow.oldDeviceRef) next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [workflow.oldDeviceRef]: { ...next.securityModel.lifecycle[workflow.oldDeviceRef], state: workflow.answers['old-fate'] === 'spare' ? 'backup' : 'in-use', evidence: 'user-confirmed', updatedAt: now } } } };
-  const records = { ...workflow.records, [key]: { ...workflow.records[key], stepId: step.id, titleEn: step.title.en, titleJa: step.title.ja, status: 'confirmed' as const, updatedAt: now, targetRef: step.control?.targetRef, controlId: step.control?.id, factIds, sourceIds: step.sources, physicalEffect: !!step.physicalEffect } };
+  const records = { ...workflow.records, [key]: { ...workflow.records[key], stepId: step.id, titleEn: step.title.en, titleJa: step.title.ja, status: 'confirmed' as const, updatedAt: now, targetRef: step.control?.targetRef ?? (step.physicalEffect ? workflow.oldDeviceRef : undefined), controlId: step.control?.id, factIds, sourceIds: step.sources, physicalEffect: !!step.physicalEffect } };
   return advance(next, { ...workflow, records }, step.id);
 }
 export function deferPhoneStep(data: Dataset, workflowId: string, now = new Date().toISOString()): Dataset {
@@ -117,7 +117,13 @@ export function undoPhoneRecord(data: Dataset, workflowId: string, key: string, 
   const records = { ...workflow.records }; delete records[key];
   // A corrected record cannot undo a real wipe or revive an old authentication
   // device. Keep it retired until its current role has been explicitly checked.
-  if (record.physicalEffect && workflow.oldDeviceRef) next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [workflow.oldDeviceRef]: { ...next.securityModel.lifecycle[workflow.oldDeviceRef], state: 'retired', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now } } } };
+  let physicalTarget = record.targetRef;
+  if (record.physicalEffect && !physicalTarget) {
+    // Early v2 records encoded the original subjects only in their stable key.
+    // Recover that original subject, never the workflow's currently selected phone.
+    try { const subjects: unknown = JSON.parse(key); if (Array.isArray(subjects) && Array.isArray(subjects[2]) && typeof subjects[2][0] === 'string') physicalTarget = subjects[2][0]; } catch { /* Leave an unidentifiable subject unchanged. */ }
+  }
+  if (record.physicalEffect && physicalTarget && next.assets.some(a => a.id === physicalTarget && a.kind === 'device')) next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [physicalTarget]: { ...next.securityModel.lifecycle[physicalTarget], state: 'retired', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now } } } };
   next = { ...next, securityModel: { ...next.securityModel, facts, routes } };
   return updateWorkflow(next, { ...workflow, records, cursor: record.stepId, history: [...workflow.history, workflow.cursor] });
 }

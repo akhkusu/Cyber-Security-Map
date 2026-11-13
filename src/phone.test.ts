@@ -167,3 +167,28 @@ it('all action variants have bilingual instructions, known sources and stable su
     }
   }
 });
+
+
+it('rechecks a code used elsewhere when either its method or new phone changes', () => {
+  const data = fixture(); const a = { ...makeAsset({ kind: 'account', type: 'Primary email', name: 'Google', importance: 'critical' }), provider: 'google' as const };
+  data.assets.push(a); const w = data.deviceWorkflows[0];
+  Object.assign(w.answers, { authenticator: 'google', 'google-auth-mode': 'sync', [`use:${a.id}`]: 'elsewhere', [`auth-code:${a.id}`]: 'no' });
+  const step = () => phoneSteps(data, w).find(s => s.id === `elsewhere:${a.id}`)!;
+  const originalKey = phoneRecordKey(w, step()); w.answers[`auth-code:${a.id}`] = 'yes';
+  const codeKey = phoneRecordKey(w, step()); expect(codeKey).not.toBe(originalKey);
+  expect(step().expected?.en).toContain('accepts');
+  data.assets.push({ ...data.assets[1], id: 'another-new-phone' }); w.newDeviceRef = 'another-new-phone';
+  expect(phoneRecordKey(w, step())).not.toBe(codeKey);
+});
+
+it('corrects a historical erasure on its original phone after another old phone is selected', () => {
+  let data = confirmBefore(fixture(), 'handoff-gate');
+  for (const id of ['handoff-gate', 'sync-warning', 'apple-unpair-check', 'apple-signout', 'erase-old']) data = confirmAt(data, id);
+  const key = Object.entries(data.deviceWorkflows[0].records).find(([, r]) => r.stepId === 'erase-old')![0];
+  expect(data.deviceWorkflows[0].records[key].targetRef).toBe('old');
+  data.assets.push({ ...data.assets[0], id: 'different-old' }); data.deviceWorkflows[0].oldDeviceRef = 'different-old';
+  const corrected = undoPhoneRecord(data, 'workflow', key, now) as CurrentDataset;
+  expect(corrected.securityModel.lifecycle.old.state).toBe('retired');
+  expect(corrected.securityModel.lifecycle['different-old']).toBeUndefined();
+  expect(currentDatasetSchema.safeParse(corrected).success).toBe(true);
+});
