@@ -106,3 +106,13 @@ docker run --rm --shm-size=1g cyber-security-map:browser-tests npm run test:page
 - 新コードの現在の利用に、移行元の旧端末を機械的に必要条件として入れない。Bitwardenのローカル・個別保管庫のグループも区別し、無関係な全Accountを一括して必要にしない。
 - 一時JSONは読取り可能な秘密ファイルとして扱う。内容を本アプリへ入れず、暗号化バックアップと表示しない。削除済みの記録の訂正で、実ファイルが復活したことにしない。再作成した場合は別のファイル実体として残す。
 - 大きい認証アプリでも登録済みAccountの数に合わせてガイドを生成し、小さい固定件数の先頭だけを繰り返させない。未登録・未対応のコードは、完了扱いにせず消去前の未完了として残す。
+
+## Proton Pass・NordPassの保守
+
+- `CLOUD-MANAGERS-GUIDE.md`に対応範囲・公式資料・未対応の分岐を記録する。製品名の選択やAccountのログインから、保管庫の復号・MFA・復旧・実利用を推測しない。
+- `passwordStoreIdentity.ts`は組込みとクラウドの実際のAccount・保管庫の同一性を共用する。クラウドの別プロファイルは本人が既存の実体を選んだときだけ再利用し、新しい選択で確認済みのアプリを作らない。
+- `cloudSources.ts`と各`cloud*Catalog.ts`に説明・操作先・確認日を置く。`cloudManagers.ts`は必要時の質問と環境・準備条件、`cloudRuntime.ts`は安定キー・前提、`cloudObservations.ts`は確認した関係と利用観測を扱う。
+- マスターの変更要求は作業ごとのIDを持ち、以前の変更の証拠を再利用しない。前提の取り消しは派生するコントロールと観測にも反映する。現実の変更の時点は取り消して復活させない。
+- `passphraseCatalog.ts`はEFFの単語表を利用する準備方法を共用する。原文・帰属・CC BY 4.0・ハッシュを`public/wordlists/ATTRIBUTION.txt`で管理する。実際の語句を本アプリに保存しない。
+- 単語表のURLはPagesのBASE_URL配下とし、PWAの対象に含める。通常URL・プロジェクトURL・オフラインで原文の7776行とハッシュを確認する。
+- クラウドの追加意味を保存するときだけモデルrevision 2へ拡張する。既存revision 1のデータを説明更新だけで変換・再登録しない。非対応revisionの原本を保持する。

@@ -18,7 +18,7 @@ export function writeSubjectControl(data: Dataset, id: string, control: string, 
 export function guideSubject(data: Dataset, id: string): Asset | undefined {
   const asset = data.assets.find(a => a.id === id); if (asset) return asset;
   const entity = data.version === 2 ? data.securityModel.entities.find(e => e.id === id && e.kind === 'vault') : undefined;
-  if (entity?.kind !== 'vault' || !['apple-passwords', 'google-password-manager'].includes(entity.productId)) return;
+  if (entity?.kind !== 'vault' || !['apple-passwords', 'google-password-manager', 'proton-pass', 'nordpass'].includes(entity.productId)) return;
   const root = data.assets.find(a => a.id === entity.authenticationAccountRef);
-  return { id, kind: 'account', type: 'Password vault', name: entity.label, importance: 'critical', createdAt: entity.createdAt, updatedAt: typeof entity.updatedAt === 'string' ? entity.updatedAt : entity.createdAt, controls: entity.controls ?? {}, controlEvidence: entity.controlEvidence ?? {}, provider: entity.productId === 'apple-passwords' ? 'apple' : 'google', services: ['manager'], purpose: root?.purpose };
+  return { id, kind: 'account', type: 'Password vault', name: entity.label, importance: 'critical', createdAt: entity.createdAt, updatedAt: typeof entity.updatedAt === 'string' ? entity.updatedAt : entity.createdAt, controls: entity.controls ?? {}, controlEvidence: entity.controlEvidence ?? {}, provider: entity.productId === 'apple-passwords' ? 'apple' : entity.productId === 'proton-pass' ? 'proton' : entity.productId === 'nordpass' ? 'nord' : 'google', services: ['manager'], purpose: root?.purpose };
 }

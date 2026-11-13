@@ -55,6 +55,7 @@ export const accessFactSchema = z.object({
   id, label, state: z.enum(['unknown', 'available', 'unavailable', 'revoked']), evidence: z.enum(EVIDENCE), checkedAt: time,
   requiredRefs: z.array(id).default([]), contexts: z.array(z.enum(ACCESS_CONTEXTS)).min(1).default(['normal']),
   availableAt: time.optional(), expiresAt: time.optional(), sourceIds: z.array(id).default([]),
+  dependencyCompleteness: z.enum(['partial', 'complete']).optional(),
 }).passthrough();
 export type AccessFact = z.infer<typeof accessFactSchema>;
 export const accessRouteSchema = z.object({
@@ -71,7 +72,7 @@ const controlBaselineSchema = z.object({
   answerKey: id.optional(), answer: assessmentAnswerSchema.optional(),
 }).passthrough();
 export const securityModelSchema = z.object({
-  revision: z.literal(1), entities: z.array(securityEntitySchema).default([]), relations: z.array(securityRelationSchema).default([]),
+  revision: z.union([z.literal(1), z.literal(2)]), entities: z.array(securityEntitySchema).default([]), relations: z.array(securityRelationSchema).default([]),
   facts: z.array(accessFactSchema).default([]), routes: z.array(accessRouteSchema).default([]),
   lifecycle: z.record(z.string(), lifecycleSchema).default({}),
   controlBaselines: z.record(z.string(), controlBaselineSchema).default({}),
@@ -162,6 +163,9 @@ export function evaluateAccess(model: SecurityModel, routeId: string, scenario: 
     if (f.expiresAt && now >= Date.parse(f.expiresAt)) return result('unavailable', 'expired', f.id);
     if (f.state === 'unavailable') return result('unavailable', 'resource-unavailable', f.id);
     if (f.state !== 'available') return result('unknown', 'unconfirmed', f.id);
+    // An observed login does not establish that every MFA/recovery dependency
+    // was captured. Do not project it onto an untested loss scenario.
+    if (f.dependencyCompleteness === 'partial' && unavailable.size > 0) return result('unknown', 'unconfirmed', f.id);
     return result('available', 'confirmed', f.id, [f.id]);
   };
   const conditionResult = (condition: AccessCondition, path: Set<string>, depth: number): AccessResult => {

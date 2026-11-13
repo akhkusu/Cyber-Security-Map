@@ -1,0 +1,13 @@
+import type { Copy, GuideStep, SourceId } from './guideCatalog';
+const c = (en: string, ja: string): Copy => ({ en, ja });
+export function privatePassphraseStep(id: string, purpose: Copy, place: Copy, source: SourceId): GuideStep {
+  const requirements = source === 'nordMasterStrength' ? c('NordPass recommends at least 12 characters with upper/lowercase letters, numbers and symbols.', 'NordPassのMaster Passwordは、12文字以上と英大・小文字、数字、記号が推奨されています。') : source === 'bwMaster' ? c('Bitwarden requires at least 12 characters.', 'Bitwardenのマスターは12文字以上が必要です。') : c('', '');
+  return { id, title: c('Choose a new private passphrase', '新しい専用のパスフレーズを作る'), place,
+    action: c(`For ${purpose.en}, choose at least 6 random words from the bundled EFF long list. Roll a physical die 5 times, find that five-digit row, and privately write its word down. Repeat for 6 words in order, joining them with spaces or a permitted separator. Do not select favorite words or reroll to make a sentence. ${requirements.en} If the form requires extra character types, keep all 6 words, capitalize a letter and add a separately rolled digit or an allowed separator. Do not enter words or dice results here.`, `${purpose.ja}用に、同梱したEFFの単語表から無作為に6語以上を選びます。実物のサイコロを5回振り、その5桁の行の単語を私的に控える操作を6回繰り返します。選んだ順に、空白か使用できる区切り記号でつなぎます。好きな単語への置換や、文章にするための選び直しはしません。${requirements.ja}文字種の条件があれば6語は減らさず、大文字・別に振った数字・許可される区切りを加えます。単語や出目をこのアプリへ入力しないでください。`),
+    expected: c('A new, unique phrase is ready for this purpose, different from this app’s storage phrase and your other account passwords.', 'この用途専用の新しい語句を用意し、このアプリの保存用パスフレーズや、ほかのアカウントのパスワードと分けたこと。'),
+    button: c('I prepared the private phrase', '専用の語句を用意しました'), sources: ['effDice', source], technical: 'password',
+    diagram: [c('5 die rolls', 'サイコロ5回'), c('Look up one row', '5桁の行を探す'), c('Keep one word privately', '単語を私的に控える'), c('Repeat for 6 words', '6語を選ぶまで繰り返す')],
+    download: { path: 'wordlists/eff-large-wordlist.txt', filename: 'eff-large-wordlist.txt', label: c('Download the 7776-word list', '7776語の単語表を保存する'), attribution: c('EFF Long Wordlist · Joseph Bonneau / EFF · CC BY 4.0 · unchanged wordlist', 'EFF Long Wordlist · Joseph Bonneau / EFF · CC BY 4.0 · 単語表は原文のまま') },
+    setupHelp: { title: c('If you have no dice or already have a trusted generator', 'サイコロがない・別の生成機能を使う場合'), action: c('A trusted password manager you can already open can generate a fresh random passphrase privately. Do not use an example or a phrase suggested by an AI. If you have neither a usable generator nor physical dice, defer this step until one is available. No actual password belongs in this app.', 'すでに開ける信頼できるマネージャーがあれば、その生成機能で専用のランダムな語句を作れます。例文やAIに提案された語句は使いません。利用できる生成機能も実物のサイコロもなければ、用意できるまで後回しにします。実際のパスワードはこのアプリへ入力しないでください。') },
+  };
+}

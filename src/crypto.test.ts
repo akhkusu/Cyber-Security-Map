@@ -67,4 +67,11 @@ describe('encrypted local vault', () => {
     const incompatible = await sealRaw({ ...newDataset(), assets: 'not-an-array', privateNote: 'must not appear in errors' });
     await expect(decryptVault(incompatible, 'original fixture phrase')).rejects.toMatchObject({ message: 'unsupported-vault-data' });
   });
+
+  it('identifies a newer security-model revision and preserves the original encrypted file', async () => {
+    const data = newDataset(), envelope = await sealRaw({ ...data, securityModel: { ...data.securityModel, revision: 3 } });
+    const original = structuredClone(envelope);
+    await expect(decryptVault(envelope, 'original fixture phrase')).rejects.toMatchObject({ name: 'UnsupportedVaultError', kind: 'version' });
+    expect(envelope).toEqual(original);
+  });
 });

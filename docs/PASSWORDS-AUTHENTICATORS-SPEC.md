@@ -619,3 +619,5 @@ FirefoxではPrimary PasswordとMozilla Accountによる同期を別の役割と
 Apple・Google組込みの段階的な実装は、[組込み管理の実装契約](BUILTIN-MANAGERS-GUIDE.md)で管理します。本仕様の全経路を完了した状態とは区別し、公開済みOS・保存方式・機種変更・未対応の復元を明記します。
 
 認証アプリの段階的な実装は、[認証アプリの実装契約](AUTHENTICATOR-GUIDE.md)で管理します。Google・Microsoft・Bitwardenの新規コード登録と、製品別のバックアップ・復元・機種変更は別の対応範囲として管理します。
+
+Proton Pass・NordPassの段階的な実装は、[クラウド管理の実装契約](CLOUD-MANAGERS-GUIDE.md)で管理します。個人用の基本設定、復旧、マスターの作成・変更、保存・実利用と、残るSSO・機種変更・復旧方式を区別します。

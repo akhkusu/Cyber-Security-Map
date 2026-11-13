@@ -37,7 +37,7 @@ test('the scoped PWA works offline and preserves other applications caches', asy
   expect(registration).toEqual({ scope: site.href, script: new URL('sw.js', site).href });
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   const cached = await page.evaluate(async ({ prefix }) => {
-    const cache = await caches.open(`${prefix}v7`);
+    const cache = await caches.open(`${prefix}v8`);
     return { names: await caches.keys(), urls: (await cache.keys()).map((request) => request.url) };
   }, { prefix });
   expect(cached.names).toContain('unrelated-project-cache');
@@ -50,6 +50,12 @@ test('the scoped PWA works offline and preserves other applications caches', asy
   expect(new URL(manifest.scope, new URL('manifest.webmanifest', site)).href).toBe(site.href);
   await context.setOffline(true);
   await page.reload();
+  const wordlist = await page.evaluate(async () => {
+    const response = await fetch(new URL('wordlists/eff-large-wordlist.txt', location.href.split('#')[0]));
+    const bytes = await response.arrayBuffer();
+    return { ok: response.ok, rows: new TextDecoder().decode(bytes).trim().split('\n').length, hash: Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map(b => b.toString(16).padStart(2, '0')).join('') };
+  });
+  expect(wordlist).toEqual({ ok: true, rows: 7776, hash: 'addd35536511597a02fa0a9ff1e5284677b8883b83e986e43f15a3db996b903e' });
   await page.locator('.language-picker select').selectOption('en');
   await page.getByRole('button', { name: 'Try a sample', exact: true }).click();
   await page.getByRole('link', { name: 'Security Map', exact: true }).click();

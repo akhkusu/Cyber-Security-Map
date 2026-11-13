@@ -60,8 +60,8 @@ test('a new user can finish Bitwarden, save a generated important password and c
   await page.getByRole('button', { name: /登録済みの端末/ }).click(); await advance(page, 'EU · vault.bitwarden.eu');
   await expect(page.getByRole('link', { name: /公式の設定・アプリを開く/ })).toHaveAttribute('href', 'https://bitwarden.com/download/');
   await advance(page); await advance(page, '初めて作る');
-  await expect(page.getByText(/12文字/)).toBeVisible(); await expect(page.getByText(/5語以上/)).toBeVisible();
-  await advance(page); await expect(page.getByRole('link', { name: /公式の設定・アプリを開く/ })).toHaveAttribute('href', 'https://vault.bitwarden.eu/');
+  await expect(page.getByText(/12文字/)).toBeVisible(); await expect(page.getByText(/6語以上/)).toBeVisible();
+  await advance(page, '専用の語句を用意しました'); await expect(page.getByRole('link', { name: /公式の設定・アプリを開く/ })).toHaveAttribute('href', 'https://vault.bitwarden.eu/');
   await advance(page); await advance(page, '安全な場所へ保管しました'); await advance(page, '確認しました'); await advance(page, 'これから設定する'); await prepareAuthenticator(page); await advance(page); await advance(page, 'コードが受け付けられました');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('2段階ログインの復旧コードを保管する');
   await advance(page, '復旧コードを保管しました'); await advance(page, 'ログインできました');
@@ -121,13 +121,14 @@ test('restoring a newer payload preserves the existing encrypted vault and its e
   await page.getByRole('link', { name: '対策を進める', exact: true }).click(); await expect(page.getByRole('heading', { level: 1 })).toHaveText(heading!);
 });
 
-for (const format of ['newer-payload', 'unsupported-envelope']) test(`${format}: original stored data can be exported without opening or replacing it`, async ({ page }) => {
+for (const format of ['newer-payload', 'newer-model', 'unsupported-envelope']) test(`${format}: original stored data can be exported without opening or replacing it`, async ({ page }) => {
   await page.goto('./'); await page.locator('.language-picker select').selectOption('ja');
   const original = format === 'newer-payload'
     ? await sealRawVault({ ...newDataset('ja'), version: 3, futureEntities: [{ id: 'keep-original' }] })
+    : format === 'newer-model' ? await sealRawVault({ ...newDataset('ja'), securityModel: { ...newDataset('ja').securityModel, revision: 3 } })
     : { format: 'future-envelope-format', ciphertext: 'opaque-original-data', metadata: { keep: true } };
   await writeSavedVault(page, original); await page.reload();
-  if (format === 'newer-payload') {
+  if (format !== 'unsupported-envelope') {
     await page.getByLabel('アプリの保存用パスフレーズ', { exact: true }).fill(passphrase); await page.getByRole('button', { name: '開いて再開する', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('この版のアプリでは');
   } else await expect(page.getByRole('heading', { name: '保管庫を読み取れませんでした', exact: true })).toBeVisible();
@@ -170,7 +171,7 @@ for (const provider of ['Gmail / Google', 'Outlook / Microsoft', 'Proton Mail', 
 test('1Password keeps emergency recovery before authenticator activation', async ({ page }) => {
   await createWorkspace(page); await advance(page, 'メールを使っていない・後で進める');
   await page.getByRole('button', { name: /^1Password/ }).click(); await advance(page, 'このマネージャーを追加する'); await advance(page, 'iPhone / iPad を追加');
-  await advance(page); await advance(page, '初めて作る'); await advance(page); await advance(page); await advance(page, '安全な場所へ保管しました');
+  await advance(page); await advance(page, '初めて作る'); await advance(page, '専用の語句を用意しました'); await advance(page); await advance(page, '安全な場所へ保管しました');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('アカウントの復旧コードを保管する');
   await advance(page, '確認しました'); await advance(page, '確認しました'); await advance(page, 'これから設定する');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('認証アプリの予備情報を先に保管する');

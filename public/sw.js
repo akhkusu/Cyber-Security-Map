@@ -1,7 +1,7 @@
 const APP_BASE = new URL(self.registration.scope);
 const CACHE_PREFIX = `cyber-security-map-shell:${APP_BASE.pathname}:`;
-const CACHE_NAME = `${CACHE_PREFIX}v7`;
-const STATIC_PATH = /^(?:assets\/[^/]+\.(?:js|css)|manifest\.webmanifest|icons\/[^/]+\.svg|favicon\.svg)$/;
+const CACHE_NAME = `${CACHE_PREFIX}v8`;
+const STATIC_PATH = /^(?:assets\/[^/]+\.(?:js|css)|manifest\.webmanifest|icons\/[^/]+\.svg|favicon\.svg|wordlists\/(?:eff-large-wordlist|ATTRIBUTION)\.txt)$/;
 const appUrl = (path) => new URL(path, APP_BASE).href;
 const isAppStatic = (url) => url.origin === APP_BASE.origin && url.pathname.startsWith(APP_BASE.pathname) && STATIC_PATH.test(url.pathname.slice(APP_BASE.pathname.length));
 
@@ -16,7 +16,7 @@ self.addEventListener('install', (event) => {
     const buildAssets = Object.values(buildManifest).flatMap((entry) => [entry.file, ...(entry.css ?? [])]).map((path) => new URL(path, APP_BASE)).filter(isAppStatic).map((url) => url.href);
     const htmlAssets = [...html.matchAll(/(?:src|href)="([^\"]+)"/g)].map((match) => new URL(match[1], APP_BASE)).filter(isAppStatic).map((url) => url.href);
     const cache = await caches.open(CACHE_NAME);
-    await cache.addAll([...new Set([APP_BASE.href, appUrl('index.html'), appUrl('manifest.webmanifest'), appUrl('icons/icon.svg'), appUrl('favicon.svg'), ...htmlAssets, ...buildAssets])]);
+    await cache.addAll([...new Set([APP_BASE.href, appUrl('index.html'), appUrl('manifest.webmanifest'), appUrl('icons/icon.svg'), appUrl('favicon.svg'), appUrl('wordlists/eff-large-wordlist.txt'), appUrl('wordlists/ATTRIBUTION.txt'), ...htmlAssets, ...buildAssets])]);
     await self.skipWaiting();
   })());
 });

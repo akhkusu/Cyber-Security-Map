@@ -8,6 +8,11 @@ import { builtinManagerRecipe, builtinPasswordRecipe } from './nativeManagerCata
 import { NATIVE_NAMES, type NativeProduct, managerReady, nativeInstallation, nativeSetupRoute, nativeSubject, nativeVault, selectedNativeInstallation } from './nativeManagers';
 import { recordControl, undoControl } from './controlRecords';
 import { deviceRecipe, emailRecipe, managerRecipe, passwordRecipe, recoveryRecipe, PROVIDERS, isExtendedMail, type GuideStep, type Recipe } from './guideCatalog';
+import { cloudInstallation, cloudSetupRoute, cloudSubject, cloudVault, selectedCloudInstallation } from './cloudManagers';
+import { cloudRecipeFor, cloudRequiredSteps, cloudTaskRedirect } from './cloudRuntime';
+import { nordAccountRecipe } from './nordAccountCatalog';
+import { recordCloudObservation, undoCloudObservation } from './cloudObservations';
+import { cloudHelpContext } from './cloudHelpContext';
 
 export const taskCursor = (assetId: string, recipeId: string, stepId: string) => `do/${assetId}/${recipeId}/${stepId}`;
 export const isRecorded = (asset: { controls: Asset['controls'] } | undefined, control: string) => !!asset && ['implemented', 'verified'].includes(asset.controls[control]);
@@ -21,6 +26,8 @@ export function back(data: Dataset): Dataset {
   return cursor ? { ...data, guide: { ...data.guide, cursor, history } } : data;
 }
 function baseRecipeFor(data: Dataset, asset: Asset, recipeId: string): Recipe | undefined {
+  if (recipeId.startsWith('cloud-')) return cloudRecipeFor(data, asset, recipeId);
+  if (asset.provider === 'nord' && ['email-mfa', 'recovery'].includes(recipeId)) return nordAccountRecipe(recipeId === 'recovery', asset.id);
   if (recipeId.startsWith('native-password:')) return builtinPasswordRecipe(data, asset, recipeId.slice('native-password:'.length));
   if (recipeId === 'builtin-manager') return builtinManagerRecipe(data, asset.id);
   const platform = data.guide.answers[`${asset.id}:platform`] ?? asset.operatingSystem ?? 'web';
@@ -54,12 +61,14 @@ export function recipeFor(data: Dataset, asset: Asset, recipeId: string): Recipe
 export function currentTask(data: Dataset): { asset: Asset; recipe: Recipe; step: GuideStep; index: number; needsPrerequisites?: boolean; redirectTo?: string } | undefined {
   const [kind, assetId, recipeId, stepId] = data.guide.cursor.split('/');
   if (kind !== 'do') return;
-  const asset = nativeSubject(data, assetId) ?? guideSubject(data, assetId);
+  const asset = cloudSubject(data, assetId) ?? nativeSubject(data, assetId) ?? guideSubject(data, assetId);
   if (!asset) return;
   const recipe = recipeFor(data, asset, recipeId);
   const index = recipe?.steps.findIndex(s => s.id === stepId) ?? -1;
   if (recipe && recipeId.startsWith('authenticator-setup:') && recipe.id !== recipeId) return { asset, recipe, step: recipe.steps[0], index: 0, redirectTo: authenticatorSetupRoute(data, assetId) };
   if (!recipe || index < 0) return;
+  const cloudRedirect = cloudTaskRedirect(data, asset, recipe, recipe.steps[index]);
+  if (cloudRedirect) return { asset, recipe, step: recipe.steps[index], index, ...(cloudRedirect === 'password-prerequisite' ? { needsPrerequisites: true } : { redirectTo: cloudRedirect }) };
   if (recipeId.startsWith('authenticator-setup:')) { const prerequisite = authenticatorPrerequisiteRoute(data, assetId); if (prerequisite) return { asset, recipe, step: recipe.steps[index], index, redirectTo: prerequisite }; }
   const bound = recipeId.startsWith('native-password:') ? nativeInstallation(data, recipeId.slice('native-password:'.length)) : undefined;
   const needsPrerequisites = (recipeId === 'password' || recipeId.startsWith('native-password:')) && (!isRecorded(asset, 'recovery') || !managerReady(data, bound?.vaultRef, bound?.id));
@@ -71,8 +80,13 @@ export function currentTask(data: Dataset): { asset: Asset; recipe: Recipe; step
   return { asset, recipe, step: recipe.steps[index], index, needsPrerequisites, redirectTo: setup && !setup.startsWith('do/') ? setup : undefined };
 }
 export function beginRecipe(data: Dataset, assetId: string, recipeId: string, revisit = false): Dataset {
-  const asset = nativeSubject(data, assetId) ?? guideSubject(data, assetId);
+  const asset = cloudSubject(data, assetId) ?? nativeSubject(data, assetId) ?? guideSubject(data, assetId);
   if (!asset) return move(data, 'start');
+  if (recipeId.startsWith('cloud-')) {
+    const app = cloudInstallation(data, recipeId.startsWith('cloud-password:') ? recipeId.slice('cloud-password:'.length) : assetId);
+    if (app) data = { ...data, guide: { ...data.guide, managerId: app.vaultRef, answers: { ...data.guide.answers, [`${app.vaultRef}:installation`]: app.id } } };
+  }
+  if (recipeId === 'password' && cloudVault(data, data.guide.managerId)) { const app = selectedCloudInstallation(data, data.guide.managerId!); return app ? move(data, `cloud-password-choice/${app.id}/${assetId}`) : move(data, cloudSetupRoute(data, data.guide.managerId!)); }
   if (recipeId === 'password' && nativeVault(data, data.guide.managerId)) { const install = selectedNativeInstallation(data, data.guide.managerId!); return install ? beginRecipe(data, assetId, `native-password:${install.id}`, revisit) : move(data, nativeSetupRoute(data, data.guide.managerId!)); }
   if (recipeId === 'builtin-manager') { const install = nativeInstallation(data, assetId); if (!install) return move(data, 'manager-select'); const setup = nativeSetupRoute(data, install.vaultRef!, assetId); if (!setup.startsWith('do/')) return move(data, setup); }
   if (asset.purpose === 'work' && data.guide.answers[`${asset.id}:managedAllowed`] !== 'yes') return move(data, `managed/${asset.id}`);
@@ -85,6 +99,11 @@ export function beginRecipe(data: Dataset, assetId: string, recipeId: string, re
   }
   const recipe = recipeFor(data, asset, recipeId);
   if (!recipe) return move(data, `unsupported/${assetId}/${recipeId}`);
+  if (recipeId.startsWith('cloud-')) {
+    const redirect = cloudTaskRedirect(data, asset, recipe, recipe.steps[0]);
+    if (redirect === 'password-prerequisite' && recipeId.startsWith('cloud-password:')) return move({ ...data, guide: { ...data.guide, answers: { ...data.guide.answers, 'cloud-password:target': asset.id, 'cloud-password:installation': recipeId.slice('cloud-password:'.length), 'cloud-password:return': taskCursor(asset.id, recipe.id, recipe.steps[0].id) } } }, redirect);
+    if (redirect) return move(data, redirect);
+  }
   // Existing work is preserved. Content edits never invalidate control records.
   if (!revisit && recipeId.startsWith('native-password:') && isRecorded(asset, 'uniquePassword') && nativeInstallation(data, recipeId.slice('native-password:'.length))?.controls?.loginUse === 'verified') return move(data, `recorded/${assetId}/${recipeId}`);
   const control = recipeId === 'email-mfa' ? 'mfa' : recipeId === 'recovery' ? 'recovery' : recipeId === 'password' ? 'uniquePassword' : undefined;
@@ -100,9 +119,21 @@ export function beginRecipe(data: Dataset, assetId: string, recipeId: string, re
 }
 export function afterRecipe(data: Dataset, asset: Asset, recipeId: string): Dataset {
   const returnKey = `return/${asset.id}/${recipeId}`, returnTo = data.guide.answers[returnKey];
+  if (returnTo?.startsWith('cloud-password-resume/')) {
+    const appId = returnTo.split('/')[1], answers = { ...data.guide.answers }; delete answers[returnKey];
+    const next = { ...data, guide: { ...data.guide, answers } };
+    if (!isRecorded(asset, 'mfa') || !isRecorded(asset, 'recovery')) {
+      const pending = isRecorded(asset, 'mfa') ? 'recovery' : 'email-mfa';
+      return beginRecipe({ ...next, guide: { ...next.guide, answers: { ...answers, [`return/${asset.id}/${pending}`]: `cloud-password-resume/${appId}` } } }, asset.id, pending);
+    }
+    return requireAuthenticatorRoots(next, asset.id, answers['cloud-password:return'] ?? taskCursor(asset.id, `cloud-password:${appId}`, 'save-current'));
+  }
+  if (returnTo?.startsWith('cloud-resume/')) { const answers = { ...data.guide.answers }; delete answers[returnKey]; const next = { ...data, guide: { ...data.guide, answers } }; const resume = cloudSetupRoute(next, returnTo.split('/')[1]); return ['mfa', 'recovery'].every(c => isRecorded(asset, c)) ? requireAuthenticatorRoots(next, asset.id, resume) : move(next, resume); }
   if (returnTo?.startsWith('authenticator-root-security/')) { const answers = { ...data.guide.answers }; delete answers[returnKey]; const origin = returnTo.split('/')[1]; const next = { ...data, guide: { ...data.guide, answers } }; return requireAuthenticatorRoots(next, origin, answers[`auth:${origin}:security-return`] ?? 'manager-select'); }
   if (returnTo?.startsWith('native-resume/')) { const answers = { ...data.guide.answers }; delete answers[returnKey]; return move({ ...data, guide: { ...data.guide, answers } }, nativeSetupRoute(data, returnTo.split('/')[1])); }
   if (recipeId.startsWith('authenticator-setup:')) return move(data, authenticatorSetupRoute(data, asset.id));
+  if (recipeId.startsWith('cloud-password:')) return move(data, 'device-select');
+  if (recipeId.startsWith('cloud-')) { const app = cloudInstallation(data, asset.id); if (app) return move(data, cloudSetupRoute({ ...data, guide: { ...data.guide, managerId: app.vaultRef, answers: { ...data.guide.answers, [`${app.vaultRef}:installation`]: app.id } } }, app.vaultRef!)); }
   if (recipeId === 'builtin-manager') { const email = data.assets.find(a => a.id === data.guide.accountId); return email ? beginRecipe(data, email.id, 'password') : move(data, 'start'); }
   if (recipeId === 'email-mfa') return selectedAuthenticator(data, asset.id) ? beginRecipe(data, asset.id, 'recovery') : move(data, `auth-location/${asset.id}`);
   if (recipeId === 'recovery') return move(data, `recovery-location/${asset.id}`);
@@ -119,6 +150,7 @@ export function completeStep(data: Dataset, jump?: string): Dataset {
   const { asset, recipe, step, index } = task;
   const now = new Date().toISOString();
   const key = data.guide.cursor;
+  const requiredGuideSteps = recipe.id.startsWith('cloud-') ? cloudRequiredSteps(asset.id, recipe, step) : [];
   const definition = CHECKUP_CONTROLS.find(c => c.assetKind === asset.kind && c.assetControl === step.control);
   const answerKey = definition ? controlKey(definition.id, asset.id) : undefined;
   const old = data.guide.steps[key];
@@ -134,12 +166,13 @@ export function completeStep(data: Dataset, jump?: string): Dataset {
   let next: Dataset = { ...data, guide: { ...data.guide, ...(selectedApp && authenticatorScan(recipe.id, step.id) ? { answers: { ...data.guide.answers, [`auth:${asset.id}:task`]: key, [`auth:${asset.id}:enrollment`]: key } } : {}), steps: { ...data.guide.steps, [key]: record } } };
   if (selectedApp && authenticatorConfirmation(recipe.id, step.id)) next = { ...next, guide: { ...next.guide, answers: { ...next.guide.answers, [`auth:${asset.id}:confirmation`]: key } } };
   if (step.control) {
-    next = recordControl(next, asset.id, step.control, { id: key, origin: 'guide', titleEn: step.title.en, titleJa: step.title.ja, assetName: asset.name }, now);
+    next = recordControl(next, asset.id, step.control, { id: key, origin: 'guide', titleEn: step.title.en, titleJa: step.title.ja, assetName: asset.name, ...(requiredGuideSteps.length ? { requiredGuideSteps } : {}) }, now);
   }
-  for (const effect of step.extraControls ?? []) next = recordControl(next, effect.targetRef, effect.controlId, { id: `${key}#${effect.targetRef}#${effect.controlId}`, parentId: key, origin: 'guide', titleEn: step.title.en, titleJa: step.title.ja }, now);
-  if (next.version === 2 && (recipe.id === 'password' || recipe.id.startsWith('native-password:')) && step.id === 'apply') next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [asset.id]: { ...next.securityModel.lifecycle[asset.id], state: 'in-use', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now } } } };
+  for (const effect of step.extraControls ?? []) next = recordControl(next, effect.targetRef, effect.controlId, { id: `${key}#${effect.targetRef}#${effect.controlId}`, parentId: key, origin: 'guide', titleEn: step.title.en, titleJa: step.title.ja, ...(requiredGuideSteps.length ? { requiredGuideSteps } : {}) }, now);
+  if (next.version === 2 && (recipe.id === 'password' || recipe.id.startsWith('native-password:') || recipe.id.startsWith('cloud-password:')) && step.id === 'apply') next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [asset.id]: { ...next.securityModel.lifecycle[asset.id], state: 'in-use', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now } } } };
   next = recordNativeObservation(next, key, asset.id, recipe.id, step, now);
   next = recordAuthenticatorObservation(next, key, asset.id, recipe.id, step, now);
+  next = recordCloudObservation(next, key, asset.id, recipe.id, step, requiredGuideSteps, now);
   const nextStep = jump ? recipe.steps.find(s => s.id === jump) : recipe.steps[index + 1];
   return nextStep ? move(next, taskCursor(asset.id, recipe.id, nextStep.id)) : afterRecipe(next, asset, recipe.id);
 }
@@ -155,13 +188,13 @@ export function undoStep(data: Dataset, key: string): Dataset {
   }
   for (const action of data.actions.filter(a => a.parentId === key)) if (action.targetId && action.controlId) next = undoControl(next, action.id, action.targetId, action.controlId, { state: 'unknown', evidence: 'not-assessed' });
   for (const action of data.actions.filter(a => Array.isArray(a.requiredGuideSteps) && a.requiredGuideSteps.includes(key))) if (action.targetId && action.controlId) next = undoControl(next, action.id, action.targetId, action.controlId, { state: 'unknown', evidence: 'not-assessed' });
-  return move(undoAuthenticatorObservation(undoNativeObservation(next, key), key), key);
+  return move(undoCloudObservation(undoAuthenticatorObservation(undoNativeObservation(next, key), key), key), key);
 }
 export function deferStep(data: Dataset): Dataset {
   const task = currentTask(data);
   const key = data.guide.cursor;
   const next = { ...data, guide: { ...data.guide, steps: { ...data.guide.steps, [key]: data.guide.steps[key]?.status === 'done' ? data.guide.steps[key] : { status: 'later' as const, updatedAt: new Date().toISOString() } } } };
-  if (task) return move(next, task.recipe.id === 'email-mfa' || task.recipe.id === 'recovery' ? 'manager-select' : task.recipe.id === 'manager' || task.recipe.id === 'builtin-manager' || task.recipe.id.startsWith('authenticator-setup:') || (task.recipe.id === 'password' || task.recipe.id.startsWith('native-password:')) ? 'device-select' : 'finish');
+  if (task) return move(next, task.recipe.id === 'email-mfa' || task.recipe.id === 'recovery' ? 'manager-select' : task.recipe.id === 'manager' || task.recipe.id === 'builtin-manager' || task.recipe.id.startsWith('cloud-') || task.recipe.id.startsWith('authenticator-setup:') || (task.recipe.id === 'password' || task.recipe.id.startsWith('native-password:')) ? 'device-select' : 'finish');
   return move(next, key.startsWith('device') ? 'finish' : 'device-select');
 }
 export function selectAccount(data: Dataset, provider: NonNullable<Asset['provider']>, language: Language, existingId?: string, purpose?: 'personal' | 'work'): Dataset {
@@ -190,29 +223,31 @@ export function dependents(data: Dataset, missingId: string): Asset[] {
 }
 export function helpPrompt(data: Dataset, problem: string, language: Language): string {
   const task = currentTask(data);
+  const cloudHelp = cloudHelpContext(data, task?.asset.id, task?.recipe.id);
   const asset = task?.asset ?? data.assets.find(a => a.id === data.guide.cursor.split('/')[1]);
   // Only allowlisted catalog labels are exported. No nicknames, notes, raw answers or credentials.
   const native = nativeVault(data, nativeInstallation(data, asset?.id ?? '')?.vaultRef ?? data.guide.managerId);
   const authApp = asset && selectedAuthenticator(data, asset.id);
   const authOS = data.assets.find(a => a.id === authApp?.deviceRef)?.operatingSystem;
   const authLabel = authApp && AUTHENTICATORS[authApp.productId as AuthenticatorProduct];
-  const managerLabel = native && NATIVE_NAMES[native.productId as NativeProduct];
-  const service = task?.recipe.id === 'builtin-manager' && managerLabel ? managerLabel[language] : asset?.provider ? PROVIDERS[asset.provider] : 'Unspecified';
-  const platform = asset ? data.guide.answers[`${asset.id}:platform`] ?? asset.operatingSystem ?? 'unknown' : 'unknown';
+  const managerLabel = cloudHelp?.product ?? (native && NATIVE_NAMES[native.productId as NativeProduct]);
+  const managerTask = !!managerLabel && ((!task && !!cloudHelp) || task?.recipe.id === 'builtin-manager' || (!!task?.recipe.id.startsWith('cloud-') && !task.recipe.id.startsWith('cloud-password:')));
+  const service = managerTask ? managerLabel![language] : asset?.provider ? PROVIDERS[asset.provider] : 'Unspecified';
+  const platform = cloudHelp?.os ?? (asset ? data.guide.answers[`${asset.id}:platform`] ?? asset.operatingSystem ?? 'unknown' : 'unknown');
   const attempted = data.guide.cursor.split('/')[2];
   const attemptedTask = attempted === 'password' || attempted?.startsWith('native-password:') ? { en: 'Generate, save and use this account’s password', ja: 'このアカウントのパスワードを生成・保存して使う' } : attempted === 'device' ? { en: 'Protect this device', ja: 'この端末の対策を進める' } : { en: 'Find supported authentication instructions', ja: '対応する認証手順を確認する' };
-  const sourceIds = [...new Set([...(task?.step.sources ?? (asset ? recipeFor(data, asset, 'email-mfa')?.steps[0].sources ?? [] : [])), ...(authApp ? authSources(authApp.productId as AuthenticatorProduct) : [])])];
+  const sourceIds = [...new Set([...(task?.step.sources ?? cloudHelp?.sources ?? (asset ? recipeFor(data, asset, 'email-mfa')?.steps[0].sources ?? [] : [])), ...(authApp ? authSources(authApp.productId as AuthenticatorProduct) : [])])];
   const allowedPlatforms = ['ios', 'macos', 'android', 'windows', 'web', 'ubuntu', 'chromeos'];
   return language === 'ja' ? [
     '最新の公式資料を確認し、一度に一つの質問または操作だけを案内してください。最新情報を確認できない場合は、その旨を明示してください。秘密情報の入力・共有は求めないでください。',
-    `サービス: ${service}`, ...(authLabel ? [`認証アプリ: ${authLabel.ja}`, `認証アプリの端末OS: ${authOS === 'ios' || authOS === 'android' ? authOS : '未確認'}（詳細版は未確認）`] : []), ...(managerLabel ? [`パスワード管理: ${managerLabel.ja}`] : []), `端末・OSの種類: ${allowedPlatforms.includes(platform) ? platform : '未確認'}（詳細バージョンは未確認。必要なら質問してください）`,
-    `作業: ${task?.recipe.title.ja ?? attemptedTask.ja}`, `現在のステップ: ${task?.step.title.ja ?? 'この環境に対応する手順がない'}`, `想定される表示: ${task?.step.expected.ja ?? '未確認'}`, `困りごと: ${problem}`,
+    `サービス: ${service}`, ...(authLabel ? [`認証アプリ: ${authLabel.ja}`, `認証アプリの端末OS: ${authOS === 'ios' || authOS === 'android' ? authOS : '未確認'}（詳細版は未確認）`] : []), ...(managerLabel ? [`パスワード管理: ${managerLabel.ja}`] : []), ...(cloudHelp?.browser ? [`ブラウザー: ${cloudHelp.browser}（版は未確認）`] : []), ...(cloudHelp?.osRange ? [`確認したOSの世代: ${cloudHelp.osRange}`] : []), `端末・OSの種類: ${allowedPlatforms.includes(platform) ? platform : '未確認'}（詳細バージョンは未確認。必要なら質問してください）`,
+    `作業: ${task?.recipe.title.ja ?? cloudHelp?.title.ja ?? attemptedTask.ja}`, `現在のステップ: ${task?.step.title.ja ?? cloudHelp?.title.ja ?? 'この環境に対応する手順がない'}`, `想定される表示: ${task?.step.expected.ja ?? cloudHelp?.expected.ja ?? '未確認'}`, `困りごと: ${problem}`,
     '根拠となる公式資料:', ...sourceIds.map(s => `${s}: ${sourcelink(s)}`),
     'パスワード・認証コード・復旧コード・個人情報は共有しません。既存の認証方法を削除する前に、復旧手段と新しい方法の動作を確認してください。',
   ].join('\n') : [
     'Check current official documentation. Guide me through one question or action at a time. Say explicitly if you cannot check current information. Never request secrets or personal data.',
-    `Service: ${service}`, ...(authLabel ? [`Authenticator: ${authLabel.en}`, `Authenticator device OS: ${authOS === 'ios' || authOS === 'android' ? authOS : 'unknown'} (exact version unconfirmed)`] : []), ...(managerLabel ? [`Password manager: ${managerLabel.en}`] : []), `Device / OS family: ${allowedPlatforms.includes(platform) ? platform : 'unknown'} (exact version unknown; ask if needed)`,
-    `Task: ${task?.recipe.title.en ?? attemptedTask.en}`, `Current step: ${task?.step.title.en ?? 'Unsupported environment'}`, `Expected display: ${task?.step.expected.en ?? 'Unknown'}`, `Problem: ${problem}`,
+    `Service: ${service}`, ...(authLabel ? [`Authenticator: ${authLabel.en}`, `Authenticator device OS: ${authOS === 'ios' || authOS === 'android' ? authOS : 'unknown'} (exact version unconfirmed)`] : []), ...(managerLabel ? [`Password manager: ${managerLabel.en}`] : []), ...(cloudHelp?.browser ? [`Browser: ${cloudHelp.browser} (version unconfirmed)`] : []), ...(cloudHelp?.osRange ? [`Confirmed OS range: ${cloudHelp.osRange}`] : []), `Device / OS family: ${allowedPlatforms.includes(platform) ? platform : 'unknown'} (exact version unknown; ask if needed)`,
+    `Task: ${task?.recipe.title.en ?? cloudHelp?.title.en ?? attemptedTask.en}`, `Current step: ${task?.step.title.en ?? cloudHelp?.title.en ?? 'Unsupported environment'}`, `Expected display: ${task?.step.expected.en ?? cloudHelp?.expected.en ?? 'Unknown'}`, `Problem: ${problem}`,
     'Official sources:', ...sourceIds.map(s => `${s}: ${sourcelink(s)}`),
     'Keep existing authentication until recovery and a new method have been tested. I will not share passwords, authentication codes, recovery codes or personal data.',
   ].join('\n');

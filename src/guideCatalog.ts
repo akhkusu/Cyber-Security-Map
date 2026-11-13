@@ -1,4 +1,6 @@
 import type { Asset, Language } from './models';
+import { CLOUD_SOURCES } from './cloudSources';
+import { privatePassphraseStep } from './passphraseCatalog';
 
 export type Copy = { en: string; ja: string };
 export const c = (en: string, ja: string): Copy => ({ en, ja });
@@ -6,6 +8,7 @@ export const say = (copy: Copy, language: Language) => copy[language];
 export type Source = { title: string; url: string; checked: string; scope: string; reviewMethod: 'official-documentation' | 'official-search-excerpt' };
 const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-13', reviewMethod: 'official-documentation' });
 export const SOURCES = {
+  ...CLOUD_SOURCES,
   applePasswords: source('Apple · パスワードアプリ', 'https://support.apple.com/ja-jp/120758', 'iOS / iPadOS 18+ / macOS Sequoia+'),
   appleKeychain: source('Apple · iCloudキーチェーン', 'https://support.apple.com/ja-jp/109016', 'Account / device approval / sync'),
   appleSaved: source('Apple · 保存済みのパスワード', 'https://support.apple.com/ja-jp/104955', 'iOS 18+ / older Settings path'),
@@ -98,12 +101,14 @@ export type GuideStep = {
   control?: string; // Only the final, explicitly confirmed state updates a control.
   diagram?: Copy[];
   technical?: 'mfa' | 'password' | 'backup' | 'updates';
+  download?: { path: string; filename: string; label: Copy; attribution: Copy };
+  requires?: string[];
 };
 export type Recipe = { id: string; title: Copy; steps: GuideStep[] };
 const next = c('Next', '次へ');
 const checked = c('I checked this', '確認しました');
 const step = (id: string, title: Copy, place: Copy, action: Copy, expected: Copy, sources: SourceId[], extra: Partial<GuideStep> = {}): GuideStep => ({ id, title, place, action, expected, sources, button: next, ...extra });
-export const PROVIDERS = { apple: 'iCloud / Apple Account', google: 'Gmail / Google', microsoft: 'Outlook / Microsoft', proton: 'Proton Mail', fastmail: 'Fastmail', tuta: 'Tuta / Tutanota', zoho: 'Zoho Mail', yahoo: 'Yahoo.com', startmail: 'StartMail', mailcom: 'mail.com', gmx: 'GMX.com', bitwarden: 'Bitwarden', '1password': '1Password', other: 'Other' };
+export const PROVIDERS = { apple: 'iCloud / Apple Account', google: 'Gmail / Google', microsoft: 'Outlook / Microsoft', proton: 'Proton Mail', fastmail: 'Fastmail', tuta: 'Tuta / Tutanota', zoho: 'Zoho Mail', yahoo: 'Yahoo.com', startmail: 'StartMail', mailcom: 'mail.com', gmx: 'GMX.com', bitwarden: 'Bitwarden', '1password': '1Password', nord: 'Nord Account', other: 'Other' };
 export const PLATFORMS = { ios: 'iPhone / iPad', macos: 'Mac', android: 'Android', windows: 'Windows', web: 'Web' };
 export type Platform = keyof typeof PLATFORMS;
 
@@ -175,9 +180,7 @@ export function managerRecipe(product: Asset['provider'], platform: string, regi
     step('install', c('Install your password manager', 'パスワードマネージャーをインストールする'), c(PLATFORMS[platform as Platform] ?? 'Web', PLATFORMS[platform as Platform] ?? 'Web'), c('Open the official downloads page and install the app for the device selected above. If installed already, open it.', '公式ダウンロード画面から、選んだ端末向けのアプリをインストールしてください。導入済みなら開いてください。'), c('The official app is installed and opens.', '公式のアプリを起動できること。'), sources, { url: bw ? 'https://bitwarden.com/download/' : 'https://1password.com/downloads/' }),
     step('existing', c('Do you already have an account?', 'この製品のアカウントはありますか？'), place, c('Use your existing account if you have one. You do not need to create it again.', 'アカウントがある場合は、そのアカウントを使います。作り直す必要はありません。'), c('Choose the option that applies to you.', '当てはまるものを選んでください。'), sources, { choices: [{ label: c('I already have one', 'すでに持っている'), next: 'existing-signin' }, { label: c('Create a new account', '初めて作る'), next: 'master' }] }),
     step('existing-signin', c('Sign in to your existing account', '既存のアカウントでサインインする'), place, c('Sign in using your existing account. Keep its current password if it is unique and strong. Otherwise use the account’s password-change settings before continuing.', '既存のアカウントでサインインしてください。固有で十分に強いパスワードならそのまま使えます。使い回しや弱いものなら、製品のパスワード変更画面で変更してから進んでください。'), c('You can open your vault with a unique, strong password.', '固有の強いパスワードで保管庫を開けること。'), [bw ? 'bwMaster' : 'opMaster'], { url: site, choices: [{ label: checked, next: 'paper' }] }),
-    step('master', c('Prepare a unique master passphrase', '専用のマスターパスフレーズを用意する'), place,
-      c(bw ? 'Use a long, unique passphrase. Bitwarden requires at least 12 characters. In its generator choose Passphrase and generate 5 or more random words; do not choose related words yourself.' : 'Use the official generator to create a unique, random, memorable account password. Choose a memorable word-based password; use 5 or more randomly generated words as this guide’s conservative choice.', bw ? '長く、使い回さないフレーズにします。Bitwardenの最低条件は12文字です。生成機能で「パスフレーズ」を選び、単語数を5語以上にしてランダムに作成してください。関連する単語を自分で並べないでください。' : '公式の生成機能で、固有でランダムな、覚えやすいアカウントパスワードを作ります。このガイドでは余裕を持たせ、ランダムな単語を5語以上にします。'),
-      c('A unique passphrase is ready. Never reuse an example or this app’s storage passphrase.', '固有のフレーズを用意できたこと。このアプリの保存用パスフレーズや例文は使い回しません。'), [bw ? 'bwMaster' : 'opMaster', bw ? 'bwPhrase' : 'opLength'], { url: bw ? 'https://bitwarden.com/password-generator/' : 'https://1password.com/password-generator/', technical: 'password' }),
+    { ...privatePassphraseStep('master', c(bw ? 'your Bitwarden master password' : 'your 1Password account password', bw ? 'Bitwardenのマスター' : '1Passwordのアカウントパスワード'), place, bw ? 'bwMaster' : 'opMaster'), title: c('Prepare a unique master passphrase', '専用のマスターパスフレーズを用意する'), sources: ['effDice', bw ? 'bwMaster' : 'opMaster', bw ? 'bwPhrase' : 'opLength'] },
     step('create', c('Create the account', 'アカウントを作る'), place,
       c(bw ? 'Select Sign Up, choose the correct server, verify your email, and set the passphrase you prepared. Enter it only on Bitwarden.' : 'Create your individual or family account on 1Password. Use your prepared account password and save your Emergency Kit when offered. Check the plan and price before accepting a subscription.', bw ? '「Sign Up」でサーバーを選び、メールを確認して、用意したフレーズを設定してください。入力先はBitwardenだけです。' : '1Passwordで個人用または家族用のアカウントを作り、用意したパスワードを設定してください。Emergency Kitも保存します。契約前に料金とプランを確認してください。'),
       c('You can sign in to the new vault.', '作成した保管庫へサインインできること。'), sources, { url: site }),

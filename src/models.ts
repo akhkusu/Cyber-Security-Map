@@ -25,7 +25,7 @@ export const assetSchema = z.object({
   controlEvidence: z.record(z.string(), controlEvidenceSchema).default({}),
   operatingSystem: z.enum(OPERATING_SYSTEMS).optional(),
   notes: z.string().max(300).optional(),
-  provider: z.enum(['apple', 'google', 'microsoft', 'proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx', 'bitwarden', '1password', 'other']).optional(),
+  provider: z.enum(['apple', 'google', 'microsoft', 'proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx', 'bitwarden', '1password', 'nord', 'other']).optional(),
   purpose: z.enum(['personal', 'work']).optional(),
   services: z.array(z.enum(['mail', 'cloud', 'manager'])).default([]),
 }).passthrough();
@@ -77,7 +77,7 @@ export const guideSchema = z.object({
   managerId: z.string().optional(),
   deviceId: z.string().optional(),
   draftAccountId: z.string().optional(),
-  pendingProvider: z.enum(['apple', 'google', 'microsoft', 'proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx', 'bitwarden', '1password', 'other']).optional(),
+  pendingProvider: z.enum(['apple', 'google', 'microsoft', 'proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx', 'bitwarden', '1password', 'nord', 'other']).optional(),
   answers: z.record(z.string(), z.string()).default({}),
   steps: z.record(z.string(), z.object({ status: z.enum(['done', 'later']), authenticatorRef: z.string().optional(), authenticatorEnrollment: z.string().optional(), updatedAt: z.string(), beforeControl: z.enum(CONTROL_STATES).optional(), beforeEvidence: controlEvidenceSchema.optional(), beforeAnswer: assessmentAnswerSchema.optional() }).passthrough()).default({}),
 }).passthrough().default({ cursor: 'start', history: [], answers: {}, steps: {} });

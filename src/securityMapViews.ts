@@ -1,6 +1,7 @@
 import type { Asset, Dataset, Language, RecoveryDependency } from './models';
 import { authenticator, authenticatorReady } from './authenticatorGuide';
 import { evaluateAccess, type SecurityEntity } from './securityModel';
+import { cloudInstallation, cloudManagerReady, cloudVault } from './cloudManagers';
 
 export type MapItem = Asset & { entityKind?: SecurityEntity['kind'] };
 export type MapConnection = RecoveryDependency & { typed?: boolean };
@@ -33,6 +34,13 @@ export function typedMapStatus(data: Dataset, node: MapItem, language: Language)
     return { tone: recorded ? 'recorded' : 'unknown', label: yes ? used ? '新端末でコード利用の記録あり' : recorded ? 'コード登録の記録あり' : 'コードの確認待ち' : used ? 'Code used on new phone' : recorded ? 'Code registration recorded' : 'Code check needed', reason: yes ? used ? '新端末のコードを正規サービスが受け付けた記録' : 'この端末のアプリと、サービス側の登録確認' : used ? 'Official service accepted the new phone’s code' : 'App on this device and service-side registration' };
   }
   if (entity?.kind === 'installation' || entity?.kind === 'vault') {
+    const cloud = cloudVault(data, entity.kind === 'installation' ? entity.vaultRef : entity.id);
+    if (cloud && data.version === 2) {
+      const apps = entity.kind === 'installation' ? [cloudInstallation(data, entity.id)!] : data.securityModel.entities.filter(e => e.kind === 'installation' && !e.mergedIntoRef && e.vaultRef === cloud.id);
+      const ready = apps.some(app => !!app && cloudManagerReady(data, cloud.id, app.id));
+      const used = apps.some(app => !!app && cloudManagerReady(data, cloud.id, app.id) && data.securityModel.routes.some(r => r.purpose === 'sign-in' && r.contexts.includes('normal') && data.securityModel.facts.some(f => f.id === (r.requirements.kind === 'fact' ? r.requirements.factId : '') && f.requiredRefs.includes(app.id) && f.requiredRefs.includes(cloud.id)) && evaluateAccess(data.securityModel, r.id, { context: 'normal', now: new Date().toISOString() }).state === 'available'));
+      return { tone: used ? 'recorded' : 'unknown', label: yes ? used ? '保存パスワードの利用記録あり' : ready ? '保存パスワードの利用待ち' : '設定と復旧の確認待ち' : used ? 'Saved-password use recorded' : ready ? 'Saved-password use needed' : 'Setup and recovery checks needed', reason: yes ? 'この端末・プロファイルと基盤アカウントの記録を確認' : 'Checks for this app/profile and its backing account' };
+    }
     const required = ['opened', 'storageChecked', 'autofill', 'loginUse'];
     const completeOnOneDevice = entity.kind === 'vault' && data.version === 2 ? data.securityModel.entities.some(e => e.kind === 'installation' && e.vaultRef === entity.id && required.every(c => e.controls?.[c] === 'verified')) : required.every(c => node.controls[c] === 'verified');
     const missing = completeOnOneDevice ? [] : required.filter(c => node.controls[c] !== 'verified').concat(['device-context']);
