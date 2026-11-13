@@ -300,7 +300,7 @@ function Onboarding({ language, onLanguage, onCreate, onDemo, onRestore }: {
       </section>}
       {step === 3 && <section className="wizard-panel wide-panel">
         <div className="step-icon"><GitBranch size={25} /></div><div className="eyebrow">{tx(language, 'A QUICK INVENTORY', 'かんたんな初期登録')}</div>
-        <h1>{tx(language, 'What is part of your digital life?', '普段使うものを選んでください')}</h1><p className="lead">{tx(language, 'Use recognizable nicknames. You do not need to enter email addresses, usernames, or any secrets.', 'わかりやすい呼び名を使います。メールアドレス、ユーザー名、秘密情報は入力しないでください。')}</p>
+        <h1>{tx(language, 'What is part of your digital life?', '普段使うものを選んでください')}</h1><p className="lead">{tx(language, 'Use recognizable nicknames. You do not need to enter email addresses, usernames, or any secrets.', 'メールアドレス、ユーザー名、秘密情報は入力しないでください。')}</p>
         <div className="selection-grid quick-grid">{quickOptions.map((item) => { const Icon = item.icon; return <button key={item.id} className={`selection-card quick-card ${quick.includes(item.id) ? 'selected' : ''}`} onClick={() => toggle(item.id, quick, setQuick)}><span className="quick-icon"><Icon size={19} /></span><span>{tx(language, item.name, item.ja)}</span><span className="selection-check">{quick.includes(item.id) && <Check size={15} />}</span></button>; })}</div>
         <div className="inline-hint"><CircleHelp size={15} />{tx(language, 'Skip anything you do not want to add yet. You can add more later.', '今は登録したくない項目は飛ばせます。後から追加できます。')}</div>
         <WizardButtons language={language} back={() => setStep(2)} next={next} />
