@@ -14,8 +14,8 @@ const entityBase = { id, label, createdAt: time, scopeId: id.optional() };
 export const securityEntitySchema = z.discriminatedUnion('kind', [
   z.object({ ...entityBase, kind: z.literal('person'), role: z.enum(['self', 'trusted-contact', 'administrator', 'other']) }).passthrough(),
   z.object({ ...entityBase, kind: z.literal('organization') }).passthrough(),
-  z.object({ ...entityBase, kind: z.literal('installation'), productId: id, deviceRef: id, profileLabel: label.optional(), appVersion: z.string().max(40).optional() }).passthrough(),
-  z.object({ ...entityBase, kind: z.literal('vault'), productId: id, ownerRef: id.optional(), authenticationAccountRef: id.optional() }).passthrough(),
+  z.object({ ...entityBase, kind: z.literal('installation'), productId: id, deviceRef: id, profileLabel: label.optional(), appVersion: z.string().max(40).optional(), vaultRef: id.optional(), platformVariant: z.enum(['ios18plus', 'mac15plus']).optional(), controls: z.record(z.string(), controlStateSchema).optional(), controlEvidence: z.record(z.string(), controlEvidenceSchema).optional() }).passthrough(),
+  z.object({ ...entityBase, kind: z.literal('vault'), productId: id, ownerRef: id.optional(), authenticationAccountRef: id.optional(), primaryDeviceRef: id.optional(), storageMode: z.enum(['account', 'local']).optional(), controls: z.record(z.string(), controlStateSchema).optional(), controlEvidence: z.record(z.string(), controlEvidenceSchema).optional() }).passthrough(),
   z.object({ ...entityBase, kind: z.literal('credential'), credentialType: z.enum(['password', 'totp', 'passkey', 'security-key-registration', 'app-password', 'recovery-code', 'recovery-key', 'api-token', 'ssh-key', 'certificate', 'other']), subjectRef: id, storageRef: id.optional(), replicaGroupId: id.optional(), roles: z.array(z.enum(['sign-in', 'second-step', 'decrypt', 'local-unlock', 'restore'])).min(1) }).passthrough(),
   z.object({ ...entityBase, kind: z.literal('identifier'), identifierType: z.enum(['email-alias', 'phone-number', 'domain', 'login-id', 'other']), subjectRef: id.optional(), roles: z.array(z.enum(['sign-in', 'recovery', 'contact', 'routing'])).min(1) }).passthrough(),
   z.object({ ...entityBase, kind: z.literal('phone-line'), deviceRef: id.optional(), carrierAccountRef: id.optional(), carrierProductId: id.optional(), simType: z.enum(['physical', 'esim', 'unknown']).default('unknown') }).passthrough(),
@@ -94,8 +94,8 @@ export function securityModelIssues(model: SecurityModel, legacy: readonly Legac
   const entities = new Set([...legacy, ...model.entities].map(e => e.id));
   const check = (recordId: string, ref: string | undefined) => { if (ref && !entities.has(ref)) issues.push({ code: 'missing-entity', recordId, referenceId: ref }); };
   for (const e of model.entities) {
-    if (e.kind === 'installation') check(e.id, e.deviceRef);
-    if (e.kind === 'vault') { check(e.id, e.ownerRef); check(e.id, e.authenticationAccountRef); }
+    if (e.kind === 'installation') { check(e.id, e.deviceRef); check(e.id, e.vaultRef); }
+    if (e.kind === 'vault') { check(e.id, e.ownerRef); check(e.id, e.authenticationAccountRef); check(e.id, e.primaryDeviceRef); }
     if (e.kind === 'credential') { check(e.id, e.subjectRef); check(e.id, e.storageRef); }
     if (e.kind === 'identifier') check(e.id, e.subjectRef);
     if (e.kind === 'phone-line') { check(e.id, e.deviceRef); check(e.id, e.carrierAccountRef); }

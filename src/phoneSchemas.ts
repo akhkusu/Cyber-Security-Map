@@ -9,6 +9,7 @@ export const phoneWorkflowSchema = z.object({
   records: z.record(z.string(), z.object({
     stepId: z.string(), titleEn: z.string(), titleJa: z.string(),
     status: z.enum(['confirmed', 'later']), updatedAt: z.string(),
+    extraControls: z.array(z.object({ targetRef: z.string(), controlId: z.string() }).passthrough()).optional(),
     targetRef: z.string().optional(), controlId: z.string().optional(),
     factIds: z.array(z.string()).default([]), sourceIds: z.array(z.string()).default([]),
     physicalEffect: z.boolean().default(false),

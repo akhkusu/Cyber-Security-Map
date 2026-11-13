@@ -2,6 +2,8 @@ import { makeAsset, upgradeDataset, type CurrentDataset, type Dataset, type Lang
 import { recordControl, undoControl } from './controlRecords';
 import { phoneWorkflowSchema, type PhoneWorkflow } from './phoneSchemas';
 import { PHONE_SOURCES, phoneAssets, phoneName, phoneSteps, type PhoneStep } from './phoneCatalog';
+import { recordNativeObservation, undoNativeObservation } from './nativeObservations';
+import { chooseNativeDevice, nativeVault, NATIVE_NAMES, setNativeVariant, type NativeProduct } from './nativeManagers';
 import { PROVIDERS } from './guideCatalog';
 
 export const getPhoneWorkflows = (data: Dataset): PhoneWorkflow[] => data.version === 2 ? data.deviceWorkflows : [];
@@ -58,6 +60,21 @@ export function answerPhoneQuestion(data: Dataset, workflowId: string, value: st
     const ref = step.id === 'old-os' ? workflow.oldDeviceRef : workflow.newDeviceRef;
     next = { ...next, assets: next.assets.map(a => a.id === ref ? { ...a, operatingSystem: value as 'ios' | 'android' | 'other', updatedAt: new Date().toISOString() } : a) };
   }
+  if (step.id.startsWith('native-use:') && value === 'yes' && workflow.newDeviceRef) {
+    const vaultId = step.id.slice('native-use:'.length), vault = nativeVault(next, vaultId);
+    const device = next.assets.find(a => a.id === workflow.newDeviceRef);
+    if (vault && (vault.productId !== 'apple-passwords' || device?.operatingSystem === 'ios')) {
+      const mainGuide = next.guide;
+      const prepared = chooseNativeDevice(next, vaultId, workflow.newDeviceRef);
+      const installationRef = prepared.guide.answers[`${vaultId}:installation`];
+      next = { ...prepared, guide: mainGuide } as CurrentDataset;
+      updated = { ...updated, answers: { ...updated.answers, [`native-install:${vaultId}`]: installationRef } };
+    }
+  }
+  if (step.id.startsWith('native-version:') && value === 'ios18plus') {
+    const installationRef = workflow.answers[`native-install:${step.id.slice('native-version:'.length)}`];
+    if (installationRef) next = setNativeVariant(next, installationRef, 'ios18plus') as CurrentDataset;
+  }
   return advance(next, updated, step.id);
 }
 export function phoneBlockingSteps(data: Dataset, workflow: PhoneWorkflow, beforeId = 'handoff-gate'): PhoneStep[] {
@@ -75,6 +92,8 @@ export function confirmPhoneStep(data: Dataset, workflowId: string, now = new Da
   const key = phoneRecordKey(workflow, step);
   let next: CurrentDataset = data;
   if (step.control) next = recordControl(next, step.control.targetRef, step.control.id, { id: key, titleEn: step.title.en, titleJa: step.title.ja, origin: `phone:${workflow.id}` }, now) as CurrentDataset;
+  for (const effect of step.extraControls ?? []) next = recordControl(next, effect.targetRef, effect.controlId, { id: `${key}#${effect.targetRef}#${effect.controlId}`, parentId: key, origin: `phone:${workflow.id}` }, now) as CurrentDataset;
+  if (step.nativeContext) next = recordNativeObservation(next, key, step.nativeContext.subjectRef, step.nativeContext.recipeId, step.nativeContext.step, now) as CurrentDataset;
   const factIds: string[] = [];
   if (step.access) {
     const factId = `${key}:observation`, routeId = `${key}:route`; factIds.push(factId);
@@ -85,7 +104,7 @@ export function confirmPhoneStep(data: Dataset, workflowId: string, now = new Da
   if (step.id === 'erase-old' && workflow.oldDeviceRef) next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [workflow.oldDeviceRef]: { ...next.securityModel.lifecycle[workflow.oldDeviceRef], state: 'retired', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now } } } };
   if (step.id === 'handoff-check' && workflow.oldDeviceRef) next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [workflow.oldDeviceRef]: { ...next.securityModel.lifecycle[workflow.oldDeviceRef], state: 'transferred', evidence: 'user-confirmed', updatedAt: now, accessResetAt: next.securityModel.lifecycle[workflow.oldDeviceRef]?.accessResetAt ?? now } } } };
   if (step.id === 'keep-old' && workflow.oldDeviceRef) next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [workflow.oldDeviceRef]: { ...next.securityModel.lifecycle[workflow.oldDeviceRef], state: workflow.answers['old-fate'] === 'spare' ? 'backup' : 'in-use', evidence: 'user-confirmed', updatedAt: now } } } };
-  const records = { ...workflow.records, [key]: { ...workflow.records[key], stepId: step.id, titleEn: step.title.en, titleJa: step.title.ja, status: 'confirmed' as const, updatedAt: now, targetRef: step.control?.targetRef ?? (step.physicalEffect ? workflow.oldDeviceRef : undefined), controlId: step.control?.id, factIds, sourceIds: step.sources, physicalEffect: !!step.physicalEffect } };
+  const records = { ...workflow.records, [key]: { ...workflow.records[key], stepId: step.id, titleEn: step.title.en, titleJa: step.title.ja, status: 'confirmed' as const, updatedAt: now, extraControls: step.extraControls, targetRef: step.control?.targetRef ?? (step.physicalEffect ? workflow.oldDeviceRef : undefined), controlId: step.control?.id, factIds, sourceIds: step.sources, physicalEffect: !!step.physicalEffect } };
   return advance(next, { ...workflow, records }, step.id);
 }
 export function deferPhoneStep(data: Dataset, workflowId: string, now = new Date().toISOString()): Dataset {
@@ -116,8 +135,10 @@ export function undoPhoneRecord(data: Dataset, workflowId: string, key: string, 
   if (!workflow || !record) return data;
   let next: CurrentDataset = data;
   if (record.controlId && record.targetRef) next = undoControl(next, key, record.targetRef, record.controlId, { state: 'unknown', evidence: 'not-assessed' }, now) as CurrentDataset;
-  const facts = next.securityModel.facts.filter(f => !record.factIds.includes(f.id));
-  const routes = next.securityModel.routes.filter(r => r.id !== `${key}:route`);
+  for (const effect of record.extraControls ?? []) next = undoControl(next, `${key}#${effect.targetRef}#${effect.controlId}`, effect.targetRef, effect.controlId, { state: 'unknown', evidence: 'not-assessed' }, now) as CurrentDataset;
+  next = undoNativeObservation(next, key) as CurrentDataset;
+  const facts = next.securityModel.facts.map(f => record.factIds.includes(f.id) ? { ...f, state: 'unknown' as const, evidence: 'unknown' as const } : f);
+  const routes = next.securityModel.routes;
   const records = { ...workflow.records }; delete records[key];
   // A corrected record cannot undo a real wipe or revive an old authentication
   // device. Keep it retired until its current role has been explicitly checked.
@@ -135,7 +156,8 @@ export function phoneHelpPrompt(data: Dataset, workflow: PhoneWorkflow, problemI
   const step = currentPhoneStep(data, workflow), problems = language === 'ja' ? ['画面が違う', '項目が見つからない', '権限がない', '旧端末・復旧方法が使えない', '対応する手順がない'] : ['The screen differs', 'The item is missing', 'I lack permission', 'The old device or recovery method is unavailable', 'No supported recipe'];
   const old = data.assets.find(a => a.id === workflow.oldDeviceRef), fresh = data.assets.find(a => a.id === workflow.newDeviceRef);
   // Never copy nicknames, free text, IDs or raw saved answers to an external AI.
-  const safeData = { ...data, assets: data.assets.map(a => ({ ...a, name: a.provider ? PROVIDERS[a.provider] : a.kind === 'device' ? phoneName(a.operatingSystem) : 'Selected account' })) };
+  let safeData = { ...data, assets: data.assets.map(a => ({ ...a, name: a.provider ? PROVIDERS[a.provider] : a.kind === 'device' ? phoneName(a.operatingSystem) : 'Selected account' })) };
+  if (safeData.version === 2) safeData = { ...safeData, securityModel: { ...safeData.securityModel, entities: safeData.securityModel.entities.map(e => ({ ...e, label: (e.kind === 'vault' || e.kind === 'installation') && NATIVE_NAMES[e.productId as NativeProduct] ? NATIVE_NAMES[e.productId as NativeProduct].en : 'Selected security item' })) } };
   const safeStep = phoneSteps(safeData, workflow).find(s => s.id === step.id) ?? step;
   return [language === 'ja' ? '最新の公式資料を確認し、一度に一つの質問または操作を案内してください。確認できない最新情報は、その旨を明示してください。秘密情報を求めず、新しい手段が使える前に既存の方法を削除させないでください。' : 'Check current official documentation. Guide one question or action at a time. State if you cannot verify current information. Do not request secrets or remove old access before new access works.',
     `Task: ${language === 'ja' ? 'スマホの機種変更' : 'Move to a new phone'}`, `Current step: ${safeStep.title[language]}`,

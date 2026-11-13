@@ -1,6 +1,8 @@
 import type { Asset, Dataset } from './models';
 import type { PhoneWorkflow } from './phoneSchemas';
-import { c, deviceRecipe, emailRecipe, SOURCES, type Copy, type Source } from './guideCatalog';
+import { builtinManagerRecipe } from './nativeManagerCatalog';
+import { nativeInstallation, nativeVault, NATIVE_NAMES, type NativeProduct } from './nativeManagers';
+import { c, deviceRecipe, emailRecipe, SOURCES, type Copy, type Source, type GuideStep } from './guideCatalog';
 
 const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-13', reviewMethod: 'official-documentation' });
 export const PHONE_SOURCES: Record<string, Source> = {
@@ -27,6 +29,9 @@ export type PhoneStep = {
   text?: Copy; place?: Copy; action?: Copy; expected?: Copy; button?: Copy;
   answerKey?: string; choices?: PhoneChoice[]; sources: string[]; url?: string;
   refs: string[]; variant?: string; control?: { targetRef: string; id: string };
+  extraControls?: { targetRef: string; controlId: string }[];
+  setupHelp?: GuideStep['setupHelp'];
+  nativeContext?: { installationRef: string; subjectRef: string; recipeId: string; step: GuideStep };
   access?: { targetRef: string; purpose: 'sign-in' | 'decrypt' }; physicalEffect?: boolean;
 };
 const choice = (value: string, en: string, ja: string, description?: Copy): PhoneChoice => ({ value, label: c(en, ja), description });
@@ -121,6 +126,47 @@ export function phoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] 
     if (answers[key] === 'yes') steps.push(...accountSteps(account, fresh).map(s => useCode && s.id === `signin:${account.id}` ? { ...s, action: c(`${s.action?.en} When the service asks for an authenticator code, enter this account’s current code from the NEW phone’s Google Authenticator. If you cannot choose that method, keep this task unfinished.`, `${s.action?.ja} 認証コードを求められたら、新端末のGoogle 認証システムにある今回のアカウントの現在のコードを入力してください。その方法を選べなければ未完了で残します。`), expected: c('The official service accepts the authenticator code from the new phone and completes this exact account’s sign-in.', '正規のサービスが新端末の認証コードを受け付け、今回のアカウントのログインが完了すること。'), variant: 'new-totp-code', sources: [...s.sources, 'googleAuth', 'googleAuthIos'] } : s));
     else steps.push(action(`elsewhere:${account.id}`, c('Check access somewhere other than the old phone', '旧端末以外で利用できるか確認する'), c('Your other device · official service', '別の利用端末 · 正規のサービス'), c(useCode ? 'On the device you will keep, sign in to the official service using this account’s code from Google Authenticator on the new phone. Confirm the service accepts it. Keep working sign-in and recovery outside the old phone.' : 'On the device you plan to keep, open this account and confirm its important data is accessible. Keep a usable sign-in and recovery method outside the old phone.', useCode ? '今後使う別の端末で正規のサービスへログインし、新端末のGoogle 認証システムにある今回のコードを入力してください。サービスが受け付けたことを確認し、使えるログイン・復旧手段を旧端末の外に残します。' : '今後使う別の端末で、このアカウントを開き、必要な情報を利用できるか確かめてください。旧端末の外に、使えるログイン・復旧手段を残します。'), c(useCode ? 'The service accepts this account’s code from the new phone and completes sign-in on the device you will keep.' : 'You can still use this account after handing over the old phone.', useCode ? '今後使う端末の正規のサービスが、新端末の今回の認証コードを受け付け、ログインが完了すること。' : '旧端末を手放した後も、このアカウントを利用できること。'), useCode ? [account.id, old.id, fresh.id] : [account.id, old.id], useCode ? ['googleAuth', 'googleAuthIos'] : [], { variant: useCode ? 'new-totp-code' : '' }));
   }
+  if (data.version === 2) for (const candidate of data.securityModel.entities.filter(e => e.kind === 'vault' && data.securityModel.entities.some(i => i.kind === 'installation' && i.vaultRef === e.id && i.deviceRef === old.id && i.controls?.opened === 'verified'))) {
+    const vault = nativeVault(data, candidate.id); if (!vault) continue;
+    const key = `native-use:${vault.id}`;
+    steps.push(question(key, c(`Will you use ${vault.label} on the new phone?`, `${vault.label}を新しいスマホで使いますか？`), [choice('yes', 'Yes, check the store and a saved login', 'はい・保管庫と保存情報を確認する'), choice('elsewhere', 'I will use this store on another device', '別の端末で、この保管庫を使う')]));
+    if (!answers[key]) return steps;
+    if (answers[key] === 'elsewhere') {
+      steps.push(action(`native-elsewhere:${vault.id}`, c('Check this password store outside the old phone', 'この保管庫を、旧端末以外で使えるか確認する'), c('Your other device · selected password store', '別の端末 · 選んだパスワード保管庫'), c('On the device you will keep, open the exact existing store and use an important saved login. Keep its independent account recovery or encrypted local backup accessible without the old phone.', '今後使う別の端末で、元の正しい保管庫を開き、重要な保存済みログインを一つ実際に使ってください。独立したアカウントの復旧手段、またはローカル保管庫の暗号化バックアップも、旧端末なしで使える状態にします。'), c('The store, saved login and recovery remain usable without the old phone.', '旧端末がなくても、保管庫・保存ログイン・復旧手段を利用できること。'), [vault.id, old.id], [vault.productId === 'apple-passwords' ? 'appleKeychain' : 'googleManager']));
+      continue;
+    }
+    if (vault.productId === 'apple-passwords' && fresh.operatingSystem !== 'ios') { steps.push(blocked(`native-cross:${vault.id}`, c('Apple Passwords needs a separate move to Android', 'Apple「パスワード」からAndroidへの別の移行が必要です'), c('Apple Passwords is not a native Android provider. The cross-product export/import recipe is not ready here; do not assume passwords or passkeys moved with the phone copy. Keep the old store accessible.', 'Apple「パスワード」はAndroidの組込み入力元ではありません。製品をまたぐ書き出し・取り込みの手順は追加中です。端末のコピーでパスワードやパスキーも移ったとは扱わず、元の保管庫を使える状態で残します。'), [vault.id, old.id, fresh.id], ['applePasswords'])); continue; }
+    if (vault.storageMode !== 'account') { steps.push(blocked(`native-local:${vault.id}`, c('Restore the local store separately', 'ローカルの保管庫を、別に復元する必要があります'), c('A device-only Chrome store is not restored by signing in to a Google Account. Keep its encrypted export and unlock information. The mobile import and restore recipe is still being verified; leave the task unfinished.', '端末内だけのChrome保管庫は、Google アカウントへログインするだけでは復元されません。暗号化した書き出しと解除用情報を残してください。モバイルへの取り込み・復元手順は確認中のため、未完了で残します。'), [vault.id, old.id, fresh.id], ['googleManager', 'chromePasswords'])); continue; }
+    const root = data.assets.find(a => a.id === vault.authenticationAccountRef);
+    if (!root || root.purpose === 'work' || !['mfa', 'recovery'].every(c => ['implemented', 'verified'].includes(root.controls[c]))) { steps.push(blocked(`native-root:${vault.id}`, c('Check the store’s account protection first', '保管庫の基盤アカウントの保護を先に確認する'), c('Authentication and independent recovery for the actual backing account are not yet confirmed here. Keep existing access and finish that account’s guide before erasure.', '実際の基盤アカウントの認証と、独立した復旧の備えがまだ確認できていません。既存の利用手段を残し、消去前にそのアカウントのガイドを済ませてください。'), [vault.id, fresh.id], [vault.productId === 'apple-passwords' ? 'appleKeychain' : 'googleManager'])); continue; }
+    const install = nativeInstallation(data, answers[`native-install:${vault.id}`] ?? '');
+    if (!install || install.deviceRef !== fresh.id) { steps.push(blocked(`native-app:${vault.id}`, c('Select this store again for the new phone', '新端末で使う保管庫を選び直す'), c('The app instance for this phone has not been selected. Go back to the store question; no installation or successful migration is assumed.', 'この新端末で使うアプリの項目が未選択です。保管庫の質問へ戻って選び直してください。インストール・移行を済んだとは扱いません。'), [vault.id, fresh.id])); continue; }
+    if (vault.productId === 'apple-passwords') {
+      const version = `native-version:${vault.id}`;
+      steps.push(question(version, c('Does the new iPhone have the Passwords app?', '新iPhoneは「パスワード」アプリに対応していますか？'), [choice('ios18plus', 'iOS 18 or later', 'iOS 18以降'), choice('other', 'Older version / not sure', '以前のバージョン・分からない')]));
+      if (!answers[version]) return steps;
+      if (answers[version] !== 'ios18plus') { steps.push(blocked(`native-version-blocked:${vault.id}`, c('Keep the store’s use unfinished', '保管庫の利用確認を未完了で残す'), c('The previous iOS Settings recipe is not yet part of this phone move. Keep the original store; do not erase the old phone.', '以前のiOSの「設定」を使う経路は、この機種変更へまだ組み込めていません。元の保管庫を残し、旧端末は消去しません。'), [vault.id, fresh.id], ['appleSaved'])); continue; }
+    }
+    // This workflow owns its receipts and cursor. Do not let the main guide's
+    // lock-deduplication remove the very action we are advancing from.
+    for (const s of builtinManagerRecipe(data, install.id, { includeDeviceLock: true })?.steps ?? []) {
+      const id = `native:${vault.id}:${s.id}`;
+      const own = Object.values(workflow.records).some(r => r.stepId === id);
+      const lockAlreadyChecked = Object.values(workflow.records).some(r => r.status === 'confirmed' && ((r.targetRef === fresh.id && r.controlId === 'screenLock') || r.extraControls?.some(e => e.targetRef === fresh.id && e.controlId === 'screenLock')));
+      if (s.id === 'device-lock' && lockAlreadyChecked && !own && workflow.cursor !== id) continue;
+      steps.push(action(id, s.title, c(`New phone · ${fresh.name} · ${NATIVE_NAMES[vault.productId as NativeProduct].en}`, `新端末 · ${fresh.name} · ${NATIVE_NAMES[vault.productId as NativeProduct].ja}`), s.action, s.expected, [vault.id, install.id, fresh.id], s.sources, { ...(s.control ? { control: { targetRef: install.id, id: s.control } } : {}), extraControls: s.extraControls, setupHelp: s.setupHelp, nativeContext: { installationRef: install.id, subjectRef: install.id, recipeId: 'builtin-manager', step: s }, button: s.button }));
+    }
+    const targetKey = `native-test-account:${vault.id}`;
+    steps.push(question(targetKey, c('Which saved login will you try?', 'どの保存済みログインを使ってみますか？'), [...data.assets.filter(a => a.kind === 'account').map(a => choice(a.id, a.name, a.name)), choice('unlisted', 'The account is not listed', 'アカウントが未登録')], c('Choose an important login actually stored in this password store.', 'この保管庫へ実際に保存している、重要なログインを選んでください。')));
+    if (!answers[targetKey]) return steps;
+    const account = data.assets.find(a => a.id === answers[targetKey] && a.kind === 'account');
+    if (!account) { steps.push(blocked(`native-unlisted:${vault.id}`, c('The saved login still needs checking', '保存済みログインの確認が残っています'), c('Do not mark the store’s use complete from its item list alone. Register the account when its supported guide is available and test that exact login.', '項目の一覧だけで保管庫の利用を完了にしません。対応するガイドでアカウントを登録し、そのログインを実際に確認する必要があります。'), [vault.id, fresh.id])); continue; }
+    const accountPage = account.provider && !['other', 'bitwarden', '1password'].includes(account.provider) ? emailRecipe(account.provider, 'web').steps[0] : undefined;
+    if (!accountPage?.url) { steps.push(blocked(`native-login-unsupported:${vault.id}:${account.id}`, c('This saved login needs its official sign-in path', 'この保存ログインの正規の手順が必要です'), c('The provider-specific sign-in path has not been verified here. Keep the store and old phone accessible, and leave this use check unfinished.', 'この製品の正規のログイン経路は、まだ確認できていません。保管庫と旧端末を使える状態で残し、利用確認を未完了にします。'), [vault.id, fresh.id, account.id])); continue; }
+    const s: GuideStep = { id: 'test', title: c('Use a saved password on the new phone', '新端末で保存したパスワードを使う'), place: c('New phone · official service sign-in', '新端末 · 正規サービスのログイン'), action: c('Keep existing sessions. On the new phone open the service’s official sign-in page in a private browser window. Select this exact saved account from the chosen password provider, authenticate locally, and finish the service’s sign-in. If a passkey signs in instead, this has not tested the saved password.', '既存のログインを残し、新端末のブラウザーのプライベート画面で正規サービスのログインを開きます。選んだパスワードの入力元から今回の保存項目を選び、端末の本人確認とサービス側の認証を行ってください。代わりにパスキーで入れた場合は、この保存パスワードの確認にはなりません。'), expected: c('The intended service accepts the password from this exact store on the new phone.', '新端末で、この保管庫の保存パスワードが正規のサービスに受け付けられること。'), sources: [vault.productId === 'apple-passwords' ? 'applePasswords' : fresh.operatingSystem === 'ios' ? 'chromePasswordsIos' : 'chromePasswordsAndroid'] };
+    s.sources = [...s.sources, ...accountPage.sources];
+    steps.push(action(`native-test:${vault.id}:${account.id}`, s.title, c(`New phone · ${fresh.name} · ${account.name}`, `新端末 · ${fresh.name} · ${account.name}`), s.action, s.expected, [vault.id, install.id, fresh.id, account.id], s.sources, { url: accountPage.url, control: { targetRef: install.id, id: 'loginUse' }, nativeContext: { installationRef: install.id, subjectRef: account.id, recipeId: `native-password:${install.id}`, step: s }, button: c('I used the saved password', '保存したパスワードで利用できました') }));
+  }
   if (answers.authenticator === 'google') {
     steps.push(question('google-auth-coverage', c('Have you checked every transferred code?', '移したコードを、すべて確認できましたか？'), [choice('registered', 'Every code belongs to an account checked above', 'すべて、上で確認したアカウントのコードです'), choice('other', 'Other codes remain / I am not sure', 'ほかのコードがある・分からない')]));
     if (!answers['google-auth-coverage']) return steps;
@@ -145,7 +191,12 @@ export function phoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] 
     }
   }
   if (answers['phone-line'] === 'working') steps.push(action('line-check', c('Test calls and SMS on the new phone', '新端末で通話とSMS受信を確認する'), c(`New phone · ${fresh.name} · Phone / Messages`, `新端末 · ${fresh.name} · 電話／メッセージ`), c('Make a normal test call and receive an SMS at the migrated number. For a move from iPhone to Android, check an SMS from an iPhone sender too. Do not use an emergency number as a test or enter the received content here.', '通常の通話を一度行い、移した番号でSMSを受信できるか確認してください。iPhoneからAndroidへ移った場合は、iPhone利用者からのSMSも確認します。緊急通報をテストに使ったり、受信内容をここへ入力したりしません。'), c('The intended phone can make calls and receive SMS at the migrated number.', '移した番号で、新端末から通話でき、SMSも受信できること。'), [fresh.id], []));
-  for (const s of deviceRecipe(fresh.operatingSystem ?? 'ios').steps) steps.push(action(`new-${s.id}`, s.title, c(`New phone · ${fresh.name}`, `新しいスマホ · ${fresh.name}`), s.action, s.expected, [fresh.id], s.sources, { button: s.button, ...(s.control ? { control: { targetRef: fresh.id, id: s.control } } : {}) }));
+  for (const s of deviceRecipe(fresh.operatingSystem ?? 'ios').steps) {
+    const id = `new-${s.id}`;
+    const shared = Object.values(workflow.records).some(r => r.status === 'confirmed' && ((r.targetRef === fresh.id && r.controlId === s.control) || r.extraControls?.some(e => e.targetRef === fresh.id && e.controlId === s.control)));
+    if (s.id === 'lock' && shared && !Object.values(workflow.records).some(r => r.stepId === id) && workflow.cursor !== id) continue;
+    steps.push(action(id, s.title, c(`New phone · ${fresh.name}`, `新しいスマホ · ${fresh.name}`), s.action, s.expected, [fresh.id], s.sources, { button: s.button, ...(s.control ? { control: { targetRef: fresh.id, id: s.control } } : {}) }));
+  }
   steps.push(action('app-move', c('Keep this guide outside the phone you may erase', '消去する端末の外で、このガイドを続けられるようにする'), c('This app · Settings → Encrypted backup', 'このアプリ ·「設定」→「暗号化バックアップ」'), c('If this guide is on the old phone, save its encrypted backup. On the new phone open the same app address and restore that file with this app’s passphrase. Existing data there will need your replacement confirmation. Open this phone-change task there and continue. If you already use another device for this guide, keep it open.', '旧端末でこのガイドを見ている場合は、暗号化バックアップを保存してください。新端末で同じアプリのURLを開き、そのファイルとこのアプリの保存用パスフレーズで復元します。復元先にデータがある場合は置換の確認が必要です。新端末でこの作業を開いて続けてください。別の端末で案内を見ている場合は、そのまま続けられます。'), c('This exact task is open on a device that will remain usable.', '消去しない端末で、この作業の続きが開けていること。'), [old.id, fresh.id], []));
   steps.push(question('old-fate', c('What will you do with the previous phone?', 'これまでのスマホを、どうしますか？'), [choice('keep', 'Keep using it', '自分で使い続ける'), choice('spare', 'Keep it as a backup phone', '予備として残す'), choice('give', 'Give it to someone else', '家族などへ譲る'), choice('sell', 'Sell or trade it in', '売る・下取りに出す'), choice('recycle', 'Recycle or dispose of it', '処分する'), choice('undecided', 'Decide later', 'まだ決めていない')]));
   if (!answers['old-fate']) return steps;

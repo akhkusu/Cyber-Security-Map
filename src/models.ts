@@ -44,7 +44,7 @@ export type RecoveryDependency = z.infer<typeof dependencySchema>;
 export const actionSchema = z.object({
   id: z.string(), completedAt: z.string().optional(), titleEn: z.string().optional(), titleJa: z.string().optional(), assetName: z.string().optional(),
   status: z.enum(['in-progress', 'completed', 'remind-me-later', 'not-applicable']).optional(), updatedAt: z.string().optional(),
-  targetId: z.string().optional(), controlId: z.string().optional(), origin: z.string().optional(),
+  parentId: z.string().optional(), targetId: z.string().optional(), controlId: z.string().optional(), origin: z.string().optional(),
 }).passthrough();
 export type SecurityActionRecord = z.infer<typeof actionSchema>;
 export const reviewSchema = z.object({ id: z.string(), completedAt: z.string(), kind: z.enum(['weekly', 'monthly']) }).passthrough();

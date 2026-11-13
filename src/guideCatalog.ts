@@ -3,9 +3,28 @@ import type { Asset, Language } from './models';
 export type Copy = { en: string; ja: string };
 export const c = (en: string, ja: string): Copy => ({ en, ja });
 export const say = (copy: Copy, language: Language) => copy[language];
-export type Source = { title: string; url: string; checked: string; scope: string; reviewMethod: 'official-documentation' };
+export type Source = { title: string; url: string; checked: string; scope: string; reviewMethod: 'official-documentation' | 'official-search-excerpt' };
 const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-13', reviewMethod: 'official-documentation' });
 export const SOURCES = {
+  applePasswords: source('Apple · パスワードアプリ', 'https://support.apple.com/ja-jp/120758', 'iOS / iPadOS 18+ / macOS Sequoia+'),
+  appleKeychain: source('Apple · iCloudキーチェーン', 'https://support.apple.com/ja-jp/109016', 'Account / device approval / sync'),
+  appleSaved: source('Apple · 保存済みのパスワード', 'https://support.apple.com/ja-jp/104955', 'iOS 18+ / older Settings path'),
+  appleMacSaved: source('Apple · Macの保存済みパスワード', 'https://support.apple.com/ja-jp/105115', 'macOS Sequoia+ / Passwords app'),
+  appleCreatePassword: { ...source('Apple · iPhoneでパスワードを作成', 'https://support.apple.com/ja-jp/guide/iphone/iph4ebb320ea/27/ios/27', 'Passwords / manual item / official indexed text'), reviewMethod: 'official-search-excerpt' as const },
+  appleMacCreatePassword: { ...source('Apple · Macでパスワードを作成', 'https://support.apple.com/guide/passwords/create-a-password-mchla6acb8cb/mac', 'Passwords / manual item / official indexed text'), reviewMethod: 'official-search-excerpt' as const },
+  appleDeviceSignin: source('Apple · 端末のAccountへサインイン', 'https://support.apple.com/ja-jp/111001', 'iPhone / iPad / Mac / existing Account'),
+  chromeSigninAndroid: source('Google · Android Chromeのログイン', 'https://support.google.com/chrome/answer/185277?co=GENIE.Platform%3DAndroid&hl=ja', 'Existing Google Account / Android'),
+  chromeSigninIos: source('Google · iOS Chromeのログイン', 'https://support.google.com/chrome/answer/185277?co=GENIE.Platform%3DiOS&hl=ja', 'Existing Google Account / iOS'),
+  chromeSignin: source('Google · PCのChromeログイン', 'https://support.google.com/chrome/answer/16737508?hl=ja', 'Existing Google Account / desktop'),
+  googleManager: source('Google · パスワードマネージャー', 'https://support.google.com/accounts/answer/6208650?hl=ja', 'Google Account / local / recovery'),
+  chromePasswords: source('Google · Chromeのパスワード管理', 'https://support.google.com/chrome/answer/95606?hl=ja', 'Desktop Chrome / account and local storage'),
+  chromePasswordsAndroid: source('Google · Android Chromeのパスワード', 'https://support.google.com/chrome/answer/95606?co=GENIE.Platform%3DAndroid&hl=ja', 'Android Chrome'),
+  chromePasswordsIos: source('Google · iOS Chromeのパスワード', 'https://support.google.com/chrome/answer/95606?co=GENIE.Platform%3DiOS&hl=ja', 'iPhone / iPad Chrome'),
+  chromeInstall: source('Google · Chromeのインストール', 'https://support.google.com/chrome/answer/95346?co=GENIE.Platform%3DDesktop&hl=ja', 'Desktop Chrome / installer'),
+  chromeInstallAndroid: source('Google · AndroidにChromeを入れる', 'https://support.google.com/chrome/answer/95346?co=GENIE.Platform%3DAndroid&hl=ja', 'Android 10+ / Google Play'),
+  chromeInstallIos: source('Google · iPhoneにChromeを入れる', 'https://support.google.com/chrome/answer/95346?co=GENIE.Platform%3DiOS&hl=ja', 'iOS / iPadOS 18+ / App Store'),
+  chromeExport: source('Google · パスワードの書き出し', 'https://support.google.com/chrome/answer/13068232?co=GENIE.Platform%3DDesktop&hl=en', 'Desktop Chrome / readable CSV export'),
+  chromeExportAndroid: source('Google · Androidの書き出しと取り込み', 'https://support.google.com/chrome/answer/13068232?co=GENIE.Platform%3DAndroid&hl=ja', 'Android Chrome / CSV versus app transfer'),
   startmailMfa: source('StartMail · Two-factor authentication', 'https://support.startmail.com/hc/en-us/articles/360006682158-Two-factor-authentication-2FA', 'StartMail / Web'),
   startmailPassword: source('StartMail · Changing password', 'https://support.startmail.com/hc/en-us/articles/360006635417-Changing-your-password', 'Account password / not PGP passphrase'),
   startmailPgp: source('StartMail · PGP passphrase', 'https://support.startmail.com/hc/en-us/articles/360006842578-PGP-passphrase', 'Account password / PGP distinction'),
@@ -69,6 +88,8 @@ export type GuideStep = {
   id: string; title: Copy; place: Copy; action: Copy; expected: Copy;
   button?: Copy; sources: SourceId[]; url?: string; target?: Copy;
   choices?: { label: Copy; next: string }[];
+  extraControls?: { targetRef: string; controlId: string }[];
+  setupHelp?: { title: Copy; action: Copy; url?: string };
   control?: string; // Only the final, explicitly confirmed state updates a control.
   diagram?: Copy[];
   technical?: 'mfa' | 'password' | 'backup' | 'updates';
