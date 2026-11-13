@@ -21,6 +21,14 @@
 - サービスワーカーはアプリシェル、マニフェスト、アイコンなどの静的ファイルだけをキャッシュします。IndexedDB、保管庫、評価データはキャッシュ対象にしません。
 - PWAを提供するホストは、配信するJavaScriptを変更できます。HTTPSだけでは、侵害されたホストや悪意ある更新からロック解除中の情報を守れません。
 
+## 公開ホスティング
+
+- 公開対象はビルド済みの `dist/` だけです。保管庫、バックアップ、リポジトリ全体、秘密情報は配信対象に含めません。GitHub Pagesのサイトは、ソースのリポジトリが非公開でも公開されます（[GitHub公式仕様](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site)）。
+- 保存領域はURLのパスではなくオリジン（スキーム・ホスト・ポート）で分かれます。同じ `akhkusu.github.io` の別プロジェクトは、保管庫の暗号文や言語設定へアクセスできます。信頼できないアプリと同じ配信元で利用せず、機密性の高い情報を扱う場合は専用ドメインまたはローカルのDocker環境を使ってください（[同一オリジンの仕様](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Same-origin_policy)）。
+- PWAのサービスワーカーとキャッシュは、このアプリの配信パス内に限定します。更新時に削除するのは、同じ配信パスでこのアプリが作った旧キャッシュだけです。
+- GitHub Pagesでは `public/_headers` はHTTPヘッダー設定として適用されません。HTMLのCSPとリファラーポリシーを使用し、埋め込み表示では保管庫UIを起動しません。`frame-ancestors` や `X-Frame-Options` のHTTPヘッダーを設定できる配信環境の方が、埋め込み防止をブラウザー側で強制できます。
+- アプリに評価データの送信機能はありませんが、ホスティング事業者には通常のアクセス情報が渡ります。[GitHub Pagesでは訪問者のIPアドレスが記録されます](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages)。
+
 ## 評価と推奨事項
 
 - 「はい」「いいえ」「わからない」「該当しない」を区別し、「はい」も本人申告と本人確認に分けます。アプリは独立検証済みとは主張しません。
