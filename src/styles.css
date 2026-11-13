@@ -5,3 +5,23 @@
 @media(max-width:440px){.app-header{padding:11px 13px 0}.app-header .brand{font-size:12px;gap:7px}.brand-mark{width:32px;height:36px}.header-actions{gap:6px}.language-picker select{width:84px;padding-left:8px;font-size:12px}.header-actions .icon-button{min-width:38px;min-height:40px}.workspace-main{padding:11px 12px 0}.guide-back{margin-bottom:7px}.guide-card{padding:25px 22px;border-radius:13px}.guide-card h1{font-size:27px}.instruction{font-size:16px!important}.step-tools{gap:0;flex-direction:column}.primary-actions{flex-direction:column}.choice{padding:15px 13px;gap:10px}.choice strong{font-size:15px}.choice-icon{width:27px}.trouble{padding:15px}.entry-main{padding:0 14px}.entry-card{padding:29px 24px}.entry-header{padding:19px 15px}.entry-header .brand{font-size:12px}.entry-header .language-picker select{width:86px}.entry-card.welcome h1{font-size:31px}.panel{padding:22px}.page-heading h1{font-size:32px}.map-legend{font-size:11px}.app-header nav a{padding:8px 5px;font-size:12px;gap:6px}.app-header nav a svg{width:16px}.help-actions .button{width:100%}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 @media print{.app-header,.app-footer,.guide-sidebar,.button,.text-button,.step-tools,.header-actions{display:none!important}.guide-layout{display:block}.guide-card,.panel{box-shadow:none}.map-scroll{overflow:visible}.map-canvas{transform:scale(.75);transform-origin:left top}.workspace-main{padding:0}}
+
+.phone-launcher { margin-block: 1.5rem; padding-block: 1rem; border-block: 1px solid var(--line); }
+.phone-launcher h3 { display: flex; gap: .5rem; align-items: center; font-size: 1rem; }
+.phone-launcher .record-link { text-decoration: none; flex-wrap: wrap; }
+.phone-launcher .record-link small { flex-basis: 100%; overflow-wrap: anywhere; }
+.phone-guide .instruction { margin-block: 1.5rem; }
+.phone-guide .instruction > div { margin-block: 1rem; }
+.phone-guide .instruction dt { font-weight: 700; color: var(--muted); font-size: .85rem; margin-bottom: .4rem; }
+.phone-guide .instruction dd { margin: 0; line-height: 1.8; }
+.phone-guide .source-details { margin-top: 1.5rem; font-size: .85rem; }
+.phone-guide .source-details ul { padding-left: 1.25rem; overflow-wrap: anywhere; }
+.phone-guide .guide-card > .button { margin: .5rem .5rem .5rem 0; }
+.handoff-gate { margin-block: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; }
+.handoff-gate ul { padding-left: 1rem; }
+.handoff-gate .text-button { white-space: normal; text-align: left; }
+.phone-guide .guide-sidebar h2 { font-size: 1.1rem; }
+
+.phone-guide .guide-actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-block: 1.5rem; }
+.phone-guide .guide-back a { min-height: 44px; display: inline-flex; align-items: center; }
+.phone-guide .help-panel { border: 1px solid var(--line); border-radius: 12px; padding: 1rem; margin-block: 1rem; }

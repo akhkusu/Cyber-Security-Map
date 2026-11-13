@@ -53,7 +53,7 @@ describe('guide records and identity', () => {
   });
   it('retains old data, workflow progress, action IDs and encryption format', async () => {
     const d = ready(); d.assets[0].controls.mfa = 'verified'; d.workflowProgress = { old: ['step-1'] }; d.actions.push({ id: 'old-action', status: 'completed', completedAt: '2025-01-01' });
-    const old = JSON.parse(JSON.stringify(d)); delete old.guide; for (const a of old.assets) { delete a.provider; delete a.services; }
+    const old = JSON.parse(JSON.stringify(d)); old.version = 1; delete old.securityModel; delete old.deviceWorkflows; delete old.guide; for (const a of old.assets) { delete a.provider; delete a.services; }
     const vault = await createEncryptedVault('a compatible backup phrase', datasetSchema.parse(old));
     const restored = (await decryptVault(vault.envelope, 'a compatible backup phrase')).data;
     expect(vault.envelope.format).toBe('personal-cyber-os-v1'); expect(restored.assets[0].id).toBe(d.assets[0].id);

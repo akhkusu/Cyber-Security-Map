@@ -92,7 +92,7 @@ test('legacy encrypted backup restores existing data and completion without re-r
   // Seal the original v1 JSON directly, without the new schema or migration defaults.
   const d = newDataset('ja'), old = makeAsset({ kind: 'account', type: 'Primary email', name: '<img src=x onerror=alert(1)>', importance: 'critical' });
   old.controls.mfa = 'verified'; old.controlEvidence.mfa = 'user-confirmed'; d.assets = [old]; d.workflowProgress = { legacy: ['saved-step'] };
-  const raw = JSON.parse(JSON.stringify(d)); delete raw.guide; delete raw.assets[0].services;
+  const raw = JSON.parse(JSON.stringify(d)); raw.version = 1; delete raw.securityModel; delete raw.deviceWorkflows; delete raw.guide; delete raw.assets[0].services;
   raw.softwareInventory = [{ appName: 'Legacy application', metadata: { kept: true } }];
   raw.assets[0].historicalRecord = { original: true }; raw.settings.legacyPreference = { original: true };
   const envelope = { ...await sealRawVault(raw), historicalMetadata: { original: true } };
@@ -111,7 +111,7 @@ test('legacy encrypted backup restores existing data and completion without re-r
 test('restoring a newer payload preserves the existing encrypted vault and its exact guide position', async ({ page }) => {
   await createWorkspace(page); await chooseApple(page);
   const original = await readSavedVault(page), heading = await page.getByRole('heading', { level: 1 }).textContent();
-  const future = await sealRawVault({ ...newDataset('ja'), version: 2, futureEntities: [{ id: 'newer-data' }] });
+  const future = await sealRawVault({ ...newDataset('ja'), version: 3, futureEntities: [{ id: 'newer-data' }] });
   await page.getByRole('link', { name: '設定', exact: true }).click(); await page.getByText('バックアップから復元する', { exact: true }).click();
   await page.getByLabel('暗号化バックアップファイル', { exact: true }).setInputFiles({ name: 'future.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(future)) });
   await page.getByLabel('バックアップのパスフレーズ', { exact: true }).fill(passphrase); page.once('dialog', dialog => dialog.accept());
@@ -124,7 +124,7 @@ test('restoring a newer payload preserves the existing encrypted vault and its e
 for (const format of ['newer-payload', 'unsupported-envelope']) test(`${format}: original stored data can be exported without opening or replacing it`, async ({ page }) => {
   await page.goto('./'); await page.locator('.language-picker select').selectOption('ja');
   const original = format === 'newer-payload'
-    ? await sealRawVault({ ...newDataset('ja'), version: 2, futureEntities: [{ id: 'keep-original' }] })
+    ? await sealRawVault({ ...newDataset('ja'), version: 3, futureEntities: [{ id: 'keep-original' }] })
     : { format: 'future-envelope-format', ciphertext: 'opaque-original-data', metadata: { keep: true } };
   await writeSavedVault(page, original); await page.reload();
   if (format === 'newer-payload') {

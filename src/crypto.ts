@@ -43,7 +43,7 @@ function parseEnvelope(value: unknown): VaultEnvelope {
 
 function migrateDataset(value: unknown): Dataset {
   if (!value || typeof value !== 'object' || !('version' in value)) throw new UnsupportedVaultError('data');
-  if (value.version !== 1) throw new UnsupportedVaultError('version');
+  if (value.version !== 1 && value.version !== 2) throw new UnsupportedVaultError('version');
   const parsed = datasetSchema.safeParse(value);
   if (!parsed.success) throw new UnsupportedVaultError('data');
   const data = parsed.data;

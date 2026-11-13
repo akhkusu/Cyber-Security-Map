@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { emptySecurityModel, securityModelIssues, securityModelSchema } from './securityModel';
+import { phoneWorkflowSchema } from './phoneSchemas';
+import { CONTROL_STATES, controlEvidenceSchema, assessmentAnswerSchema, type AssessmentAnswer, type ControlState } from './recordSchemas';
+export { CONTROL_STATES, controlEvidenceSchema, assessmentAnswerSchema, type AssessmentAnswer, type ControlState, type ControlEvidence } from './recordSchemas';
 
 export const LANGUAGES = ['en', 'ja'] as const;
 export type Language = (typeof LANGUAGES)[number];
@@ -6,19 +10,8 @@ export const ASSET_KINDS = ['device', 'account', 'backup', 'network', 'identity'
 export type AssetKind = (typeof ASSET_KINDS)[number];
 export const IMPORTANCE = ['critical', 'important', 'useful'] as const;
 export type Importance = (typeof IMPORTANCE)[number];
-export const CONTROL_STATES = ['unknown', 'needs-improvement', 'implemented', 'verified', 'na'] as const;
-export type ControlState = (typeof CONTROL_STATES)[number];
 export const OPERATING_SYSTEMS = ['windows', 'macos', 'ubuntu', 'ios', 'android', 'chromeos', 'other', 'unknown'] as const;
 export type OperatingSystem = (typeof OPERATING_SYSTEMS)[number];
-
-export const controlEvidenceSchema = z.enum(['not-assessed', 'unknown', 'user-reported', 'user-confirmed', 'not-applicable']);
-export type ControlEvidence = z.infer<typeof controlEvidenceSchema>;
-export const assessmentAnswerSchema = z.object({
-  response: z.enum(['yes', 'no', 'unsure', 'not-applicable']),
-  evidence: z.enum(['user-reported', 'user-confirmed']).default('user-reported'),
-  updatedAt: z.string(),
-}).passthrough();
-export type AssessmentAnswer = z.infer<typeof assessmentAnswerSchema>;
 
 export const assetSchema = z.object({
   id: z.string().min(1),
@@ -51,6 +44,7 @@ export type RecoveryDependency = z.infer<typeof dependencySchema>;
 export const actionSchema = z.object({
   id: z.string(), completedAt: z.string().optional(), titleEn: z.string().optional(), titleJa: z.string().optional(), assetName: z.string().optional(),
   status: z.enum(['in-progress', 'completed', 'remind-me-later', 'not-applicable']).optional(), updatedAt: z.string().optional(),
+  targetId: z.string().optional(), controlId: z.string().optional(), origin: z.string().optional(),
 }).passthrough();
 export type SecurityActionRecord = z.infer<typeof actionSchema>;
 export const reviewSchema = z.object({ id: z.string(), completedAt: z.string(), kind: z.enum(['weekly', 'monthly']) }).passthrough();
@@ -91,8 +85,7 @@ export type GuideState = z.infer<typeof guideSchema>;
 
 // Preserve opaque legacy fields when reading and writing a supported payload version.
 // UI and help prompts use known fields only; retained data does not enable old integrations.
-export const datasetSchema = z.object({
-  version: z.literal(1),
+const datasetFields = {
   guide: guideSchema,
   assets: z.array(assetSchema),
   dependencies: z.array(dependencySchema),
@@ -106,8 +99,39 @@ export const datasetSchema = z.object({
   validationRecords: z.array(validationRecordSchema).default([]),
   onboarding: z.object({ complete: z.boolean(), goals: z.array(z.string()), completedAt: z.string().optional() }).passthrough(),
   settings: settingsSchema,
-}).passthrough();
+};
+export const CURRENT_DATASET_VERSION = 2;
+export const legacyDatasetSchema = z.object({ version: z.literal(1), ...datasetFields }).passthrough();
+export const currentDatasetSchema = z.object({
+  version: z.literal(CURRENT_DATASET_VERSION), ...datasetFields,
+  securityModel: securityModelSchema.default(emptySecurityModel),
+  deviceWorkflows: z.array(phoneWorkflowSchema).default([]),
+}).passthrough().superRefine((data, context) => {
+  for (const issue of securityModelIssues(data.securityModel, data.assets)) {
+    context.addIssue({ code: 'custom', path: ['securityModel'], message: `${issue.code}: ${issue.recordId}` });
+  }
+  const ids = new Set<string>();
+  for (const workflow of data.deviceWorkflows) {
+    if (ids.has(workflow.id)) context.addIssue({ code: 'custom', path: ['deviceWorkflows'], message: 'duplicate-workflow-id' });
+    ids.add(workflow.id);
+    for (const ref of [workflow.oldDeviceRef, workflow.newDeviceRef]) {
+      if (ref && !data.assets.some(a => a.id === ref && a.kind === 'device')) context.addIssue({ code: 'custom', path: ['deviceWorkflows'], message: 'missing-workflow-device' });
+    }
+    if (workflow.oldDeviceRef && workflow.oldDeviceRef === workflow.newDeviceRef) context.addIssue({ code: 'custom', path: ['deviceWorkflows'], message: 'same-workflow-device' });
+  }
+});
+export const datasetSchema = z.union([legacyDatasetSchema, currentDatasetSchema]);
+export type CurrentDataset = z.infer<typeof currentDatasetSchema>;
 export type Dataset = z.infer<typeof datasetSchema>;
+export class DataUpgradeConflict extends Error {
+  constructor() { super('legacy-feature-key-conflict'); this.name = 'DataUpgradeConflict'; }
+}
+export function upgradeDataset(data: Dataset): CurrentDataset {
+  if (data.version === CURRENT_DATASET_VERSION) return data;
+  // Do not reinterpret an opaque v1 field as a new feature or silently replace it.
+  if (Object.hasOwn(data, 'securityModel') || Object.hasOwn(data, 'deviceWorkflows')) throw new DataUpgradeConflict();
+  return currentDatasetSchema.parse({ ...data, version: CURRENT_DATASET_VERSION, securityModel: emptySecurityModel(), deviceWorkflows: [] });
+}
 
 // Keep the persisted format ID stable for compatibility with existing backups.
 export const envelopeSchema = z.object({
@@ -138,8 +162,8 @@ export const CONTROL_CATALOG: Record<AssetKind, { id: string; en: string; ja: st
   ],
 };
 
-export const newDataset = (language: Language = 'en', goals: string[] = []): Dataset => ({
-  version: 1, guide: guideSchema.parse(undefined), assets: [], dependencies: [], actions: [], incidentProgress: {}, workflowProgress: {}, reviews: [],
+export const newDataset = (language: Language = 'en', goals: string[] = []): CurrentDataset => ({
+  version: CURRENT_DATASET_VERSION, securityModel: emptySecurityModel(), deviceWorkflows: [], guide: guideSchema.parse(undefined), assets: [], dependencies: [], actions: [], incidentProgress: {}, workflowProgress: {}, reviews: [],
   assessmentAnswers: {}, checkupProgress: { activeDomain: 'identity' },
   threatModel: { concerns: [], audience: 'self', knowledge: 'beginner', priority: 'balanced' }, validationRecords: [],
   onboarding: { complete: false, goals },
@@ -179,8 +203,8 @@ const demoAssets = [
   makeAsset({ kind: 'backup', type: 'Cloud photo storage', name: 'Photo library', importance: 'important' }, { encrypted: 'implemented', offsite: 'unknown', restoreTest: 'needs-improvement' }),
 ];
 const demoAssetKey = (controlId: string, name: string) => `${controlId}@${demoAssets.find((asset) => asset.name === name)!.id}`;
-export const DEMO_DATA: Dataset = {
-  version: 1, guide: guideSchema.parse(undefined),
+export const DEMO_DATA: CurrentDataset = {
+  version: CURRENT_DATASET_VERSION, securityModel: emptySecurityModel(), deviceWorkflows: [], guide: guideSchema.parse(undefined),
   assets: demoAssets,
   dependencies: [], actions: [], incidentProgress: {}, workflowProgress: {}, reviews: [],
   assessmentAnswers: {

@@ -32,8 +32,9 @@ describe('encrypted local vault', () => {
   });
 
   it('retains opaque legacy fields through migration, an ordinary edit, and rekeying', async () => {
+    const legacyBase = JSON.parse(JSON.stringify(newDataset('ja'))); legacyBase.version = 1; delete legacyBase.securityModel; delete legacyBase.deviceWorkflows;
     const fixture = {
-      ...newDataset('ja'), softwareInventory: [{ appName: 'Legacy app', custom: { retained: true } }],
+      ...legacyBase, softwareInventory: [{ appName: 'Legacy app', custom: { retained: true } }],
       assets: [{ ...makeAsset({ kind: 'account', type: 'Primary email', name: 'Old account', importance: 'critical' }), historicalMetadata: { source: 'older version' } }],
       actions: [{ id: 'old', status: 'completed', originalEvidence: { retained: true } }],
       settings: { ...newDataset().settings, language: 'ja', legacyPreference: { retained: true } },
@@ -55,7 +56,7 @@ describe('encrypted local vault', () => {
   });
 
   it('identifies newer payload versions without rewriting them or calling them a wrong passphrase', async () => {
-    const envelope = await sealRaw({ ...newDataset(), version: 2, futureEntities: [{ id: 'preserve-this' }] });
+    const envelope = await sealRaw({ ...newDataset(), version: 3, futureEntities: [{ id: 'preserve-this' }] });
     const original = structuredClone(envelope);
     await expect(decryptVault(envelope, 'original fixture phrase')).rejects.toMatchObject({ name: 'UnsupportedVaultError', kind: 'version' });
     expect(envelope).toEqual(original);

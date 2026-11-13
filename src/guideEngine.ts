@@ -1,5 +1,6 @@
 import { makeAsset, type Asset, type Dataset, type Language, type RecoveryDependency } from './models';
 import { controlKey, CHECKUP_CONTROLS } from './checkupCatalog';
+import { recordControl, undoControl } from './controlRecords';
 import { deviceRecipe, emailRecipe, managerRecipe, passwordRecipe, recoveryRecipe, PROVIDERS, isExtendedMail, type GuideStep, type Recipe } from './guideCatalog';
 
 export const taskCursor = (assetId: string, recipeId: string, stepId: string) => `do/${assetId}/${recipeId}/${stepId}`;
@@ -77,17 +78,14 @@ export function completeStep(data: Dataset, jump?: string): Dataset {
   const definition = CHECKUP_CONTROLS.find(c => c.assetKind === asset.kind && c.assetControl === step.control);
   const answerKey = definition ? controlKey(definition.id, asset.id) : undefined;
   const old = data.guide.steps[key];
-  const record = { status: 'done' as const, updatedAt: now, ...(step.control ? {
+  const record = { ...old, status: 'done' as const, updatedAt: now, ...(step.control ? {
     beforeControl: old?.beforeControl ?? asset.controls[step.control] ?? 'unknown',
     beforeEvidence: old?.beforeEvidence ?? asset.controlEvidence[step.control] ?? 'not-assessed',
     beforeAnswer: old ? old.beforeAnswer : (answerKey ? data.assessmentAnswers[answerKey] : undefined),
   } : {}) };
   let next: Dataset = { ...data, guide: { ...data.guide, steps: { ...data.guide.steps, [key]: record } } };
   if (step.control) {
-    next = { ...next, assets: next.assets.map(a => a.id !== asset.id ? a : { ...a, updatedAt: now, controls: { ...a.controls, [step.control!]: 'verified' }, controlEvidence: { ...a.controlEvidence, [step.control!]: 'user-confirmed' } }),
-      actions: [...next.actions.filter(a => a.id !== key), { id: key, completedAt: now, updatedAt: now, status: 'completed', titleEn: step.title.en, titleJa: step.title.ja, assetName: asset.name }],
-      assessmentAnswers: answerKey ? { ...next.assessmentAnswers, [answerKey]: { response: 'yes', evidence: 'user-confirmed', updatedAt: now } } : next.assessmentAnswers,
-    };
+    next = recordControl(next, asset.id, step.control, { id: key, origin: 'guide', titleEn: step.title.en, titleJa: step.title.ja, assetName: asset.name }, now);
   }
   const nextStep = jump ? recipe.steps.find(s => s.id === jump) : recipe.steps[index + 1];
   return nextStep ? move(next, taskCursor(asset.id, recipe.id, nextStep.id)) : afterRecipe(next, asset, recipe.id);
@@ -100,14 +98,7 @@ export function undoStep(data: Dataset, key: string): Dataset {
   let next: Dataset = { ...data, guide: { ...data.guide, steps }, actions: data.actions.filter(a => a.id !== key) };
   if (task?.step.control) {
     const control = task.step.control;
-    next.assets = data.assets.map(a => a.id !== task.asset.id ? a : { ...a, controls: { ...a.controls, [control]: record.beforeControl ?? 'unknown' }, controlEvidence: { ...a.controlEvidence, [control]: record.beforeEvidence ?? 'not-assessed' } });
-    const definition = CHECKUP_CONTROLS.find(c => c.assetKind === task.asset.kind && c.assetControl === control);
-    if (definition) {
-      const answerKey = controlKey(definition.id, task.asset.id);
-      next.assessmentAnswers = { ...next.assessmentAnswers };
-      if (record.beforeAnswer) next.assessmentAnswers[answerKey] = record.beforeAnswer;
-      else delete next.assessmentAnswers[answerKey];
-    }
+    next = undoControl(next, key, task.asset.id, control, { state: record.beforeControl ?? 'unknown', evidence: record.beforeEvidence ?? 'not-assessed', answer: record.beforeAnswer });
   }
   return move(next, key);
 }
