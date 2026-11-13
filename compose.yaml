@@ -5,7 +5,7 @@ services:
     build:
       context: .
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:18473:8080"
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m,mode=1777
