@@ -4,6 +4,10 @@ import { cloudAnswer, cloudInstallation, cloudVault, selectedCloudInstallation, 
 import { cloudRouteSources } from './cloudSources';
 
 const labels: Record<string, Copy> = {
+  'cloud-extra-state': { en: 'Inspect the Pass extra-password setting', ja: 'Passの追加パスワード設定を確認する' },
+  'cloud-extra-choice': { en: 'Choose standard sign-in or an optional extra password', ja: '通常のログインと任意の追加パスワードを選ぶ' },
+  'cloud-extra-unavailable': { en: 'Preserve access when the extra secret or setting is unavailable', ja: '追加の秘密や設定が使えないとき、現在の利用を残す' },
+  'cloud-extra-prerequisites': { en: 'Secure independent account access and recovery first', ja: '独立したアカウントの利用と復旧を先に確保する' },
   'cloud-choice': { en: 'Choose the actual password store', ja: '実際に使う保管庫を選ぶ' },
   'cloud-root': { en: 'Choose the backing account', ja: '保管庫の基盤アカウントを選ぶ' },
   'cloud-usage': { en: 'Check whether this vault already exists', ja: '既存の保管庫か確認する' },
@@ -40,7 +44,7 @@ export function cloudHelpContext(data: Dataset, subjectRef?: string, recipeId?: 
   const osRange = ({ ios18plus: 'iOS / iPadOS 18+', ios17: 'iOS / iPadOS 17', android9plus: 'Android 9+' } as Record<string, string>)[selected ? cloudAnswer(data, selected.id, device?.operatingSystem === 'ios' ? 'ios' : 'android') ?? '' : ''];
   return { product: CLOUD_NAMES[product as CloudProduct], os: device?.operatingSystem, browser, osRange,
     title: labels[route] ?? { en: 'Continue the verified password-manager setup', ja: '確認済みのパスワード管理の手順を続ける' },
-    expected: { en: 'The personal account, selected device/profile and official app settings match. Preserve existing data and working access.', ja: '個人用アカウント、選んだ端末・プロファイル、正規アプリの設定が一致すること。既存データと使えるログインを維持する。' },
+    expected: route.startsWith('cloud-extra-') ? { en: 'The intended personal Proton Pass account shows whether its extra password is configured. Existing sessions and private copies remain available; a forgotten extra-password recovery method is unverified.', ja: '今回の個人用Proton Passで追加パスワードの設定済み・未設定を確認できること。使えるセッションと私的な控えを残す。忘れた追加パスワードの復旧方法は未確認。' } : { en: 'The personal account, selected device/profile and official app settings match. Preserve existing data and working access.', ja: '個人用アカウント、選んだ端末・プロファイル、正規アプリの設定が一致すること。既存データと使えるログインを維持する。' },
     sources: cloudRouteSources(product, route),
   };
 }

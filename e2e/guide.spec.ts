@@ -45,7 +45,7 @@ test('resume exact step, back, different-screen branch, safe manual AI help, def
   await advance(page, 'この案内でも解決しない'); await expect(page.getByLabel('AIへの相談文')).toHaveValue(/最新の公式資料/);
   await advance(page, 'Webの手順へ切り替える'); await mfaState(page, 'web');
   await advance(page, 'すでに有効になっている'); await advance(page, '確認しました');
-  await page.getByText('設定の完了記録 · 1件', { exact: true }).click(); await advance(page, '取り消す');
+  await page.getByText('作業の完了記録 · 1件', { exact: true }).click(); await advance(page, '取り消す');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('有効になった状態を確認する');
   await advance(page, 'この作業を後回しにする');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('どのパスワードマネージャーを使いますか？');
@@ -125,7 +125,7 @@ for (const format of ['newer-payload', 'newer-model', 'unsupported-envelope']) t
   await page.goto('./'); await page.locator('.language-picker select').selectOption('ja');
   const original = format === 'newer-payload'
     ? await sealRawVault({ ...newDataset('ja'), version: 3, futureEntities: [{ id: 'keep-original' }] })
-    : format === 'newer-model' ? await sealRawVault({ ...newDataset('ja'), securityModel: { ...newDataset('ja').securityModel, revision: 3 } })
+    : format === 'newer-model' ? await sealRawVault({ ...newDataset('ja'), securityModel: { ...newDataset('ja').securityModel, revision: 4 } })
     : { format: 'future-envelope-format', ciphertext: 'opaque-original-data', metadata: { keep: true } };
   await writeSavedVault(page, original); await page.reload();
   if (format !== 'unsupported-envelope') {

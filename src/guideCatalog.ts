@@ -100,6 +100,7 @@ export type GuideStep = {
   setupHelp?: { title: Copy; action: Copy; url?: string };
   control?: string; // Only the final, explicitly confirmed state updates a control.
   diagram?: Copy[];
+  explanation?: Copy;
   technical?: 'mfa' | 'password' | 'backup' | 'updates';
   download?: { path: string; filename: string; label: Copy; attribution: Copy };
   requires?: string[];

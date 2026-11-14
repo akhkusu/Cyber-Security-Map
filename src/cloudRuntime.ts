@@ -4,12 +4,14 @@ import { cloudManagerRecipe } from './cloudManagerCatalog';
 import { cloudRecoveryRecipe } from './cloudRecoveryCatalog';
 import { cloudPasswordRecipe } from './cloudPasswordCatalog';
 import { cloudMasterRecipe } from './cloudMasterCatalog';
+import { protonExtraRecipe } from './protonPassExtraCatalog';
+import { extraApplied, extraTaskRedirect } from './protonPassExtra';
 import { cloudAnswer, cloudEnvironmentReady, cloudInstallation, cloudManagerReady, cloudMasterRecipeId, cloudSetupRoute, cloudVault } from './cloudManagers';
 
 export function cloudRecipeFor(data: Dataset, asset: Asset, recipeId: string): Recipe | undefined {
   if (recipeId.startsWith('cloud-password:')) return cloudPasswordRecipe(data, asset, recipeId.slice('cloud-password:'.length));
   if (!recipeId.startsWith('cloud-')) return;
-  return cloudManagerRecipe(data, asset.id, recipeId) ?? cloudRecoveryRecipe(data, asset.id, recipeId) ?? cloudMasterRecipe(data, asset.id, recipeId);
+  return protonExtraRecipe(data, asset.id, recipeId) ?? cloudManagerRecipe(data, asset.id, recipeId) ?? cloudRecoveryRecipe(data, asset.id, recipeId) ?? cloudMasterRecipe(data, asset.id, recipeId);
 }
 export function cloudRequiredSteps(assetId: string, recipe: Recipe, step: GuideStep): string[] {
   const found = new Set<string>(), pending = [...(step.requires ?? [])];
@@ -23,13 +25,15 @@ export function cloudRequiredSteps(assetId: string, recipe: Recipe, step: GuideS
 export function cloudTaskRedirect(data: Dataset, asset: Asset, recipe: Recipe, step: GuideStep): string | undefined {
   if (!recipe.id.startsWith('cloud-')) return;
   const app = cloudInstallation(data, recipe.id.startsWith('cloud-password:') ? recipe.id.slice('cloud-password:'.length) : asset.id), vault = cloudVault(data, app?.vaultRef);
-  if (!app || !vault || data.version !== 2 || data.securityModel.revision !== 2) return 'manager-select';
+  if (!app || !vault || data.version !== 2 || data.securityModel.revision < 2) return 'manager-select';
   const root = data.assets.find(a => a.id === vault.authenticationAccountRef), device = data.assets.find(a => a.id === app.deviceRef);
   const context = { ...data, guide: { ...data.guide, managerId: vault.id, answers: { ...data.guide.answers, [`${vault.id}:installation`]: app.id } } };
   if (!root || root.purpose !== 'personal' || !device || !['ios', 'android', 'macos', 'windows', 'ubuntu', 'chromeos'].includes(device.operatingSystem ?? '')) return cloudSetupRoute(context, vault.id);
   if (vault.productId === 'nordpass' && cloudAnswer(data, root.id, 'method') !== 'direct') return cloudSetupRoute(context, vault.id);
   if (!['ios', 'android'].includes(device.operatingSystem ?? '') && !app.profileLabel) return cloudSetupRoute(context, vault.id);
   if (!cloudEnvironmentReady(data, app.id)) return cloudSetupRoute(context, vault.id);
+  const extraRedirect = extraTaskRedirect(data, app.id, recipe, step);
+  if (extraRedirect) return extraRedirect;
   if (recipe.id !== 'cloud-onboard' && !['opened', 'storageChecked'].every(c => app.controls?.[c] === 'verified')) return `do/${app.id}/cloud-onboard/open`;
   if (recipe.id.startsWith('cloud-master-change:') && (recipe.id !== cloudMasterRecipeId(data, vault.id) || cloudAnswer(data, vault.id, 'master') !== 'change' || !['recovery', 'independentRoot'].every(c => vault.controls?.[c] === 'verified') || !['mfa', 'recovery'].every(c => root.controls[c] === 'verified'))) return cloudSetupRoute(context, vault.id);
   const choice = recipe.id === 'cloud-recovery' ? ['recovery', vault.id] : ['cloud-phrase', 'cloud-file', 'cloud-reset'].includes(recipe.id) ? [recipe.id.slice('cloud-'.length), root.id] : undefined;
@@ -44,6 +48,6 @@ export function cloudTaskRedirect(data: Dataset, asset: Asset, recipe: Recipe, s
     // subsequently withdrawn setup check must not strand the accepted password.
     if ((!cloudManagerReady(data, vault.id, app.id) || !['verified', 'implemented'].includes(asset.controls.recovery)) && !alreadyApplied) return 'password-prerequisite';
   }
-  const missing = cloudRequiredSteps(asset.id, recipe, step).find(key => data.guide.steps[key]?.status !== 'done');
+  const missing = cloudRequiredSteps(asset.id, recipe, step).filter(key => !(recipe.id.startsWith('cloud-extra-enable:') && extraApplied(data, app.id, recipe.id) && ['account', 'mfa', 'extra', 'read'].includes(step.id)) || ['account', 'mfa', 'extra'].includes(key.split('/').pop()!)).find(key => data.guide.steps[key]?.status !== 'done');
   if (missing) return missing;
 }

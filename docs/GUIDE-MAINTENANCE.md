@@ -115,7 +115,7 @@ docker run --rm --shm-size=1g cyber-security-map:browser-tests npm run test:page
 - マスターの変更要求は作業ごとのIDを持ち、以前の変更の証拠を再利用しない。前提の取り消しは派生するコントロールと観測にも反映する。現実の変更の時点は取り消して復活させない。
 - `passphraseCatalog.ts`はEFFの単語表を利用する準備方法を共用する。原文・帰属・CC BY 4.0・ハッシュを`public/wordlists/ATTRIBUTION.txt`で管理する。実際の語句を本アプリに保存しない。
 - 単語表のURLはPagesのBASE_URL配下とし、PWAの対象に含める。通常URL・プロジェクトURL・オフラインで原文の7776行とハッシュを確認する。
-- クラウドの追加意味を保存するときだけモデルrevision 2へ拡張する。既存revision 1のデータを説明更新だけで変換・再登録しない。非対応revisionの原本を保持する。
+- クラウドの基本機能では必要時だけモデルrevision 2へ拡張する。任意のProton追加パスワードではrevision 3へ拡張し、後の機能で下げない。既存revision 1のデータを説明更新だけで変換・再登録しない。非対応revisionの原本を保持する。
 
 ## クラウド保管庫の機種変更
 
@@ -124,3 +124,10 @@ docker run --rm --shm-size=1g cyber-security-map:browser-tests npm run test:page
 Accountの認証、保管庫の復号、保存したパスワードの利用を分ける。確認した文脈と、旧端末を使わずに試した範囲を`cloudObservations.ts`で記録する。独立性の追加意味は版付きの識別子がある観測だけで解釈し、古い同名の不明項目を保持する。モデルrevision 1で取り込んだ項目も、この機能の利用・記録の開始時にrevision 2へ拡張する。
 
 同じ端末のロックを参照するときも、その記録キーを後続の前提へ含める。取り消しでは派生する確認・観測を未確認へ戻し、参照される履歴を消さない。旧端末だけで使い続ける選択と、売却時に必要な引き継ぎを区別する。
+
+
+## Protonの追加パスワード
+
+[専用契約](PROTON-PASS-EXTRA-PASSWORD.md)を保守します。設定選択で完了にせず、Accountの認証、追加Pass秘密の受け付け、保管庫の読取り、保存したサービス用パスワードを別の観測にします。変更は同じ実際のAccountのPass全体へ適用し、他のAccountやAccountのMFAは変更しません。全Passのサインアウトを確定前に説明し、Pass外の秘密・MFA・復旧を先に用意します。最低8文字と十分な無作為の長さの推奨を混同しません。
+
+`protonPassExtraCatalog.ts`のOS別表示、`protonPassExtra.ts`の要求と物理変更の時点、古い設定への誤った復帰の抑止を合わせて検証します。`GuideStep.explanation`は折りたたみの技術説明です。追加パスワードの設定だけをMFAや保存パスワード利用に数えません。完了記録から準備も取り消せます。資料にない追加パスワードの紛失復旧をAccountリセットで代用しません。

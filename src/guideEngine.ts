@@ -1,3 +1,4 @@
+import { recordProtonExtra } from './protonPassExtra';
 import { AUTHENTICATORS, authSources, authenticatorPrerequisiteRoute, authenticatorConfirmation, authenticatorScan, authenticatorScanStep, authenticatorSetupRecipe, authenticatorSetupRoute, requireAuthenticatorRoots, selectedAuthenticator, type AuthenticatorProduct } from './authenticatorGuide';
 import { recordAuthenticatorObservation, undoAuthenticatorObservation } from './authenticatorObservations';
 import { makeAsset, type Asset, type Dataset, type Language, type RecoveryDependency } from './models';
@@ -132,6 +133,12 @@ export function afterRecipe(data: Dataset, asset: Asset, recipeId: string): Data
   if (returnTo?.startsWith('authenticator-root-security/')) { const answers = { ...data.guide.answers }; delete answers[returnKey]; const origin = returnTo.split('/')[1]; const next = { ...data, guide: { ...data.guide, answers } }; return requireAuthenticatorRoots(next, origin, answers[`auth:${origin}:security-return`] ?? 'manager-select'); }
   if (returnTo?.startsWith('native-resume/')) { const answers = { ...data.guide.answers }; delete answers[returnKey]; return move({ ...data, guide: { ...data.guide, answers } }, nativeSetupRoute(data, returnTo.split('/')[1])); }
   if (recipeId.startsWith('authenticator-setup:')) return move(data, authenticatorSetupRoute(data, asset.id));
+  if (recipeId.startsWith('cloud-extra-')) {
+    const answers = { ...data.guide.answers };
+    const cursor = recipeId.startsWith('cloud-extra-inspect:') ? `cloud-extra-state/${asset.id}` : `cloud-ready/${cloudInstallation(data, asset.id)?.vaultRef}`;
+    if (recipeId.startsWith('cloud-extra-inspect:')) answers[`${asset.id}:proton-extra-pending`] = cursor; else delete answers[`${asset.id}:proton-extra-pending`];
+    return move({ ...data, guide: { ...data.guide, answers } }, cursor);
+  }
   if (recipeId.startsWith('cloud-password:')) return move(data, 'device-select');
   if (recipeId.startsWith('cloud-')) { const app = cloudInstallation(data, asset.id); if (app) return move(data, cloudSetupRoute({ ...data, guide: { ...data.guide, managerId: app.vaultRef, answers: { ...data.guide.answers, [`${app.vaultRef}:installation`]: app.id } } }, app.vaultRef!)); }
   if (recipeId === 'builtin-manager') { const email = data.assets.find(a => a.id === data.guide.accountId); return email ? beginRecipe(data, email.id, 'password') : move(data, 'start'); }
@@ -173,7 +180,9 @@ export function completeStep(data: Dataset, jump?: string): Dataset {
   next = recordNativeObservation(next, key, asset.id, recipe.id, step, now);
   next = recordAuthenticatorObservation(next, key, asset.id, recipe.id, step, now);
   next = recordCloudObservation(next, key, asset.id, recipe.id, step, requiredGuideSteps, now);
+  next = recordProtonExtra(next, key, asset.id, recipe.id, step.id, requiredGuideSteps, now);
   const nextStep = jump ? recipe.steps.find(s => s.id === jump) : recipe.steps[index + 1];
+  if (nextStep && recipe.id.startsWith('cloud-extra-')) next = { ...next, guide: { ...next.guide, answers: { ...next.guide.answers, [`${asset.id}:proton-extra-pending`]: taskCursor(asset.id, recipe.id, nextStep.id) } } };
   return nextStep ? move(next, taskCursor(asset.id, recipe.id, nextStep.id)) : afterRecipe(next, asset, recipe.id);
 }
 export function undoStep(data: Dataset, key: string): Dataset {
@@ -194,6 +203,7 @@ export function deferStep(data: Dataset): Dataset {
   const task = currentTask(data);
   const key = data.guide.cursor;
   const next = { ...data, guide: { ...data.guide, steps: { ...data.guide.steps, [key]: data.guide.steps[key]?.status === 'done' ? data.guide.steps[key] : { status: 'later' as const, updatedAt: new Date().toISOString() } } } };
+  if (task?.recipe.id.startsWith('cloud-extra-')) return move({ ...next, guide: { ...next.guide, answers: { ...next.guide.answers, [`${task.asset.id}:proton-extra-pending`]: key } } }, `cloud-ready/${cloudInstallation(data, task.asset.id)?.vaultRef}`);
   if (task) return move(next, task.recipe.id === 'email-mfa' || task.recipe.id === 'recovery' ? 'manager-select' : task.recipe.id === 'manager' || task.recipe.id === 'builtin-manager' || task.recipe.id.startsWith('cloud-') || task.recipe.id.startsWith('authenticator-setup:') || (task.recipe.id === 'password' || task.recipe.id.startsWith('native-password:')) ? 'device-select' : 'finish');
   return move(next, key.startsWith('device') ? 'finish' : 'device-select');
 }

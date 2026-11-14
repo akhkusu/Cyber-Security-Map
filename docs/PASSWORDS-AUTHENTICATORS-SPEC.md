@@ -199,7 +199,7 @@ MFA設定ではNordPassからNord AccountのManage MFAへ移る手順を明示�
 
 Proton Mail・Pass・Authenticatorは製品名が違っても、同じProton Accountの認証に依存する場合があります。本人が選んだ同一Accountなら認証設定を共有しますが、Mailを開くための秘密やコードがPassやAuthenticatorだけにあり、その同期にも同じAccountが必要になる構成を検出します。
 
-任意の追加パスワードは、Proton AccountのパスワードやMFAとは別です。有効化時の再サインインと、忘れた場合の回復可能範囲を先に確認する経路を定義します。追加パスワードを有効にしただけで、AccountのMFAを完了にしません。[追加パスワード](https://proton.me/support/pass-extra-password)
+任意の追加パスワードは、Proton AccountのパスワードやMFAとは別です。有効化時の再サインインと、忘れた場合の回復可能範囲を先に確認する経路を定義します。追加パスワードを有効にしただけで、AccountのMFAを完了にしません。任意の導入・既存設定の確認・実際の再ログインは[実装契約](PROTON-PASS-EXTRA-PASSWORD.md)に沿って追加しました。変更・解除・忘れた追加パスワードの復旧は、その基本経路と区別します。[追加パスワード](https://proton.me/support/pass-extra-password)
 
 アカウントのパスワード復旧と、暗号化済みデータへのアクセス復旧の違いも確認します。復旧ファイルだけでアカウントへのサインインも戻るとは説明しません。[公式の復旧方式](https://proton.me/support/set-account-recovery-methods)
 

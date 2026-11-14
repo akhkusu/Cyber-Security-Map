@@ -70,7 +70,7 @@ export function cloudMasterChanged(data: Dataset, vaultId: string): boolean {
 export function cloudManagerReady(data: Dataset, vaultId: string, installationId?: string): boolean {
   const vault = cloudVault(data, vaultId), app = installationId ? cloudInstallation(data, installationId) : selectedCloudInstallation(data, vaultId);
   const root = data.assets.find(a => a.id === vault?.authenticationAccountRef), device = data.assets.find(a => a.id === app?.deviceRef);
-  if (data.version !== 2 || data.securityModel.revision !== 2 || !vault || !app || app.vaultRef !== vault.id || !cloudEnvironmentReady(data, app.id) || root?.purpose !== 'personal' || (vault.productId === 'nordpass' && cloudAnswer(data, root.id, 'method') !== 'direct')) return false;
+  if (data.version !== 2 || data.securityModel.revision < 2 || !vault || !app || app.vaultRef !== vault.id || !cloudEnvironmentReady(data, app.id) || root?.purpose !== 'personal' || (vault.productId === 'nordpass' && cloudAnswer(data, root.id, 'method') !== 'direct')) return false;
   const master = cloudAnswer(data, vault.id, 'master');
   const masterReady = vault.productId !== 'nordpass' || master === 'keep' || (master === 'change' ? cloudMasterChanged(data, vault.id) : recorded(vault, 'masterStrength'));
   return masterReady && ['opened', 'storageChecked', 'autofill'].every(c => recorded(app, c)) && recorded(device, 'screenLock') && ['mfa', 'recovery'].every(c => recorded(root, c)) && (vault.productId === 'nordpass' ? ['recovery', 'independentRoot'].every(c => recorded(vault, c)) : ['dataRecovery', 'passwordResetRecovery', 'recoveryFile'].every(c => recorded(root, c)));

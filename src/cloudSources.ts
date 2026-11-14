@@ -5,7 +5,7 @@ export const CLOUD_SOURCES = {
   protonPassIos: source('Proton · iPhone / iPad setup', 'https://proton.me/support/pass-setup-ios', 'iOS / iPadOS / official app and autofill'),
   protonPassAndroid: source('Proton · Android', 'https://proton.me/support/use-pass-android', 'Android / manufacturer differences / create and fill'),
   protonPassIosUse: source('Proton · iPhone / iPad use', 'https://proton.me/support/use-pass-ios', 'Mobile login item / password generation / save and fill'),
-  protonPassExtra: source('Proton · Optional extra password', 'https://proton.me/support/pass-extra-password', 'Separate optional Pass password / all Pass sessions are signed out when changed'),
+  protonPassExtra: { ...source('Proton · Optional extra password', 'https://proton.me/support/pass-extra-password', 'Optional Pass secret / extension, iOS, Android / minimum eight characters / initial setup signs all Pass sessions out'), checked: '2026-11-14' },
   protonRecoveryMethods: source('Proton · Account and encrypted data recovery', 'https://proton.me/support/set-account-recovery-methods', 'Password reset is separate from decrypting existing data'),
   protonRecoveryPhrase: source('Proton · Recovery phrase', 'https://proton.me/support/recovery-phrase', '12 words / one-time recovery / independent storage outside Proton'),
   protonRecoveryFile: source('Proton · Recovery file', 'https://proton.me/support/recovery-file', 'Encrypted backup keychain / download and preserve / no voiding'),
@@ -33,6 +33,7 @@ export const CLOUD_SOURCES = {
   effDice: source('EFF · Dice-generated passphrases', 'https://www.eff.org/dice', 'At least 6 randomly selected words from the 7776-word long list / physical dice'),
 };
 export function cloudRouteSources(product: string, route: string): (keyof typeof CLOUD_SOURCES)[] {
+  if (route.startsWith('cloud-extra-')) return ['protonPassExtra', 'protonRecoveryMethods', 'effDice'];
   if (route === 'cloud-sso-unavailable' || route === 'cloud-account-method') return ['nordConnected', 'nordSso', 'nordAccount'];
   if (route === 'cloud-recovery') return ['nordRecovery', 'nordAccount'];
   if (route === 'cloud-master-review' || route === 'cloud-master-needs-change') return ['nordMasterStrength', 'nordRecovery', 'effDice'];

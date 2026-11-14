@@ -7,7 +7,7 @@ export function recordCloudObservation(data: Dataset, key: string, subjectRef: s
   if (data.version !== 2 || !recipeId.startsWith('cloud-')) return data;
   const app = cloudInstallation(data, recipeId.startsWith('cloud-password:') ? recipeId.slice('cloud-password:'.length) : subjectRef), vault = cloudVault(data, app?.vaultRef);
   if (!app || !vault) return data;
-  if (phone && data.securityModel.revision !== 2) data = { ...data, securityModel: { ...data.securityModel, revision: 2 } };
+  if (phone && data.securityModel.revision < 2) data = { ...data, securityModel: { ...data.securityModel, revision: 2 } };
   if (recipeId.startsWith('cloud-master-change:') && step.id === 'apply') return { ...data, securityModel: { ...data.securityModel, lifecycle: { ...data.securityModel.lifecycle, [vault.id]: { ...data.securityModel.lifecycle[vault.id], state: 'in-use', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now } } } };
   const model = data.securityModel, entities = [...model.entities], relations = [...model.relations], facts = [...model.facts], routes = [...model.routes];
   const proof = { requiredGuideSteps, ...(phone ? { requiredPhoneRecords: phone.requiredPhoneRecords, cloudPhoneObservation: 'v1' } : {}) }, sourceIds = phone?.sourceIds ?? step.sources;
