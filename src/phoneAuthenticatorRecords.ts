@@ -98,5 +98,5 @@ export function undoPhoneAuthenticator(data: CurrentDataset, key: string, now: s
   let next = data;
   for (const action of data.actions) if ((action.parentId === key || (Array.isArray(action.requiredPhoneRecords) && action.requiredPhoneRecords.includes(key))) && action.targetId && action.controlId) next = undoControl(next, action.id, action.targetId, action.controlId, { state: 'unknown', evidence: 'not-assessed' }, now) as CurrentDataset;
   const affected = (r: { [key: string]: unknown }) => r.observationActionId === key || (Array.isArray(r.requiredPhoneRecords) && r.requiredPhoneRecords.includes(key));
-  return { ...next, securityModel: { ...next.securityModel, relations: next.securityModel.relations.filter(r => !affected(r)), facts: next.securityModel.facts.map(f => affected(f) ? { ...f, state: 'unknown', evidence: 'unknown' } : f) } };
+  return { ...next, securityModel: { ...next.securityModel, relations: next.securityModel.relations.flatMap(r => !affected(r) ? [r] : r.id.includes(':cloud:') ? [{ ...r, evidence: 'unknown' as const }] : []), facts: next.securityModel.facts.map(f => affected(f) ? { ...f, state: 'unknown', evidence: 'unknown' } : f) } };
 }

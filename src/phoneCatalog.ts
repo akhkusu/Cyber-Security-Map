@@ -5,11 +5,12 @@ import { nativeInstallation, nativeVault, NATIVE_NAMES, type NativeProduct } fro
 import { c, deviceRecipe, emailRecipe, SOURCES, type Copy, type Source, type GuideStep } from './guideCatalog';
 import { authenticatorInventory, authenticatorMigrationSteps, hasRecordedAuthenticators, needsGoogleTransfer, recordedAuthenticators } from './phoneAuthenticators';
 import { retainedPhoneSteps } from './phoneRetention';
-import { cloudVault, CLOUD_NAMES, type CloudProduct } from './cloudManagers';
+import { cloudPhoneSteps, PHONE_CLOUD_SOURCES } from './phoneCloudManagers';
 
 const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-13', reviewMethod: 'official-documentation' });
 export const PHONE_SOURCES: Record<string, Source> = {
   ...SOURCES,
+  ...PHONE_CLOUD_SOURCES,
   googleAuthIos: source('Google · Authenticator on iOS', 'https://support.google.com/accounts/answer/1066447?co=GENIE.Platform%3DiOS&hl=ja', 'iOS / transfer and sync'),
   imessageForm: source('Apple · iMessage deregistration form', 'https://selfsolve.apple.com/deregister-imessage/', 'Phone-number deregistration / received SMS'),
   imessage: source('Apple · Deregister iMessage', 'https://support.apple.com/en-us/102455', 'iPhone to non-Apple phone'),
@@ -40,7 +41,10 @@ export type PhoneStep = {
   refs: string[]; variant?: string; control?: { targetRef: string; id: string };
   extraControls?: { targetRef: string; controlId: string }[];
   setupHelp?: GuideStep['setupHelp'];
+  explanation?: Copy;
   nativeContext?: { installationRef: string; subjectRef: string; recipeId: string; step: GuideStep };
+  cloudContext?: { installationRef: string; subjectRef: string; recipeId: string; step: GuideStep; independentOfOld?: boolean; completedAccountRef?: string; context?: 'normal' | 'new-device' };
+  cloudQuestion?: { kind: 'use' | 'destination' | 'version'; vaultRef: string };
   access?: { targetRef: string; purpose: 'sign-in' | 'decrypt' }; physicalEffect?: boolean;
   requires?: string[];
   authenticatorEffect?: { kind: 'open' | 'items' | 'sync' | 'backup' | 'export' | 'code' | 'cleanup'; sourceRef: string; installationRef?: string; accountRef?: string; rootRef?: string };
@@ -132,8 +136,9 @@ export function phoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] 
   }
   if (['other', 'unsure'].includes(answers.authenticator)) steps.push(blocked('other-authenticator', c('This authenticator needs its own transfer steps', '認証アプリごとの移行手順が必要です'), c('Restore conditions differ between products and operating systems. This recipe is not available yet. Keep the previous phone; do not mark its codes as transferred or continue to erasure.', '製品とOSにより復元の条件が異なります。この組み合わせの手順はまだ準備中です。旧端末を残し、コードを移行済みとしたり、消去へ進んだりしないでください。'), [old.id, fresh.id]));
   const authenticatorMoves = authenticatorMigrationSteps(data, workflow, accountSteps); steps.push(...authenticatorMoves.steps); if (!authenticatorMoves.ready) return steps;
+  const cloudMoves = cloudPhoneSteps(data, workflow); steps.push(...cloudMoves.steps); if (!cloudMoves.ready) return steps;
   for (const account of data.assets.filter(a => a.kind === 'account')) {
-    const checkedHere = steps.some(s => s.access?.targetRef === account.id && s.access.purpose === 'sign-in' && (s.authenticatorEffect?.kind === 'code' || s.id.startsWith('auth:')));
+    const checkedHere = steps.some(s => (s.cloudContext?.completedAccountRef === account.id && s.cloudContext.context !== 'normal') || (s.access?.targetRef === account.id && s.access.purpose === 'sign-in' && (s.authenticatorEffect?.kind === 'code' || s.id.startsWith('auth:'))));
     if (checkedHere) {
       for (const remaining of accountSteps(account, fresh).filter(s => s.access?.purpose === 'decrypt')) if (!steps.some(s => s.access?.targetRef === account.id && s.access.purpose === 'decrypt')) steps.push(remaining);
       continue;
@@ -147,12 +152,7 @@ export function phoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] 
     }
     const useCode = account.provider !== 'apple' && answers[`auth-code:${account.id}`] === 'yes' && googleTransfer;
     if (answers[key] === 'yes') steps.push(...accountSteps(account, fresh).map(s => useCode && s.id === `signin:${account.id}` ? { ...s, action: c(`${s.action?.en} When the service asks for an authenticator code, enter this account’s current code from the NEW phone’s Google Authenticator. If you cannot choose that method, keep this task unfinished.`, `${s.action?.ja} 認証コードを求められたら、新端末のGoogle 認証システムにある今回のアカウントの現在のコードを入力してください。その方法を選べなければ未完了で残します。`), expected: c('The official service accepts the authenticator code from the new phone and completes this exact account’s sign-in.', '正規のサービスが新端末の認証コードを受け付け、今回のアカウントのログインが完了すること。'), variant: 'new-totp-code', sources: [...s.sources, 'googleAuth', 'googleAuthIos'] } : s));
-    else steps.push(action(`elsewhere:${account.id}`, c('Check access somewhere other than the old phone', '旧端末以外で利用できるか確認する'), c('Your other device · official service', '別の利用端末 · 正規のサービス'), c(useCode ? 'On the device you will keep, sign in to the official service using this account’s code from Google Authenticator on the new phone. Confirm the service accepts it. Keep working sign-in and recovery outside the old phone.' : 'On the device you plan to keep, open this account and confirm its important data is accessible. Keep a usable sign-in and recovery method outside the old phone.', useCode ? '今後使う別の端末で正規のサービスへログインし、新端末のGoogle 認証システムにある今回のコードを入力してください。サービスが受け付けたことを確認し、使えるログイン・復旧手段を旧端末の外に残します。' : '今後使う別の端末で、このアカウントを開き、必要な情報を利用できるか確かめてください。旧端末の外に、使えるログイン・復旧手段を残します。'), c(useCode ? 'The service accepts this account’s code from the new phone and completes sign-in on the device you will keep.' : 'You can still use this account after handing over the old phone.', useCode ? '今後使う端末の正規のサービスが、新端末の今回の認証コードを受け付け、ログインが完了すること。' : '旧端末を手放した後も、このアカウントを利用できること。'), useCode ? [account.id, old.id, fresh.id] : [account.id, old.id], useCode ? ['googleAuth', 'googleAuthIos'] : [], { variant: useCode ? 'new-totp-code' : '' }));
-  }
-  if (data.version === 2) for (const candidate of data.securityModel.entities.filter(e => e.kind === 'vault' && data.securityModel.entities.some(i => i.kind === 'installation' && i.vaultRef === e.id && i.deviceRef === old.id && i.controls?.opened === 'verified'))) {
-    const vault = cloudVault(data, candidate.id); if (!vault) continue;
-    const name = CLOUD_NAMES[vault.productId as CloudProduct];
-    steps.push(blocked(`cloud-store-move:${vault.id}`, c(`Finish the ${name.en} move before releasing the old phone`, `手放す前に${name.ja}の移行を確認する`), c('Account sign-in alone does not confirm the cloud password store. The embedded phone-move recipe for this product is still being added. Keep the old phone and its working sessions, independent recovery information and vault data. This task remains unfinished and blocks erasure and handover.', 'アカウントへログインできただけでは、クラウドのパスワード保管庫を確認したことにはなりません。この製品の機種変更用の一連の手順は追加中です。旧端末の使えるログイン、独立した復旧用情報と保管庫の情報を残してください。この作業は未完了のままとし、消去・譲渡へは進みません。'), [vault.id, old.id, fresh.id], [vault.productId === 'proton-pass' ? 'protonRecoveryMethods' : 'nordAccount']));
+    else if (!steps.some(s => s.cloudContext?.completedAccountRef === account.id && s.cloudContext.context === 'normal')) steps.push(action(`elsewhere:${account.id}`, c('Check access somewhere other than the old phone', '旧端末以外で利用できるか確認する'), c('Your other device · official service', '別の利用端末 · 正規のサービス'), c(useCode ? 'On the device you will keep, sign in to the official service using this account’s code from Google Authenticator on the new phone. Confirm the service accepts it. Keep working sign-in and recovery outside the old phone.' : 'On the device you plan to keep, open this account and confirm its important data is accessible. Keep a usable sign-in and recovery method outside the old phone.', useCode ? '今後使う別の端末で正規のサービスへログインし、新端末のGoogle 認証システムにある今回のコードを入力してください。サービスが受け付けたことを確認し、使えるログイン・復旧手段を旧端末の外に残します。' : '今後使う別の端末で、このアカウントを開き、必要な情報を利用できるか確かめてください。旧端末の外に、使えるログイン・復旧手段を残します。'), c(useCode ? 'The service accepts this account’s code from the new phone and completes sign-in on the device you will keep.' : 'You can still use this account after handing over the old phone.', useCode ? '今後使う端末の正規のサービスが、新端末の今回の認証コードを受け付け、ログインが完了すること。' : '旧端末を手放した後も、このアカウントを利用できること。'), useCode ? [account.id, old.id, fresh.id] : [account.id, old.id], useCode ? ['googleAuth', 'googleAuthIos'] : [], { variant: useCode ? 'new-totp-code' : '' }));
   }
   if (data.version === 2) for (const candidate of data.securityModel.entities.filter(e => e.kind === 'vault' && data.securityModel.entities.some(i => i.kind === 'installation' && i.vaultRef === e.id && i.deviceRef === old.id && i.controls?.opened === 'verified'))) {
     const vault = nativeVault(data, candidate.id); if (!vault) continue;

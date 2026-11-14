@@ -365,3 +365,8 @@ Apple・Google組込みの全OS・製品間移行・ローカル保管庫復元�
 | [Bitwarden・モバイル](https://bitwarden.com/help/getting-started-mobile/) / [1Password・Account追加](https://support.1password.com/add-account/) | 既存の保管庫の追加と利用 | 本文 |
 
 これらは公式資料の照合とアプリ内経路の検証であり、全OS・全実機・外部サービスで移行を実施した証明ではありません。
+
+
+## クラウド型パスワード管理の具体化（2026-11-14）
+
+Proton Pass・NordPassの個人用保管庫は、[機種変更の実装契約](CLOUD-MANAGERS-PHONE-MOVE.md)で、既存Account・保管庫・端末上のアプリ、4方向の新端末、別の登録済み端末、旧端末だけで残す選択を具体化します。Account認証、保管庫の読取り、保存パスワードでの新しいログインは個別の確認です。旧端末だけが利用先のまま手放す場合や、解除・復旧手段を用意できない場合に消去へ進めないことを、遷移関数でも検証します。SSO・現在の秘密の紛失・組織共有等を、この基本経路の完了で代用しません。

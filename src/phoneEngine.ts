@@ -6,6 +6,9 @@ import { recordNativeObservation, undoNativeObservation } from './nativeObservat
 import { chooseNativeDevice, nativeVault, NATIVE_NAMES, setNativeVariant, type NativeProduct } from './nativeManagers';
 import { PROVIDERS } from './guideCatalog';
 import { answerAuthenticatorQuestion, recordPhoneAuthenticator, undoPhoneAuthenticator } from './phoneAuthenticatorRecords';
+import { answerCloudPhoneQuestion } from './phoneCloudManagers';
+import { recordCloudObservation, undoCloudObservation } from './cloudObservations';
+import { cloudAnswer, cloudInstallation, cloudVault, CLOUD_NAMES, type CloudProduct } from './cloudManagers';
 
 export const getPhoneWorkflows = (data: Dataset): PhoneWorkflow[] => data.version === 2 ? data.deviceWorkflows : [];
 export const phoneRecordKey = (workflow: PhoneWorkflow, step: PhoneStep) => JSON.stringify([workflow.id, step.id, step.refs, step.variant ?? '']);
@@ -77,7 +80,8 @@ export function answerPhoneQuestion(data: Dataset, workflowId: string, value: st
     if (installationRef) next = setNativeVariant(next, installationRef, 'ios18plus') as CurrentDataset;
   }
   const auth = answerAuthenticatorQuestion(next, updated, step, value, workflow);
-  return advance(auth.data, auth.workflow, step.id);
+  const cloud = answerCloudPhoneQuestion(auth.data, auth.workflow, step, value, workflow);
+  return advance(cloud.data, cloud.workflow, step.id);
 }
 function phonePrerequisites(data: Dataset, workflow: PhoneWorkflow, step: PhoneStep): PhoneStep[] {
   const all = new Map(phoneSteps(data, workflow).map(s => [s.id, s])), seen = new Set<string>([step.id]), pending = [...(step.requires ?? [])], result: PhoneStep[] = [];
@@ -113,6 +117,7 @@ export function confirmPhoneStep(data: Dataset, workflowId: string, now = new Da
   for (const effect of step.extraControls ?? []) next = recordControl(next, effect.targetRef, effect.controlId, { id: `${key}#${effect.targetRef}#${effect.controlId}`, parentId: key, origin: `phone:${workflow.id}`, requiredPhoneRecords }, now) as CurrentDataset;
   if (step.nativeContext) next = recordNativeObservation(next, key, step.nativeContext.subjectRef, step.nativeContext.recipeId, step.nativeContext.step, now) as CurrentDataset;
   next = recordPhoneAuthenticator(next, workflow, step, key, requiredPhoneRecords, now);
+  if (step.cloudContext) next = recordCloudObservation(next, key, step.cloudContext.subjectRef, step.cloudContext.recipeId, step.cloudContext.step, [], now, { context: step.cloudContext.context ?? 'new-device', requiredPhoneRecords, sourceIds: step.sources, ...(step.cloudContext.independentOfOld && workflow.oldDeviceRef ? { observedWithoutRefs: [workflow.oldDeviceRef] } : {}) }) as CurrentDataset;
   const factIds: string[] = [];
   if (step.access) {
     const factId = `${key}:observation`, routeId = `${key}:route`; factIds.push(factId);
@@ -178,6 +183,7 @@ function undoSinglePhoneRecord(data: Dataset, workflowId: string, key: string, n
   for (const effect of record.extraControls ?? []) next = undoControl(next, `${key}#${effect.targetRef}#${effect.controlId}`, effect.targetRef, effect.controlId, { state: 'unknown', evidence: 'not-assessed' }, now) as CurrentDataset;
   next = undoNativeObservation(next, key) as CurrentDataset;
   next = undoPhoneAuthenticator(next, key, now);
+  next = undoCloudObservation(next, key) as CurrentDataset;
   const facts = next.securityModel.facts.map(f => record.factIds.includes(f.id) ? { ...f, state: 'unknown' as const, evidence: 'unknown' as const } : f);
   const routes = next.securityModel.routes;
   const records = { ...workflow.records }; delete records[key];
@@ -211,10 +217,13 @@ export function phoneHelpPrompt(data: Dataset, workflow: PhoneWorkflow, problemI
   const old = data.assets.find(a => a.id === workflow.oldDeviceRef), fresh = data.assets.find(a => a.id === workflow.newDeviceRef);
   // Never copy nicknames, free text, IDs or raw saved answers to an external AI.
   let safeData = { ...data, assets: data.assets.map(a => ({ ...a, name: a.provider ? PROVIDERS[a.provider] : a.kind === 'device' ? phoneName(a.operatingSystem) : 'Selected account' })) };
-  if (safeData.version === 2) safeData = { ...safeData, securityModel: { ...safeData.securityModel, entities: safeData.securityModel.entities.map(e => ({ ...e, label: (e.kind === 'vault' || e.kind === 'installation') && NATIVE_NAMES[e.productId as NativeProduct] ? NATIVE_NAMES[e.productId as NativeProduct].en : 'Selected security item' })) } };
+  if (safeData.version === 2) safeData = { ...safeData, securityModel: { ...safeData.securityModel, entities: safeData.securityModel.entities.map(e => ({ ...e, label: (e.kind === 'vault' || e.kind === 'installation') ? NATIVE_NAMES[e.productId as NativeProduct]?.en ?? CLOUD_NAMES[e.productId as CloudProduct]?.en ?? 'Selected security item' : 'Selected security item' })) } };
   const safeStep = phoneSteps(safeData, workflow).find(s => s.id === step.id) ?? step;
+  const app = cloudInstallation(data, step.cloudContext?.installationRef), vault = cloudVault(data, app?.vaultRef ?? step.refs[0]);
+  const os = data.assets.find(a => a.id === app?.deviceRef)?.operatingSystem;
+  const version = app && ({ ios18plus: 'iOS / iPadOS 18+', ios17: 'iOS / iPadOS 17', android9plus: 'Android 9+' } as Record<string, string>)[cloudAnswer(data, app.id, os === 'ios' ? 'ios' : 'android') ?? ''];
   return [language === 'ja' ? '最新の公式資料を確認し、一度に一つの質問または操作を案内してください。確認できない最新情報は、その旨を明示してください。秘密情報を求めず、新しい手段が使える前に既存の方法を削除させないでください。' : 'Check current official documentation. Guide one question or action at a time. State if you cannot verify current information. Do not request secrets or remove old access before new access works.',
-    `Task: ${language === 'ja' ? 'スマホの機種変更' : 'Move to a new phone'}`, `Current step: ${safeStep.title[language]}`,
+    `Task: ${language === 'ja' ? 'スマホの機種変更' : 'Move to a new phone'}`, ...(vault ? [`Password manager: ${CLOUD_NAMES[vault.productId as CloudProduct][language]}`] : []), ...(os && ['ios', 'android', 'macos', 'windows', 'ubuntu', 'chromeos'].includes(os) ? [`Selected app OS: ${os}${version ? ` / ${version}` : ' (version unconfirmed)'}`] : []), `Current step: ${safeStep.title[language]}`,
     `Where: ${safeStep.place?.[language] ?? 'Official settings on the selected phone'}`,
     `OS: ${old?.operatingSystem === 'ios' ? 'iOS' : old?.operatingSystem === 'android' ? 'Android' : 'unconfirmed'} → ${fresh?.operatingSystem === 'ios' ? 'iOS' : fresh?.operatingSystem === 'android' ? 'Android' : 'unconfirmed'} (version unconfirmed)`,
     `Expected: ${safeStep.expected?.[language] ?? safeStep.text?.[language] ?? 'A supported migration path'}`,

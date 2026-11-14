@@ -8,8 +8,8 @@ import { addCloudRoot, chooseCloudDevice, cloudInstallation, cloudManagerReady, 
 import { cloudRecipeFor } from './cloudRuntime';
 import { evaluateAccess, securityModelIssues } from './securityModel';
 import { mapItems, typedMapStatus } from './securityMapViews';
-import { phoneBlockingSteps } from './phoneEngine';
 import { startPhoneWorkflow } from './phoneEngine';
+import { phoneSteps } from './phoneCatalog';
 
 const time = '2026-11-13T12:00:00Z';
 function recorded(data: CurrentDataset, id: string, control: string) { return recordControl(data, id, control, { id: `fixture:${id}:${control}` }, time) as CurrentDataset; }
@@ -164,7 +164,8 @@ describe('cloud password managers', () => {
     const fresh = { ...makeAsset({ kind: 'device', type: 'Smartphone', name: 'New phone', importance: 'critical', operatingSystem: 'ios' }), id: 'fresh' };
     data.assets.push(fresh); data = startPhoneWorkflow(data, '/map', 'device', 'move');
     Object.assign(data.deviceWorkflows[0], { newDeviceRef: fresh.id, answers: { stage: 'using', availability: 'available', ownership: 'personal', authenticator: 'none', 'use:mail': 'yes', [`use:${f.rootId}`]: 'yes', 'special-apps': 'none', 'phone-line': 'no-line', 'old-fate': 'sell', 'ios-generation': '18' } });
-    expect(phoneBlockingSteps(data, data.deviceWorkflows[0]).some(s => s.id === `cloud-store-move:${f.vaultId}` && s.kind === 'blocked')).toBe(true);
+    expect(phoneSteps(data, data.deviceWorkflows[0]).some(s => s.id === `cloud-use:${f.vaultId}`)).toBe(true);
+    expect(phoneSteps(data, data.deviceWorkflows[0]).some(s => s.id === 'erase-old')).toBe(false);
   });
 
   it('requires explicit recovery choices even when a saved cursor jumps into code replacement', () => {

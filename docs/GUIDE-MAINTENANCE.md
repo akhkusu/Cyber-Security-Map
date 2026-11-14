@@ -116,3 +116,11 @@ docker run --rm --shm-size=1g cyber-security-map:browser-tests npm run test:page
 - `passphraseCatalog.ts`はEFFの単語表を利用する準備方法を共用する。原文・帰属・CC BY 4.0・ハッシュを`public/wordlists/ATTRIBUTION.txt`で管理する。実際の語句を本アプリに保存しない。
 - 単語表のURLはPagesのBASE_URL配下とし、PWAの対象に含める。通常URL・プロジェクトURL・オフラインで原文の7776行とハッシュを確認する。
 - クラウドの追加意味を保存するときだけモデルrevision 2へ拡張する。既存revision 1のデータを説明更新だけで変換・再登録しない。非対応revisionの原本を保持する。
+
+## クラウド保管庫の機種変更
+
+`CLOUD-MANAGERS-PHONE-MOVE.md`を対応契約とし、`phoneCloudManagers.ts`に製品別の質問・説明を置く。`phoneEngine.ts`は新端末上の実体の選択・共用する実施記録・前提を扱い、基本ガイドのオブジェクトを保存し直して位置を変えない。単に同じ製品という理由で、別のAccount・端末・プロファイルへ確認をコピーしない。
+
+Accountの認証、保管庫の復号、保存したパスワードの利用を分ける。確認した文脈と、旧端末を使わずに試した範囲を`cloudObservations.ts`で記録する。独立性の追加意味は版付きの識別子がある観測だけで解釈し、古い同名の不明項目を保持する。モデルrevision 1で取り込んだ項目も、この機能の利用・記録の開始時にrevision 2へ拡張する。
+
+同じ端末のロックを参照するときも、その記録キーを後続の前提へ含める。取り消しでは派生する確認・観測を未確認へ戻し、参照される履歴を消さない。旧端末だけで使い続ける選択と、売却時に必要な引き継ぎを区別する。

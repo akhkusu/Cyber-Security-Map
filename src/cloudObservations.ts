@@ -3,21 +3,24 @@ import type { GuideStep } from './guideCatalog';
 import type { AccessContext, SecurityRelation } from './securityModel';
 import { cloudInstallation, cloudVault } from './cloudManagers';
 
-export function recordCloudObservation(data: Dataset, key: string, subjectRef: string, recipeId: string, step: GuideStep, requiredGuideSteps: string[], now: string): Dataset {
+export function recordCloudObservation(data: Dataset, key: string, subjectRef: string, recipeId: string, step: GuideStep, requiredGuideSteps: string[], now: string, phone?: { context: AccessContext; requiredPhoneRecords: string[]; observedWithoutRefs?: string[]; sourceIds: string[] }): Dataset {
   if (data.version !== 2 || !recipeId.startsWith('cloud-')) return data;
   const app = cloudInstallation(data, recipeId.startsWith('cloud-password:') ? recipeId.slice('cloud-password:'.length) : subjectRef), vault = cloudVault(data, app?.vaultRef);
   if (!app || !vault) return data;
+  if (phone && data.securityModel.revision !== 2) data = { ...data, securityModel: { ...data.securityModel, revision: 2 } };
   if (recipeId.startsWith('cloud-master-change:') && step.id === 'apply') return { ...data, securityModel: { ...data.securityModel, lifecycle: { ...data.securityModel.lifecycle, [vault.id]: { ...data.securityModel.lifecycle[vault.id], state: 'in-use', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now } } } };
   const model = data.securityModel, entities = [...model.entities], relations = [...model.relations], facts = [...model.facts], routes = [...model.routes];
+  const proof = { requiredGuideSteps, ...(phone ? { requiredPhoneRecords: phone.requiredPhoneRecords, cloudPhoneObservation: 'v1' } : {}) }, sourceIds = phone?.sourceIds ?? step.sources;
   const edge = (suffix: string, fromRef: string, toRef: string, kind: SecurityRelation['kind']) => {
     const id = `${key}:cloud:${suffix}`, old = relations.find(r => r.id === id);
-    const value = { ...old, id, fromRef, toRef, kind, evidence: 'user-confirmed' as const, checkedAt: now, sourceIds: step.sources, observationActionId: key, requiredGuideSteps };
+    const value = { ...old, id, fromRef, toRef, kind, evidence: 'user-confirmed' as const, checkedAt: now, sourceIds, observationActionId: key, ...proof };
     const index = relations.findIndex(r => r.id === id); if (index < 0) relations.push(value); else relations[index] = value;
   };
   const observed = (suffix: string, targetRef: string, purpose: 'sign-in' | 'decrypt', label: string, requiredRefs: string[], contexts: AccessContext[] = ['normal']) => {
     const factId = `${key}:cloud:${suffix}`, routeId = `${factId}:route`;
-    const value = { ...facts.find(f => f.id === factId), id: factId, label, state: 'available' as const, evidence: 'user-confirmed' as const, checkedAt: now, requiredRefs, contexts, dependencyCompleteness: 'partial' as const, sourceIds: step.sources, observationActionId: key, requiredGuideSteps };
-    const route = { ...routes.find(r => r.id === routeId), id: routeId, label, targetRef, purpose, contexts, requirements: { kind: 'fact' as const, factId }, sourceIds: step.sources, observationActionId: key };
+    const useContexts = phone ? [phone.context] : contexts;
+    const value = { ...facts.find(f => f.id === factId), id: factId, label, state: 'available' as const, evidence: 'user-confirmed' as const, checkedAt: now, requiredRefs, contexts: useContexts, dependencyCompleteness: 'partial' as const, sourceIds, observationActionId: key, ...proof, ...(phone?.observedWithoutRefs ? { observedWithoutRefs: phone.observedWithoutRefs } : {}) };
+    const route = { ...routes.find(r => r.id === routeId), id: routeId, label, targetRef, purpose, contexts: useContexts, requirements: { kind: 'fact' as const, factId }, sourceIds, observationActionId: key };
     const index = facts.findIndex(f => f.id === factId); if (index < 0) facts.push(value); else facts[index] = value;
     const routeIndex = routes.findIndex(r => r.id === routeId); if (routeIndex < 0) routes.push(route); else routes[routeIndex] = route;
   };
@@ -46,6 +49,6 @@ export function recordCloudObservation(data: Dataset, key: string, subjectRef: s
 }
 export function undoCloudObservation(data: Dataset, key: string): Dataset {
   if (data.version !== 2) return data;
-  const withdrawn = (entry: { [key: string]: unknown }) => entry.observationActionId === key || (Array.isArray(entry.requiredGuideSteps) && entry.requiredGuideSteps.includes(key));
+  const withdrawn = (entry: { [key: string]: unknown }) => entry.observationActionId === key || (Array.isArray(entry.requiredGuideSteps) && entry.requiredGuideSteps.includes(key)) || (Array.isArray(entry.requiredPhoneRecords) && entry.requiredPhoneRecords.includes(key));
   return { ...data, securityModel: { ...data.securityModel, relations: data.securityModel.relations.map(r => withdrawn(r) ? { ...r, evidence: 'unknown' } : r), facts: data.securityModel.facts.map(f => withdrawn(f) ? { ...f, state: 'unknown', evidence: 'unknown' } : f) } };
 }

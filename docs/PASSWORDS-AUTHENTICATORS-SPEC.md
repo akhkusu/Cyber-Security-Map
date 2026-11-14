@@ -620,4 +620,4 @@ Apple・Google組込みの段階的な実装は、[組込み管理の実装契�
 
 認証アプリの段階的な実装は、[認証アプリの実装契約](AUTHENTICATOR-GUIDE.md)で管理します。Google・Microsoft・Bitwardenの新規コード登録と、製品別のバックアップ・復元・機種変更は別の対応範囲として管理します。
 
-Proton Pass・NordPassの段階的な実装は、[クラウド管理の実装契約](CLOUD-MANAGERS-GUIDE.md)で管理します。個人用の基本設定、復旧、マスターの作成・変更、保存・実利用と、残るSSO・機種変更・復旧方式を区別します。
+Proton Pass・NordPassの段階的な実装は、[クラウド管理の実装契約](CLOUD-MANAGERS-GUIDE.md)で管理します。個人用の基本設定、復旧、マスターの作成・変更、保存・実利用を扱います。[任意の機種変更](CLOUD-MANAGERS-PHONE-MOVE.md)では、既存の個人保管庫を新端末・別の登録済み端末で使えることを確認します。残るSSO・秘密の紛失・復旧方式は、対応済みの基本経路と区別します。

@@ -74,4 +74,11 @@ describe('encrypted local vault', () => {
     await expect(decryptVault(envelope, 'original fixture phrase')).rejects.toMatchObject({ name: 'UnsupportedVaultError', kind: 'version' });
     expect(envelope).toEqual(original);
   });
+  it('preserves opaque older fact metadata without interpreting it as phone-independence evidence', async () => {
+    const data = newDataset(), fact = { id: 'legacy-fact', label: 'Legacy observation', state: 'unknown', evidence: 'unknown', checkedAt: '2025-01-01T00:00:00Z', requiredRefs: [], contexts: ['normal'], sourceIds: [], observedWithoutRefs: { keep: true }, cloudPhoneObservation: { keep: true } };
+    const envelope = await sealRaw({ ...data, securityModel: { ...data.securityModel, facts: [fact] } });
+    const opened = await decryptVault(envelope, 'original fixture phrase');
+    const updated = await updateEncryptedVault(opened.data, opened.context);
+    expect((await decryptVault(updated, 'original fixture phrase')).data).toMatchObject({ securityModel: { facts: [fact] } });
+  });
 });

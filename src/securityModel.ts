@@ -58,6 +58,7 @@ export const accessFactSchema = z.object({
   dependencyCompleteness: z.enum(['partial', 'complete']).optional(),
 }).passthrough();
 export type AccessFact = z.infer<typeof accessFactSchema>;
+const confirmedWithout = (fact: AccessFact): string[] => fact.cloudPhoneObservation === 'v1' && Array.isArray(fact.observedWithoutRefs) && fact.observedWithoutRefs.every(ref => typeof ref === 'string') ? fact.observedWithoutRefs : [];
 export const accessRouteSchema = z.object({
   id, label, targetRef: id, purpose: z.enum(['sign-in', 'second-step', 'decrypt', 'local-unlock', 'restore']),
   contexts: z.array(z.enum(ACCESS_CONTEXTS)).min(1).default(['normal']), requirements: accessConditionSchema,
@@ -122,7 +123,7 @@ export function securityModelIssues(model: SecurityModel, legacy: readonly Legac
     if (e.kind === 'recovery-arrangement') { check(e.id, e.subjectRef); check(e.id, e.helperRef); }
   }
   for (const edge of model.relations) { check(edge.id, edge.fromRef); check(edge.id, edge.toRef); }
-  for (const fact of model.facts) fact.requiredRefs.forEach(ref => check(fact.id, ref));
+  for (const fact of model.facts) { fact.requiredRefs.forEach(ref => check(fact.id, ref)); confirmedWithout(fact).forEach(ref => check(fact.id, ref)); }
   Object.keys(model.lifecycle).forEach(ref => check('lifecycle', ref));
   for (const [key, baseline] of Object.entries(model.controlBaselines)) check(`baseline:${key}`, baseline.targetRef);
   const facts = new Set(model.facts.map(f => f.id)), routes = new Set(model.routes.map(r => r.id));
@@ -165,7 +166,7 @@ export function evaluateAccess(model: SecurityModel, routeId: string, scenario: 
     if (f.state !== 'available') return result('unknown', 'unconfirmed', f.id);
     // An observed login does not establish that every MFA/recovery dependency
     // was captured. Do not project it onto an untested loss scenario.
-    if (f.dependencyCompleteness === 'partial' && unavailable.size > 0) return result('unknown', 'unconfirmed', f.id);
+    if (f.dependencyCompleteness === 'partial' && [...unavailable].some(ref => !confirmedWithout(f).includes(ref))) return result('unknown', 'unconfirmed', f.id);
     return result('available', 'confirmed', f.id, [f.id]);
   };
   const conditionResult = (condition: AccessCondition, path: Set<string>, depth: number): AccessResult => {
