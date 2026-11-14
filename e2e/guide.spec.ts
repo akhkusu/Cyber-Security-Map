@@ -57,11 +57,11 @@ test('a new user can finish Bitwarden, save a generated important password and c
   await createWorkspace(page); await chooseApple(page); await mfaState(page); await advance(page, 'すでに有効になっている');
   await advance(page, '分からない・つながりを記録しない'); await advance(page); await advance(page, '予備の手段を確保しました'); await advance(page, '独立した予備の電話・電話番号');
   await page.getByRole('button', { name: /^Bitwarden/ }).click(); await advance(page, 'このマネージャーを追加する');
-  await page.getByRole('button', { name: /登録済みの端末/ }).click(); await advance(page, 'EU · vault.bitwarden.eu');
+  await page.getByRole('button', { name: /登録済みの端末/ }).click();
   await expect(page.getByRole('link', { name: /公式の設定・アプリを開く/ })).toHaveAttribute('href', 'https://bitwarden.com/download/');
   await advance(page); await advance(page, '初めて作る');
   await expect(page.getByText(/12文字/)).toBeVisible(); await expect(page.getByText(/6語以上/)).toBeVisible();
-  await advance(page, '専用の語句を用意しました'); await expect(page.getByRole('link', { name: /公式の設定・アプリを開く/ })).toHaveAttribute('href', 'https://vault.bitwarden.eu/');
+  await advance(page, '専用の語句を用意しました'); await advance(page, 'EU · vault.bitwarden.eu / bitwarden.eu'); await expect(page.getByRole('link', { name: /公式の設定・アプリを開く/ })).toHaveAttribute('href', 'https://vault.bitwarden.eu/');
   await advance(page); await advance(page, '安全な場所へ保管しました'); await advance(page, '確認しました'); await advance(page, 'これから設定する'); await prepareAuthenticator(page); await advance(page); await advance(page, 'コードが受け付けられました');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('2段階ログインの復旧コードを保管する');
   await advance(page, '復旧コードを保管しました'); await advance(page, 'ログインできました');

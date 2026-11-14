@@ -1,6 +1,7 @@
 import { nativePasswordAccepted, nativePasswordRedirect, nativePasswordStepMetadata, nativePasswordUseCurrent, nativeRootCopyPendingAllowed } from './nativePasswordContext';
 import { nativeRootCopyReady, nativeRootCopyState } from './nativeRootCopy';
 import {hasSavedPasswordCandidate,standardPasswordScope} from './passwordContext';
+import {bitwardenRegion,confirmBitwardenServerUse,openBitwardenServerCheck,serverCheckSupported} from './bitwardenServer';
 import { recordedUnavailable } from './recordAvailability';
 import { recordProtonExtra } from './protonPassExtra';
 import { AUTHENTICATORS, authSources, authenticatorPrerequisiteRoute, authenticatorConfirmation, authenticatorScan, authenticatorScanStep, authenticatorSetupRecipe, authenticatorSetupRoute, requireAuthenticatorRoots, selectedAuthenticator, type AuthenticatorProduct } from './authenticatorGuide';
@@ -40,12 +41,12 @@ function baseRecipeFor(data: Dataset, asset: Asset, recipeId: string): Recipe | 
   const platform = data.guide.answers[`${asset.id}:platform`] ?? asset.operatingSystem ?? 'web';
   if (recipeId === 'email-mfa' && (['apple', 'google', 'microsoft'].includes(asset.provider ?? '') || isExtendedMail(asset.provider))) return emailRecipe(asset.provider, platform);
   if (recipeId === 'recovery' && (['apple', 'google', 'microsoft'].includes(asset.provider ?? '') || isExtendedMail(asset.provider))) return recoveryRecipe(asset.provider, platform);
-  if (recipeId === 'manager' && ['bitwarden', '1password'].includes(asset.provider ?? '')) return managerRecipe(asset.provider, platform, data.guide.answers[`${asset.id}:region`] ?? 'us');
+  if (recipeId === 'manager' && ['bitwarden', '1password'].includes(asset.provider ?? '')) return managerRecipe(asset.provider, platform, bitwardenRegion(data,asset.id));
   if (recipeId === 'password') {
     if (asset.provider === 'mailcom' || asset.provider === 'gmx') return undefined;
     if (nativeVault(data, data.guide.managerId)) return builtinPasswordRecipe(data, asset);
     const manager = data.assets.find(a => a.id === data.guide.managerId);
-    if (manager && ['bitwarden','1password'].includes(manager.provider??'') && (['apple', 'google', 'microsoft'].includes(asset.provider ?? '') || isExtendedMail(asset.provider))) return passwordRecipe(manager.provider, asset, data.guide.answers[`${asset.id}:platform`] ?? 'web',data.guide.answers[`${manager.id}:region`]??'us',data);
+    if (manager && ['bitwarden','1password'].includes(manager.provider??'') && (['apple', 'google', 'microsoft'].includes(asset.provider ?? '') || isExtendedMail(asset.provider))) return passwordRecipe(manager.provider, asset, data.guide.answers[`${asset.id}:platform`] ?? 'web',bitwardenRegion(data,manager.id),data);
   }
   if (recipeId === 'device' && ['ios', 'android', 'macos', 'windows'].includes(platform)) return deviceRecipe(platform);
 }
@@ -86,6 +87,8 @@ export function currentTask(data: Dataset): { asset: Asset; recipe: Recipe; step
   const updatingOwnCopy = nativeRootCopyPendingAllowed(data, assetId, recipeId, stepId);
   const needsPrerequisites = (recipeId === 'password' || recipeId.startsWith('native-password:')) && (!isRecorded(asset, 'recovery') || !managerReady(data, bound?.vaultRef, bound?.id, { allowPendingRootCopy: updatingOwnCopy }));
   const standardManager=recipe.id==='password'?data.assets.find(a=>a.id===data.guide.managerId):undefined;
+  const serverAccount=recipe.id==='manager'&&asset.provider==='bitwarden'&& !['install','existing','master'].includes(stepId)?asset:standardManager?.provider==='bitwarden'?standardManager:undefined;
+  if(serverAccount&&(!serverCheckSupported(data,serverAccount.id)||!bitwardenRegion(data,serverAccount.id)))return {asset,recipe,step:recipe.steps[index],index,redirectTo:`standard-server/${serverAccount.id}`};
   if(standardManager?.provider==='1password'&&!needsPrerequisites&&!['ios','android','macos','windows'].includes(data.guide.answers[`${standardManager.id}:platform`]??''))return {asset,recipe,step:recipe.steps[index],index,redirectTo:`password-manager-device/${standardManager.id}/${asset.id}`};
   if(recipe.id==='password'&&stepId==='apply'&&!needsPrerequisites&&!hasSavedPasswordCandidate(data,assetId))return {asset,recipe,step:recipe.steps[index],index,redirectTo:taskCursor(assetId,recipeId,'save-candidate')};
   const nativeRedirect = !needsPrerequisites && nativePasswordRedirect(data, assetId, recipeId, stepId);
@@ -194,7 +197,7 @@ export function afterRecipe(data: Dataset, asset: Asset, recipeId: string): Data
 export function completeStep(data: Dataset, jump?: string): Dataset {
   const task = currentTask(data);
   if (!task) return data;
-  if (task.redirectTo) return move(data, task.redirectTo);
+  if (task.redirectTo) return task.redirectTo.startsWith('standard-server/')?openBitwardenServerCheck(data,task.redirectTo.split('/')[1]):move(data, task.redirectTo);
   if (task.needsPrerequisites) return move(data, 'password-prerequisite');
   const { asset, recipe, step, index } = task;
   if(step.control && step.choices && !jump)return data;
@@ -229,6 +232,7 @@ export function completeStep(data: Dataset, jump?: string): Dataset {
   if (selectedApp && authenticatorScan(recipe.id, step.id)) record.authenticatorEnrollment = crypto.randomUUID();
   if (selectedApp && authenticatorConfirmation(recipe.id, step.id)) record.authenticatorEnrollment = enrollment?.authenticatorRef === selectedApp.id ? enrollment.authenticatorEnrollment : undefined;
   let next: Dataset = { ...data, guide: { ...data.guide, ...(selectedApp && authenticatorScan(recipe.id, step.id) ? { answers: { ...data.guide.answers, [`auth:${asset.id}:task`]: key, [`auth:${asset.id}:enrollment`]: key } } : {}), steps: { ...data.guide.steps, [key]: record } } };
+  if(recipe.id==='manager'&&asset.provider==='bitwarden'&&['create','existing-signin'].includes(step.id))next=confirmBitwardenServerUse(next,asset.id,now);
   if (selectedApp && authenticatorConfirmation(recipe.id, step.id)) next = { ...next, guide: { ...next.guide, answers: { ...next.guide.answers, [`auth:${asset.id}:confirmation`]: key } } };
   if (step.control) {
     next = recordControl(next, asset.id, step.control, { id: key, origin: 'guide', titleEn: step.title.en, titleJa: step.title.ja, assetName: asset.name, ...(requiredGuideSteps.length ? { requiredGuideSteps } : {}) }, now);

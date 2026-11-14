@@ -1,5 +1,8 @@
 import { nativePasswordUseCurrent } from './nativePasswordContext';
 import {guideProgress} from './guideProgress';
+import {BitwardenServerCheck} from './BitwardenServerCheck';
+import {bitwardenRegion,bitwardenWebURL,openBitwardenServerCheck} from './bitwardenServer';
+import {hasSavedPasswordCandidate} from './passwordContext';
 import {resumeAfterRecoveryContact} from './recoveryContacts';
 import {PrivateBrowserHelp} from './PrivateBrowserHelp';
 import {MailAccounts} from './MailAccounts';
@@ -71,7 +74,7 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
       void save(afterAuthentication(next, target)); return;
     }
     if (target.kind === 'device') { void save(beginRecipe(next, target.id, 'device')); return; }
-    if (isManager(target) && !canBeMailAccount(target)) { void save(target.provider === 'bitwarden' && !next.guide.answers[`${target.id}:region`] ? move(next, `region/${target.id}`) : beginRecipe(next, target.id, 'manager')); return; }
+    if (isManager(target) && !canBeMailAccount(target)) { void save(beginRecipe(next, target.id, 'manager')); return; }
     void save(beginRecipe(next, target.id, recipeId ?? 'email-mfa'));
   };
   const afterAuthentication = (next: Dataset, target: Asset) => {
@@ -98,6 +101,9 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
   } else if (task?.redirectTo?.startsWith('cloud-') || route.startsWith('cloud-')) {
     const [cloudRoute, cloudId, cloudDetail] = (task?.redirectTo ?? cursor).split('/');
     content = <CloudManagerQuestions key={task?.redirectTo ?? cursor} data={data} language={language} save={save} route={cloudRoute} id={cloudId} detail={cloudDetail} trouble={<Trouble data={data} language={language} save={save} close={() => go('manager-select')} />} />;
+  } else if(task?.redirectTo?.startsWith('standard-server/')||route==='standard-server'||route==='region'){
+    displaysTaskContext=true;
+    content=<BitwardenServerCheck data={data} language={language} save={save} accountRef={(task?.redirectTo??cursor).split('/')[1]}/>;
   } else if(task?.redirectTo?.startsWith('password-manager-device/')||route==='password-manager-device'){
     const [,managerId,targetId]=(task?.redirectTo??cursor).split('/');
     content=<><h1>{tx(language,'Which device will you use for 1Password?','どの端末で1Passwordを使いますか？')}</h1><div className="choices">{(['ios','android','macos','windows'] as const).map(os=>option(PLATFORMS[os],()=>{const next={...data,guide:{...data.guide,answers:{...data.guide.answers,[`${managerId}:platform`]:os}}};void save(route==='password-manager-device'?move(next,taskCursor(targetId,'password','find-current')):next);} ))}</div></>;
@@ -108,9 +114,9 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
     const data = presentation.data, cursor = data.guide.cursor;
     const { asset, recipe, step, index } = task;
     const selected=selectedAuthenticator(data,asset.id);
-    const done=(s:typeof step)=>{const record=data.guide.steps[taskCursor(asset.id,cursor.split('/')[2]??recipe.id,s.id)];return record?.status==='done'&&(!(recipe.id.startsWith('native-password:')&&s.id==='test')||nativePasswordUseCurrent(data,asset.id,recipe.id))&&(!(authenticatorScan(recipe.id,s.id)||authenticatorConfirmation(recipe.id,s.id))||record.authenticatorRef===selected?.id);};
+    const done=(s:typeof step)=>{const record=data.guide.steps[taskCursor(asset.id,cursor.split('/')[2]??recipe.id,s.id)];return record?.status==='done'&&(!(recipe.id==='password'&&s.id==='save-candidate')||hasSavedPasswordCandidate(data,asset.id))&&(!(recipe.id.startsWith('native-password:')&&s.id==='test')||nativePasswordUseCurrent(data,asset.id,recipe.id))&&(!(authenticatorScan(recipe.id,s.id)||authenticatorConfirmation(recipe.id,s.id))||record.authenticatorRef===selected?.id);};
     const recorded = done(step);
-    const browserHelpURL=step.url??(asset.provider==='bitwarden'?(data.guide.answers[`${asset.id}:region`]==='eu'?'https://vault.bitwarden.eu/':'https://vault.bitwarden.com/'):asset.provider==='1password'?'https://start.1password.com/':asset.provider==='nord'?'https://nordaccount.com/':(['apple','google','microsoft'].includes(asset.provider??'')||isExtendedMail(asset.provider))?emailRecipe(asset.provider,'web').steps.find(s=>s.url)?.url:undefined);
+    const browserHelpURL=step.url??(asset.provider==='bitwarden'?bitwardenWebURL(bitwardenRegion(data,asset.id)):asset.provider==='1password'?'https://start.1password.com/':asset.provider==='nord'?'https://nordaccount.com/':(['apple','google','microsoft'].includes(asset.provider??'')||isExtendedMail(asset.provider))?emailRecipe(asset.provider,'web').steps.find(s=>s.url)?.url:undefined);
     displaysTaskContext = true;
     const {completed:completedSteps,total:progressTotal}=guideProgress(recipe,index,done);
     content = <>
@@ -132,6 +138,7 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
       {recorded && <p className="subtle">{tx(language, 'This step is already recorded. You can review it without erasing the record.', 'この手順は記録済みです。記録を残したまま見直せます。')}</p>}
       <div className="primary-actions">{step.choices ? step.choices.map(choice => button(say(choice.label, language), () => void save(completeStep(data, choice.next)), true)) : button(say(step.button ?? c('Next', '次へ'), language), () => void save(completeStep(data)))}</div>
       <div className="step-tools"><button className="text-button" onClick={() => setHelp(!help)}><CircleHelp size={17} />{tx(language, 'Something is different', 'うまくいかない')}</button><button className="text-button" onClick={() => void save(deferStep(data))}>{tx(language, 'Do this later', 'この作業を後回しにする')}</button></div>
+      {(recipe.id==='manager'&&asset.provider==='bitwarden'||recipe.id==='password'&&manager?.provider==='bitwarden')&&<button className="text-button" onClick={()=>void save(openBitwardenServerCheck(data,recipe.id==='manager'?asset.id:manager!.id))}>{tx(language,'Review the Bitwarden server','Bitwardenのサーバーを確認し直す')}</button>}
       {cloudTaskApp && <NordRecoveryLauncher data={storedData} language={language} save={save} appId={cloudTaskApp.id} />}
       {cloudTaskApp && <button className="text-button" onClick={() => {
         const next = deferStep(data);
@@ -194,8 +201,6 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
       void save(move(next, `platform/${a.id}/manager`));
     };
     content = <><h1>{tx(language, 'Reuse an existing entry?', '登録済みの項目を使いますか？')}</h1><p>{PROVIDERS[provider]}</p><div className="choices">{data.assets.filter(a => isManager(a) && (!a.provider || a.provider === provider)).map(a => option(a.name, () => createManager(a)))}{option(tx(language, 'Add this manager', 'このマネージャーを追加する'), () => createManager())}</div></>;
-  } else if (route === 'region' && asset) {
-    content = <><h1>{tx(language, 'Which Bitwarden server do you use?', 'Bitwardenのサーバーはどちらですか？')}</h1><p>{tx(language, 'Existing accounts must use the server where they were created. Check the app’s server selection.', '既存のアカウントは、作成したサーバーを選んでください。アプリのサーバー選択で確認できます。')}</p><div className="choices">{(['us', 'eu'] as const).map(region => option(region === 'us' ? 'US · vault.bitwarden.com' : 'EU · vault.bitwarden.eu', () => void save(beginRecipe({ ...data, guide: { ...data.guide, answers: { ...data.guide.answers, [`${id}:region`]: region } } }, id, 'manager'))))}{option(tx(language, 'Self-hosted / not sure', 'セルフホスト・分からない'), () => go(`unsupported/${id}`))}</div></>;
   } else if (route === 'password-prerequisite' || task?.needsPrerequisites) {
     const cloud = cloudVault(data, manager?.id);
     const pendingApp = task?.recipe.id.startsWith('cloud-password:') ? task.recipe.id.slice('cloud-password:'.length) : data.guide.answers['cloud-password:installation'];

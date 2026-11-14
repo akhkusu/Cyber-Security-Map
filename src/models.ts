@@ -91,7 +91,7 @@ export const guideSchema = z.object({
   pendingProvider: z.enum(['apple', 'google', 'microsoft', 'proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx', 'bitwarden', '1password', 'nord', 'other']).optional(),
   answers: z.record(z.string(), z.string()).default({}),
   steps: z.record(z.string(), z.object({ status: z.enum(['done', 'later']), authenticatorRef: z.string().optional(), authenticatorEnrollment: z.string().optional(), updatedAt: z.string(), beforeControl: z.enum(CONTROL_STATES).optional(), beforeEvidence: controlEvidenceSchema.optional(), beforeAnswer: assessmentAnswerSchema.optional() }).passthrough()).default({}),
-}).passthrough().default({ cursor: 'start', history: [], answers: {}, steps: {} });
+}).passthrough().default(() => ({ cursor: 'start', history: [], answers: {}, steps: {} }));
 export type GuideState = z.infer<typeof guideSchema>;
 
 // Preserve opaque legacy fields when reading and writing a supported payload version.

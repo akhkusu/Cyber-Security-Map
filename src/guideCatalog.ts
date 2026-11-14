@@ -1,4 +1,5 @@
 import {hasSavedPasswordCandidate} from './passwordContext';
+import {bitwardenWebURL} from './bitwardenServer';
 import {mailRecoveryPreparation,microsoftRecoveryRecipe} from './mailRecoveryPreparation';
 import { ENTE_SOURCES } from './enteSources';
 import { PRIVATE_BROWSER_SOURCES } from './privateBrowserSources';
@@ -193,9 +194,9 @@ export function recoveryRecipe(provider: Asset['provider'], platform: string): R
   ] };
 }
 
-export function managerRecipe(product: Asset['provider'], platform: string, region: string): Recipe {
+export function managerRecipe(product: Asset['provider'], platform: string, region?: string): Recipe {
   const bw = product === 'bitwarden';
-  const site = bw ? region === 'eu' ? 'https://vault.bitwarden.eu/' : 'https://vault.bitwarden.com/' : 'https://start.1password.com/';
+  const site = bw ? bitwardenWebURL(region) : 'https://start.1password.com/';
   const place = c(bw ? 'Bitwarden · Web app' : '1Password · Web account', bw ? 'Bitwarden のWebアプリ' : '1Password のWebアカウント');
   const sources: SourceId[] = [bw ? 'bwCreate' : 'opStart'];
   const steps: GuideStep[] = [
@@ -229,7 +230,7 @@ export const TECHNICAL = {
   updates: c('Security updates fix known vulnerabilities that attackers may exploit without knowing your password. They do not stop every phishing attempt or unknown vulnerability. Unsupported systems need a supported replacement or an administrator’s plan.', 'セキュリティ更新は、パスワードを知らなくても悪用できる既知の欠陥を修正します。すべての偽サイトや未知の欠陥を防ぐものではありません。更新対象外の端末では、対応する端末への移行や管理者による計画が必要です。'),
 };
 
-export function passwordRecipe(product: Asset['provider'], email: Asset, platform: string, region = 'us', data?:Dataset): Recipe {
+export function passwordRecipe(product: Asset['provider'], email: Asset, platform: string, region?:string, data?:Dataset): Recipe {
   const bw = product === 'bitwarden', apple = email.provider === 'apple', google = email.provider === 'google';
   const extra = isExtendedMail(email.provider) ? extendedConfig[email.provider] : undefined;
   const extraPassword: Partial<Record<ExtendedMail, { source: SourceId; action: Copy }>> = {
@@ -245,7 +246,7 @@ export function passwordRecipe(product: Asset['provider'], email: Asset, platfor
   const managerPlatform=data?.guide.answers[`${data.guide.managerId}:platform`]??platform;
   const opSource: SourceId = managerPlatform === 'ios' ? 'opUseIos' : managerPlatform === 'android' ? 'opUseAndroid' : managerPlatform === 'macos' ? 'opUseMac' : managerPlatform === 'windows' ? 'opUseWindows' : 'opUse';
   const place = c(bw?'Bitwarden web vault / official account settings':'1Password app / official account settings',bw?'BitwardenのWeb保管庫と公式アカウント設定':'1Passwordアプリと公式アカウント設定');
-  const site=bw?(region==='eu'?'https://vault.bitwarden.eu/':'https://vault.bitwarden.com/'):undefined;
+  const site=bw?bitwardenWebURL(region):undefined;
   const candidateSaved=!!data&&hasSavedPasswordCandidate(data,email.id);
   const accountPlace=c('Official account settings','公式アカウント設定');
   return { id: 'password', title: c('Save and use your email password', 'メールのパスワードを保存して使う'), steps: [
