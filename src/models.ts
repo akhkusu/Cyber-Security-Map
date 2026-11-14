@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { emptySecurityModel, securityModelIssues, securityModelSchema } from './securityModel';
+import { accessPlanIssues } from './accessPlanValidation';
 import { keyStoreSchema } from './hardwareKeySchemas';
 import { nordSsoStoreSchema } from './nordSsoSchemas';
 import { mapRecordStoreSchema } from './mapRecordSchemas';
@@ -111,6 +112,7 @@ export const currentDatasetSchema = z.object({
   securityModel: securityModelSchema.default(emptySecurityModel),
   deviceWorkflows: z.array(phoneWorkflowSchema).default([]),
 }).passthrough().superRefine((data, context) => {
+  for(const message of accessPlanIssues(data))context.addIssue({code:'custom',path:['securityModel','accessPlansV1'],message});
   if (data.securityModel.revision >= 7 && Object.hasOwn(data.securityModel, 'hardwareKeysV1')) {
     const parsed = keyStoreSchema.safeParse(data.securityModel.hardwareKeysV1);
     const fail = () => context.addIssue({code:'custom',path:['securityModel','hardwareKeysV1'],message:'invalid-hardware-key-store'});

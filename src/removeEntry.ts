@@ -1,3 +1,4 @@
+import { accessPlanStore } from './accessPlanSchemas';
 import type { Dataset } from './models';
 import { keyTasks } from './hardwareKeySchemas';
 import { mapRecordStore } from './mapRecordSchemas';
@@ -8,6 +9,8 @@ import { securityModelIssues } from './securityModel';
 export function removeEntry(data: Dataset, id: string): Dataset | undefined {
   if (mapRecordStore(data)?.manualRefs.includes(id) || mapRecordStore(data)?.drafts.some(d => d.editRef === id) || mapRecordStore(data)?.archivedRefs.includes(id)) return undefined;
   if (keyTasks(data).some(t => [t.accountRef,t.deviceRef,t.browserRef,t.vaultRef,...t.keyRefs,...t.registrationRefs,...Object.values(t.records).flatMap(r=>r.refs)].includes(id))) return undefined;
+  const store=accessPlanStore(data);
+  if(store){const contains=(v:unknown):boolean=>typeof v==='string'?v===id:Array.isArray(v)?v.some(contains):!!v&&typeof v==='object'&&Object.values(v).some(contains);if(contains(store))return undefined;}
   if (!data.assets.some(a => a.id === id)) return data;
   if (data.version === 2 && data.deviceWorkflows.some(w => w.oldDeviceRef === id || w.newDeviceRef === id)) return undefined;
   const steps = Object.fromEntries(Object.entries(data.guide.steps).filter(([key]) => !key.split('/').includes(id)));

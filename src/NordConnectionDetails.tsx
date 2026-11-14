@@ -6,7 +6,7 @@ import { cloudInstallation, cloudVault, chooseCloudDevice, selectedCloudInstalla
 import { beginRecipe, move } from './guideEngine';
 import { AccessChecks } from './AccessChecks';
 import { tx } from './ui';
-export function NordConnectionDetails({ data, id, language, startGuide, missing }: { data: Dataset; id: string; language: Language; startGuide: (d: Dataset) => Promise<void>; missing: string }) {
+export function NordConnectionDetails({ data, id, language, startGuide, missing }: { data: Dataset; id: string; language: Language; startGuide: (d: Dataset) => Promise<void>; missing: string | readonly string[] }) {
   const b = nordSsoStore(data)?.bindings.find(b => b.grantRef === id || (data.version === 2 && data.securityModel.entities.some(e => e.id === id && e.nordSsoGrant === 'v1' && e.nordSsoBindingRef === b.id)));
   if (data.version !== 2 || !b) return null;
   const root = data.assets.find(a => a.id === b.rootRef), provider = data.assets.find(a => a.id === b.providerRef), vault = data.securityModel.entities.find(e => e.kind === 'vault' && e.productId === 'nordpass' && e.authenticationAccountRef === b.rootRef && !e.mergedIntoRef);

@@ -35,3 +35,24 @@
 .prompt-preview { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .85rem; }
 
 .record-guide{max-width:760px;margin:0 auto}.record-checks{border:0;padding:0;margin:1.5rem 0}.record-checks label,.record-check{display:flex;align-items:center;gap:.7rem;margin:.6rem 0;padding:.7rem 0}.record-checks input,.record-check input{width:1.2rem;min-width:1.2rem;height:1.2rem;margin:0}.record-summary{margin:1.5rem 0}.record-summary>div{padding:.7rem 0;border-bottom:1px solid var(--line)}.record-summary dt{font-size:.85rem;color:var(--muted)}.record-summary dd{margin:.35rem 0 0;overflow-wrap:anywhere}.record-connection{font-weight:600;overflow-wrap:anywhere}.record-tool-actions{display:flex;flex-wrap:wrap;gap:.7rem}.record-tools .connection-row{flex-wrap:wrap}.record-guide .guide-topline{display:flex;justify-content:space-between;gap:1rem;margin-bottom:1rem}.record-guide select{max-width:100%}.record-guide .choices{gap:.6rem}
+
+/* Conditions keep a bounded visual indent even when their logical depth grows. */
+.condition-node { min-width: 0; margin: .5rem 0; overflow-wrap: anywhere; }
+.condition-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: .45rem; min-width: 0; }
+.condition-heading small { flex-basis: 100%; color: var(--muted); }
+.condition-group > ul { list-style: none; margin: .4rem 0; padding-left: 10px; border-left: 2px solid var(--line); }
+.condition-group .condition-group .condition-group .condition-group > ul { padding-left: 0; }
+.condition-group li { min-width: 0; }
+.chosen-condition > .condition-node > .condition-heading { background: var(--pale); border-radius: 8px; }
+.condition-checklist { min-width: 0; border: 0; padding: .5rem 0; display: grid; gap: .55rem; }
+.condition-checklist legend { font-weight: 650; padding: .4rem 0; }
+.condition-checklist label { overflow-wrap: anywhere; min-width: 0; }
+.access-plans-panel > summary { font-weight: 650; cursor: pointer; }
+.access-plan-launcher { margin: .7rem 0; }
+.scenario-editor, .scenario-results, .recorded-methods { margin-top: 1.4rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.method-scenario { padding: .8rem; margin: .7rem 0; border: 1px solid var(--line); border-radius: 10px; overflow-wrap: anywhere; }
+.method-scenario.available, .condition-result.available { color: var(--accent); }
+.method-scenario.unavailable, .condition-result.unavailable { color: var(--error); }
+.access-plan-details .primary-actions { flex-wrap: wrap; }
+.access-plan-details .completed-record { flex-wrap: wrap; }
+.access-plan-guide .guide-card { overflow-wrap: anywhere; }

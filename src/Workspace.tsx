@@ -6,6 +6,7 @@ import { downloadEncryptedBackup } from './crypto';
 import { Guide } from './Guide';
 import { NordConnectionSession } from './NordConnectionSession';
 import { NordRecoveryGuide } from './NordRecoveryGuide';
+import { AccessPlanGuide, AccessObservationGuide, FailureGroupGuide } from './AccessPlanGuide';
 import { HardwareKeyGuide } from './HardwareKeyGuide';
 import { PhoneGuide } from './PhoneGuide';
 import { MapRecordGuide, MapConnectionGuide, MapLifecycleGuide } from './MapRecordGuide';
@@ -35,6 +36,9 @@ export function Workspace(props: WorkspaceProps) {
       <Route path="/phone/:workflowId" element={<PhoneGuide data={data} language={language} save={save} />} />
       <Route path="/nord-connection/:sessionId" element={<NordConnectionSession data={data} language={language} save={save} />} />
       <Route path="/recover/nord/:taskId" element={<NordRecoveryGuide data={data} language={language} save={save} />} />
+      <Route path="/map/method/:draftId" element={<AccessPlanGuide data={data} language={language} save={save}/>} />
+      <Route path="/map/check/:observationId" element={<AccessObservationGuide data={data} language={language} save={save}/>} />
+      <Route path="/map/shared-loss/:groupDraftId" element={<FailureGroupGuide data={data} language={language} save={save}/>} />
       <Route path="/map/record/:draftId" element={<MapRecordGuide data={data} language={language} save={save} />} />
       <Route path="/map/connection/:draftId" element={<MapConnectionGuide data={data} language={language} save={save} />} />
       <Route path="/map/state/:nodeRef" element={<MapLifecycleGuide data={data} language={language} save={save} />} />

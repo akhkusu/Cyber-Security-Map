@@ -69,7 +69,7 @@ describe('encrypted local vault', () => {
   });
 
   it('identifies a newer security-model revision and preserves the original encrypted file', async () => {
-    const data = newDataset(), envelope = await sealRaw({ ...data, securityModel: { ...data.securityModel, revision: 8 } });
+    const data = newDataset(), envelope = await sealRaw({ ...data, securityModel: { ...data.securityModel, revision: 9 } });
     const original = structuredClone(envelope);
     await expect(decryptVault(envelope, 'original fixture phrase')).rejects.toMatchObject({ name: 'UnsupportedVaultError', kind: 'version' });
     expect(envelope).toEqual(original);

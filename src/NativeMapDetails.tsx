@@ -13,7 +13,7 @@ import { nordRecoveryTasks } from './nordRecoverySchemas';
 import { HardwareKeyRecords } from './HardwareKeyGuide';
 import { AccessChecks } from './AccessChecks';
 
-export function NativeMapDetails({ data, item, nodes, connections, language, startGuide, missing }: { data: Dataset; item: MapItem; nodes: MapItem[]; connections: MapConnection[]; language: Language; startGuide: (data: Dataset) => Promise<void>; missing: string }) {
+export function NativeMapDetails({ data, item, nodes, connections, language, startGuide, missing }: { data: Dataset; item: MapItem; nodes: MapItem[]; connections: MapConnection[]; language: Language; startGuide: (data: Dataset) => Promise<void>; missing: string | readonly string[] }) {
   const entity = data.version === 2 ? data.securityModel.entities.find(e => e.id === item.id) : undefined;
   if (!entity) return null;
   if (data.version === 2 && data.securityModel.revision >= 5 && entity.kind === 'grant' && entity.nordSsoGrant === 'v1') return <NordConnectionDetails data={data} id={entity.id} language={language} startGuide={startGuide} missing={missing} />;

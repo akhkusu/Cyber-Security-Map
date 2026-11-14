@@ -1,16 +1,18 @@
+import { accessPlanStore } from './accessPlanSchemas';
+import { planMapItems, planMapConnections, planReferences } from './accessPlanViews';
 import type { Asset, Dataset, Language, RecoveryDependency } from './models';
 import { authenticator, authenticatorReady } from './authenticatorGuide';
 import { evaluateAccess, type SecurityEntity } from './securityModel';
 import { nordSsoStore } from './nordSsoSchemas';
 import { cloudInstallation, cloudManagerReady, cloudVault } from './cloudManagers';
 
-export type MapItem = Asset & { entityKind?: SecurityEntity['kind'] };
+export type MapItem = Asset & { entityKind?: SecurityEntity['kind']; routeRef?: string };
 export type MapConnection = RecoveryDependency & { typed?: boolean };
 export const entityKindLabel = (kind: SecurityEntity['kind'], language: Language) => ({
   session: ['Signed-in session', 'ログイン中の状態'], person: ['Person', '利用者・協力者'], organization: ['Organization', '組織'], installation: ['App on a device', '端末上のアプリ'], vault: ['Password store', 'パスワード保管庫'], credential: ['Authentication or recovery method', '認証・復旧の手段'], identifier: ['Identifier', '識別子'], 'phone-line': ['Phone line', '電話回線'], 'security-key': ['Security key', 'セキュリティキー'], 'data-set': ['Stored data', '保存データ'], grant: ['Access permission', 'アクセス権限'], 'recovery-arrangement': ['Recovery arrangement', '復旧の取り決め'], })[kind][language === 'ja' ? 1 : 0];
 export function mapItems(data: Dataset, language: Language): MapItem[] {
   if (data.version !== 2) return data.assets;
-  return [...data.assets, ...data.securityModel.entities.filter(e => !((e.kind === 'vault' || e.kind === 'installation') && e.mergedIntoRef)).map((e): MapItem => {
+  return [...data.assets, ...planMapItems(data,language), ...data.securityModel.entities.filter(e => !((e.kind === 'vault' || e.kind === 'installation') && e.mergedIntoRef)).map((e): MapItem => {
     const installs = e.kind === 'vault' ? data.securityModel.entities.filter(i => i.kind === 'installation' && i.vaultRef === e.id) : [];
     const controls = e.kind === 'vault' ? Object.fromEntries(['opened', 'storageChecked', 'autofill', 'loginUse'].map(c => [c, installs.some(i => i.kind === 'installation' && i.controls?.[c] === 'verified') ? 'verified' as const : 'unknown' as const])) : e.kind === 'installation' ? e.controls ?? {} : {};
     return { id: e.id, name: e.label, entityKind: e.kind, kind: e.kind === 'installation' || e.kind === 'security-key' ? 'device' : e.kind === 'vault' || e.kind === 'data-set' ? 'backup' : 'identity', type: entityKindLabel(e.kind, language), importance: 'important', createdAt: e.createdAt, updatedAt: typeof e.updatedAt === 'string' ? e.updatedAt : e.createdAt, controls, controlEvidence: e.kind === 'vault' || e.kind === 'installation' ? e.controlEvidence ?? {} : {}, services: [] };
@@ -23,7 +25,7 @@ export function mapConnections(data: Dataset): MapConnection[] {
     const key = JSON.stringify([r.fromRef, r.toRef, r.kind]);
     if (!known.has(key)) known.set(key, { id: r.id, assetId: r.toRef, recoveryAssetId: r.fromRef, relation: r.kind, createdAt: r.checkedAt, typed: true });
   }
-  return [...data.dependencies, ...known.values()];
+  return [...data.dependencies, ...known.values(),...planMapConnections(data)];
 }
 export function typedMapStatus(data: Dataset, node: MapItem, language: Language) {
   const yes = language === 'ja';
@@ -70,8 +72,9 @@ export function typedMapStatus(data: Dataset, node: MapItem, language: Language)
 }
 
 
-export function mapAffectedItems(data: Dataset, missing: string, language: Language): MapItem[] {
-  const affected = new Set([missing]);
+export function mapAffectedItems(data: Dataset, missing: string | readonly string[], language: Language): MapItem[] {
+  const missingRefs=typeof missing==='string'?[missing]:[...missing];
+  const affected = new Set(missingRefs);
   let changed = true;
   while (changed) { changed = false; for (const d of data.dependencies) if (affected.has(d.recoveryAssetId) && !affected.has(d.assetId)) { affected.add(d.assetId); changed = true; } }
   if (data.version === 2) {
@@ -83,16 +86,17 @@ export function mapAffectedItems(data: Dataset, missing: string, language: Langu
     for (const r of data.securityModel.routes) {
       const context = r.contexts.includes('enrollment') ? 'enrollment' : r.contexts.includes('new-device') ? 'new-device' : 'normal';
       const before = evaluateAccess(data.securityModel, r.id, { context, now });
-      const after = evaluateAccess(data.securityModel, r.id, { context, now, unavailableRefs: [missing] });
+      const after = evaluateAccess(data.securityModel, r.id, { context, now, unavailableRefs: missingRefs });
       if (before.state === 'available' && after.state !== 'available') affected.add(r.targetRef);
     }
   }
-  return mapItems(data, language).filter(a => a.id !== missing && affected.has(a.id));
+  for(const p of accessPlanStore(data)?.plans??[])if(p.conditionEvidence==='user-confirmed'&&planReferences(data,p).some(ref=>affected.has(ref))){affected.add(p.id);affected.add(p.targetRef);}
+  return mapItems(data, language).filter(a => !missingRefs.includes(a.id) && affected.has(a.id));
 }
 
 export function mapRelationLabel(language: Language, kind: string): string {
   const labels: Record<string, [string, string]> = {
-    authentication: ['Authenticates', '認証に使う'], 'recovery-email': ['Recovery email', '復旧用メール'], backup: ['Backup destination', 'バックアップ先'], 'offline-recovery': ['Independent recovery', '独立した復旧手段'],
+    'access-plan':['Recorded access conditions','ログイン・復旧の条件'], authentication: ['Authenticates', '認証に使う'], 'recovery-email': ['Recovery email', '復旧用メール'], backup: ['Backup destination', 'バックアップ先'], 'offline-recovery': ['Independent recovery', '独立した復旧手段'],
     owns: ['Owns', '所有する'], administers: ['Administers', '管理する'], 'installed-on': ['App on this device', 'この端末上のアプリ'], identifies: ['Identifies', '識別に使う'], 'authenticates-to': ['Used to sign in', 'ログインに使う'], unlocks: ['Opens this store', 'この保管庫を開く'], decrypts: ['Decrypts', '暗号化を解除する'], 'stored-in': ['Stored in', '保存先'], 'synced-via': ['Synchronization account', '同期に使うアカウント'], 'session-for': ['Signed-in session', 'ログイン済みの状態'], 'grants-access-to': ['Permits access', 'アクセスを許可する'], 'delegated-to': ['Delegated to', '操作を委任する'], 'shared-with': ['Shared with', '共有する'], recovers: ['Helps recover', '復旧に使う'], 'requires-for-restore': ['Needed for restoration', '復元に必要'], 'backs-up': ['Backs up', 'バックアップする'], 'restores-from': ['Restored from', '復元元'], hosts: ['Hosts', '保存・提供する'], routes: ['Routes', '届け先へつなぐ'], 'manages-domain': ['Manages domain', 'ドメインを管理する'], replaces: ['Replaces', '置き換える'],
   };
   return labels[kind]?.[language === 'ja' ? 1 : 0] ?? (language === 'ja' ? '記録された関係' : 'Recorded connection');

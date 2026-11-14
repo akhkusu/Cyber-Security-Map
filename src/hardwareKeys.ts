@@ -20,7 +20,7 @@ function writable(data: Dataset): CurrentDataset {
 }
 function put(data: CurrentDataset, task: KeyTask): CurrentDataset {
   const parsed=keyStoreSchema.safeParse(data.securityModel.hardwareKeysV1),store=parsed.success?parsed.data:{version:1 as const,tasks:[]};
-  return {...data,securityModel:{...data.securityModel,revision:7,hardwareKeysV1:{...store,tasks:[...store.tasks.filter(t=>t.id!==task.id),task]}}};
+  return {...data,securityModel:{...data.securityModel,revision:data.securityModel.revision>=7?data.securityModel.revision:7,hardwareKeysV1:{...store,tasks:[...store.tasks.filter(t=>t.id!==task.id),task]}}};
 }
 export function startKeyGuide(data: Dataset, accountRef: string, returnTo: '/guide'|'/map' = '/map', now=nowString(), forceNew=false): {data: CurrentDataset; id: string} {
   const next=writable(data);
