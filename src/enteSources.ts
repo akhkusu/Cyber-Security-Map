@@ -1,5 +1,7 @@
 const source=(title:string,url:string,scope:string)=>({title,url,scope,checked:'2026-11-14',reviewMethod:'official-documentation' as const});
 export const ENTE_SOURCES={
+  enteRecoveryWebSource:source('Ente Account · 復旧・変更のWeb画面','https://github.com/ente/ente/tree/9684542adf1881515c49a60685cbf53423223e63/web/packages/accounts','Forgot password / email check / recovery key / separate factor recovery / reset'),
+  enteFactorServerSource:source('Ente Account · 追加認証の復旧の処理','https://github.com/ente/ente/tree/9684542adf1881515c49a60685cbf53423223e63/server/pkg/controller/user','Passkey login bypass is separate from deleting keys; TOTP recovery disables the Account TOTP'),
   enteVersionSource:source('Ente Auth · 設定画面の版表示','https://github.com/ente/ente/blob/9684542adf1881515c49a60685cbf53423223e63/mobile/packages/ui/lib/components/settings/app_version_widget.dart','Settings footer reads the installed PackageInfo version'),
   enteInstall:source('Ente Auth · 正規の配布とWebの入口','https://ente.com/help/auth/faq/installing','Official stores, native desktop versus iOS build, auth.ente.com migration'),
   enteAuth:source('Ente Auth · 正規配布とコード登録','https://ente.com/auth/','Official iOS / Android apps; Auth 4.4.26'),

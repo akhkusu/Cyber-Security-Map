@@ -1,6 +1,7 @@
 import { makeAsset, type CurrentDataset, type Dataset, type Language } from './models';
 import { enteSteps, enteTargets, enteApp, type EnteStep } from './enteCatalog';
-import { enteStore, enteParentTask, entePrepared, enteBackupCurrent, enteConfiguration, enteLock, enteReceiptCurrent, enteSnapshot, enteFactCurrent, type EnteTask, type EnteReceipt } from './enteSchemas';
+import { enteStore, enteParentTask, entePrepared, enteBackupCurrent, enteConfiguration, enteLock, enteReceiptCurrent, enteSnapshot, enteFactCurrent, entePasswordPending, type EnteTask, type EnteReceipt } from './enteSchemas';
+import { prepareEntePassword, requestEntePassword, applyEntePassword, requestEnteFactorRecovery, confirmEnteFactorRecovery, recordEnteRecoveryRead, enteRecoveryRoot } from './enteRecoveryData';
 import { enteTask, startEnteTask, putEnteTask, putEnteStore, putEnteEntity, createEnteApp, createEnteRoot, appendEnteReceipt, withdrawEnteReceipt, recordEnteControl, recordEnteLink, recordEnteStorage, recordEnteLock, makeEnteSecret, recordEnteRootSecret, saveEnteFile, copyEnteFile, confirmEnteExternalFile, recordEnteProof } from './enteData';
 import { securityEntitySchema, evaluateAccess } from './securityModel';
 import { PHONE_SOURCES } from './phoneCatalog';
@@ -15,7 +16,7 @@ export function enteStepRecorded(data:Dataset,t:EnteTask,stepId:string):boolean{
   const appRef=stepAppRef(data,t,step),app=enteApp(data,appRef);
   if(['storage-account','storage-offline'].includes(step.effect??''))return r.configRef===enteConfiguration(data,appRef!)?.id;
   if(step.effect==='lock-test')return r.lockRef===enteLock(data,appRef!)?.id&&!!appRef&&entePrepared(data,appRef);
-  if(step.effect==='code'||step.effect==='account-factor-use'||step.effect==='account-data-read'){
+  if(step.effect==='code'||step.effect==='account-factor-use'||step.effect==='account-data-read'||step.effect==='recovery-data-read'){
     const proofs=s.proofs.filter(p=>p.directReceiptRef===r.id&&(step.effect!=='code'||p.kind==='totp-code'));
     return proofs.length>0&&proofs.every(p=>data.securityModel.routes.some(route=>route.requirements.kind==='fact'&&route.requirements.factId===p.factRef&&evaluateAccess(data.securityModel,route.id,{context:step.effect==='code'?(data.securityModel.facts.find(f=>f.id===p.factRef)?.contexts.includes('new-device')?'new-device':'normal'):'no-existing-session',now:nowString()}).state==='available'));
   }
@@ -25,9 +26,14 @@ export function enteStepRecorded(data:Dataset,t:EnteTask,stepId:string):boolean{
   }
   return true;
 }
-function done(data:Dataset,t:EnteTask,step:EnteStep):boolean{if(step.id==='destination-account-check'&&step.child)return enteAccountReady(data,step.child.appRef,[enteApp(data,t.appRef)?.kind==='installation'?enteApp(data,t.appRef)!.deviceRef as string:'']);return step.kind==='action'?enteStepRecorded(data,t,step.id):step.kind==='question'?!!step.choices?.some(c=>c.value===t.answers[step.id]):false;}
+function done(data:Dataset,t:EnteTask,step:EnteStep):boolean{
+ if(step.child?.kind==='backup')return enteBackupCurrent(data,step.child.appRef);
+ if(step.child?.kind==='prepare')return entePrepared(data,step.child.appRef)&&(!step.child.rootRef||enteConfiguration(data,step.child.appRef)?.rootRef===step.child.rootRef);
+ if(step.child?.kind==='account'){const old=enteApp(data,t.appRef),target=enteApp(data,step.child.appRef),without=old?.kind==='installation'&&target?.kind==='installation'&&old.deviceRef!==target.deviceRef&&(t.kind==='recovery'?t.resources.protectionDevice??t.newDeviceRef:t.newDeviceRef)===target.deviceRef?[old.deviceRef]:[];return (t.kind!=='recovery'||!!enteStore(data)?.tasks.some(child=>child.kind==='account'&&child.appRef===step.child!.appRef&&child.status==='completed'&&enteParentTask(data,child.id)?.id===t.id))&&enteAccountReady(data,step.child.appRef,without);}
+ return step.kind==='action'?enteStepRecorded(data,t,step.id):step.kind==='question'?!!step.choices?.some(c=>c.value===t.answers[step.id]):false;
+}
 export function currentEnteStep(data:Dataset,t:EnteTask):EnteStep{
-  const steps=enteSteps(data,t).filter(s=>!(s.id==='destination-account-check'&&s.child&&enteAccountReady(data,s.child.appRef,[enteApp(data,t.appRef)?.kind==='installation'?enteApp(data,t.appRef)!.deviceRef as string:'']))),missing=steps.findIndex(s=>!done(data,t,s)),cursor=steps.findIndex(s=>s.id===t.cursor);
+  const steps=enteSteps(data,t).filter(s=>!(s.child&&done(data,t,s))),missing=steps.findIndex(s=>!done(data,t,s)),cursor=steps.findIndex(s=>s.id===t.cursor);
   if(t.status==='completed'&&missing<0)return {id:'finished',kind:'finished',title:{en:'These checks are recorded',ja:'ここまでの確認を記録しました'},refs:[],sources:[],requires:[]};
   if(cursor>=0&&(missing<0||cursor<=missing))return steps[cursor];
   return steps[missing>=0?missing:steps.length-1];
@@ -49,6 +55,23 @@ export function answerEnte(data:Dataset,id:string,value:string,at=nowString()):D
   }
   t={...enteTask(next,id)!,answers,updatedAt:at,status:'active'};
   const resources={...t.resources};
+  if(step.question==='recovery-device'||step.question==='recovery-protection-device'){
+    let ref=value.startsWith('device:')?value.slice(7):undefined;
+    if(!ref){const os=value.slice(4) as NonNullable<CurrentDataset['assets'][number]['operatingSystem']>,asset=makeAsset({kind:'device',type:['ios','android'].includes(os)?'Smartphone':'Computer',name:os==='ios'?'iPhone / iPad':os==='macos'?'Mac':os==='ubuntu'?'Linux':os==='windows'?'Windows':'Android',importance:'critical',operatingSystem:os});next={...next,assets:[...next.assets,asset]};ref=asset.id;}
+    if(step.question==='recovery-device')t={...t,newDeviceRef:ref};
+    else{if(resources.protectionDevice!==ref)t={...t,destinationRef:undefined};resources.protectionDevice=ref;}
+  }
+  if(step.question==='recovery-protection-app'){
+    const made=createEnteApp(next,resources.protectionDevice!,value.startsWith('installation:')?value.slice(13):t.destinationRef,at);next=made.data;t={...t,destinationRef:made.appRef,answers:{...t.answers,[step.id]:`installation:${made.appRef}`}};
+  }
+  if(step.question==='recovery-paper'){if(value.startsWith('paper:'))resources.recoveryPaper=value.slice(6);else delete resources.recoveryPaper;}
+  if(step.question==='recovery-mail'){
+    if(value.startsWith('account:'))resources.recoveryMail=value.slice(8);else delete resources.recoveryMail;
+  }
+  if(step.question==='recovery-used-factor'){
+    delete resources.recoveryFactor;delete resources.recoveryFactorStore;
+    if(value.startsWith('credential:')){const entity=next.securityModel.entities.find(e=>e.id===value.slice(11)&&e.kind==='credential');if(entity?.kind==='credential'){resources.recoveryFactor=entity.id;if(entity.storageRef)resources.recoveryFactorStore=entity.storageRef;}}
+  }
   if((step.id.endsWith('version'))&&value==='supported'){const ref=step.id.startsWith('new-')?t.destinationRef:t.appRef,app=enteApp(next,ref);if(app?.kind==='installation')next=putEnteEntity(next,{...app,appVersion:'4.4.26'});}
   if(step.question==='destination'){
     const made=createEnteApp(next,t.newDeviceRef!,value.startsWith('installation:')?value.slice(13):t.answers.destination===task.answers.destination?task.destinationRef:undefined,at);next=made.data;t={...t,destinationRef:made.appRef};
@@ -77,11 +100,31 @@ export function answerEnte(data:Dataset,id:string,value:string,at=nowString()):D
   if(step.question==='target-provider'){
     const provider=value as NonNullable<CurrentDataset['assets'][number]['provider']>,asset={...makeAsset({kind:'account',type:'Identity provider',name:`${PROVIDERS[provider]} ${next.assets.filter(a=>a.provider===provider).length+1}`,importance:'critical'}),provider,purpose:'personal' as const,createdAt:at,updatedAt:at};next={...next,assets:[...next.assets,asset]};t.answers[`target-more:${step.id.slice('target-provider:'.length)}`]=`account:${asset.id}`;
   }
-  next=putEnteTask(next,{...t,resources});return progress(next,id,step.id,at);
+  next=putEnteTask(next,{...t,resources});
+  if(step.id==='recovery-result'&&value==='changed'){
+    try{const root=enteRecoveryRoot(next,enteTask(next,id)!),candidate=enteTask(next,id)!.recoveryStateV1?.password?.candidateRef;if(!root||!candidate)return data;
+      const receipt=appendEnteReceipt(next,id,{stepId:'recovery-change-confirmed',refs:[root.rootRef,candidate],titleEn:'Ente confirmed the password change',titleJa:'Enteでパスワード変更の結果を確認'},at);next=applyEntePassword(receipt.data,enteTask(receipt.data,id)!,receipt.receipt);
+    }catch{return data;}
+  }
+  return progress(next,id,step.id,at);
 }
 function applyEffect(data:CurrentDataset,t:EnteTask,s:EnteStep,r:EnteReceipt):CurrentDataset{
+  if(t.kind==='recovery'){
+    if(s.effect==='recovery-candidate')return prepareEntePassword(data,t,r);
+    if(s.effect==='recovery-request')return requestEntePassword(data,t,r);
+    if(s.effect==='recovery-new-password')return applyEntePassword(data,t,r);
+    if(s.effect==='recovery-factor-request')return requestEnteFactorRecovery(data,t,r);
+    if(s.effect==='recovery-factor-confirmed')return confirmEnteFactorRecovery(data,t,r);
+    if(s.effect==='recovery-data-read')return recordEnteRecoveryRead(data,t,r);
+    const root=enteRecoveryRoot(data,t);
+    if(root&&s.effect==='recovery-key-keep'){const stored=enteStore(data)!.secrets.find(v=>v.entityRef===root.recoveryRef)?.copies.find(v=>available(data,v.storageRef)&&enteReceiptCurrent(enteStore(data)!,v.receiptRef)),made=makeEnteSecret(data,r,root.rootRef,'recovery-key',stored?{ref:stored.storageRef}:'paper',root.recoveryRef,s.sources);return recordEnteRootSecret(made.data,r,root.rootRef,made.secretRef,false,s.sources);}
+    if(root&&s.effect==='recovery-current-password'){const made=makeEnteSecret(data,r,root.rootRef,'account-password','paper',root.passwordRef,s.sources);return recordEnteRootSecret(made.data,r,root.rootRef,made.secretRef,false,s.sources);}
+    if(root&&s.effect==='recovery-mail-access'&&t.resources.recoveryMail)return recordEnteLink(data,r,t.resources.recoveryMail,root.rootRef,'recovers',s.sources);
+    if(root&&s.effect==='recovery-shared'){const store=enteStore(data)!;return putEnteStore(data,{...store,roots:store.roots.map(v=>v.rootRef===root.rootRef?{...v,products:[...new Set([...v.products,...(t.answers['recovery-photos']==='yes'?['photos' as const]:[]),...(t.answers['recovery-locker']==='yes'?['locker' as const]:[])])],sharedScope:['recovery-photos','recovery-locker'].every(k=>t.answers[k]!=='unknown')?'confirmed':'unknown'}:v)});}
+    if(s.webDeviceRef)return data;
+  }
   let next=data;const appRef=stepAppRef(next,t,s),app=enteApp(next,appRef);if(app?.kind!=='installation')return data;
-  let resources={...t.resources};const prefix=s.id.startsWith('new-')?'new-':'',rootRef=t.answers[`${prefix}root`]?.slice(8);
+  let resources={...t.resources};const prefix=s.id.startsWith('new-')?'new-':'',rootRef=t.kind==='prepare'&&t.rootRef?t.rootRef:t.answers[`${prefix}root`]?.slice(8);
   if(s.effect==='open'){next=recordEnteControl(next,r,app.id,'opened');next=recordEnteLink(next,r,app.id,app.deviceRef,'installed-on',s.sources);}
   if(s.effect==='device-lock')next=recordEnteControl(next,r,app.deviceRef,'screenLock');
   if(s.effect==='storage-account'||s.effect==='storage-offline')next=recordEnteStorage(next,r,app.id,s.effect==='storage-account'?'account':'offline',s.effect==='storage-account'?rootRef:undefined,s.sources);
@@ -142,7 +185,7 @@ function applyEffect(data:CurrentDataset,t:EnteTask,s:EnteStep,r:EnteReceipt):Cu
     }else{const id=crypto.randomUUID();next=putEnteEntity(next,securityEntitySchema.parse({id,kind:'credential',credentialType:'passkey',subjectRef:accountRoot.rootRef,storageRef:resources.factorStore,roles:['second-step'],label:next.settings.language==='ja'?'Ente Accountのパスキー':'Ente Account passkey',createdAt:r.at}));resources.factorCredential=id;}
     next=recordEnteLink(next,r,resources.factorCredential,resources.factorStore,'stored-in',s.sources);next=recordEnteLink(next,r,resources.factorCredential,accountRoot.rootRef,'authenticates-to',s.sources);next=recordEnteControl(next,r,accountRoot.rootRef,'mfa');
   }
-  const parent=enteParent(next,t.id),previous=parent?enteApp(next,parent.appRef):undefined,without=previous?.kind==='installation'&&app.deviceRef===parent?.newDeviceRef&&previous.deviceRef!==app.deviceRef?[previous.deviceRef]:[];
+  const parent=enteParent(next,t.id),previous=parent?enteApp(next,parent.appRef):undefined,without=previous?.kind==='installation'&&app.deviceRef===(parent?.kind==='recovery'?parent.resources.protectionDevice??parent.newDeviceRef:parent?.newDeviceRef)&&previous.deviceRef!==app.deviceRef?[previous.deviceRef]:[];
   const factorHost=next.securityModel.entities.find(e=>e.id===resources.factorStore),factorHostRefs=factorHost?.kind==='installation'?[factorHost.deviceRef]:factorHost?.kind==='vault'&&factorHost.storageMode==='local'&&factorHost.primaryDeviceRef?[factorHost.primaryDeviceRef]:[];
   if(s.effect==='account-factor-use'&&accountRoot&&resources.factorStore){
     if(t.answers['root-mfa']==='totp'){
@@ -164,13 +207,14 @@ export function confirmEnte(data:Dataset,id:string,at=nowString(),repeat=false):
   if(data.version!==2)return data;const t=enteTask(data,id);if(!t)return data;const step=currentEnteStep(data,t);if(step.kind!=='action')return data;
   const steps=enteSteps(data,t),index=steps.findIndex(s=>s.id===step.id);if(steps.slice(0,index).some(s=>!done(data,t,s)))return data;
   if(enteStepRecorded(data,t,step.id)&&!repeat)return progress(data,id,step.id,at);
-  const appRef=stepAppRef(data,t,step),app=enteApp(data,appRef),root=t.answers[`${step.id.startsWith('new-')?'new-':''}root`]?.slice(8);
-  if(app?.kind!=='installation'||![app.id,app.deviceRef].every(ref=>available(data,ref)))return data;
+  const appRef=stepAppRef(data,t,step),app=enteApp(data,appRef),root=t.kind==='prepare'&&t.rootRef?t.rootRef:t.answers[`${step.id.startsWith('new-')?'new-':''}root`]?.slice(8);
+  if(step.webDeviceRef){if(t.kind!=='recovery'||step.webDeviceRef!==t.newDeviceRef||!data.assets.some(d=>d.id===step.webDeviceRef&&d.kind==='device')||!available(data,step.webDeviceRef)||!enteRecoveryRoot(data,t))return data;}
+  else if(app?.kind!=='installation'||![app.id,app.deviceRef].every(ref=>available(data,ref)))return data;
   if(step.refs.some(ref=>!available(data,ref)))return data;
   const extraRoot=root&&step.effect?.startsWith('root-')||root&&step.effect==='storage-account'?root:undefined;
   if(extraRoot&&!available(data,extraRoot))return data;
   try{
-    const r=appendEnteReceipt(data,id,{stepId:step.id,refs:[...new Set([...step.refs,app.id,app.deviceRef,...(extraRoot?[extraRoot]:[])])],requires:step.requires.map(k=>t.records[k]).filter(Boolean),titleEn:step.title.en,titleJa:step.title.ja},at);
+    const r=appendEnteReceipt(data,id,{stepId:step.id,refs:[...new Set([...step.refs,...(step.webDeviceRef?[]:[app!.id,(app as {deviceRef:string}).deviceRef]),...(extraRoot?[extraRoot]:[])])],requires:step.requires.map(k=>t.records[k]).filter(Boolean),titleEn:step.title.en,titleJa:step.title.ja},at);
     const next=applyEffect(r.data,enteTask(r.data,id)!,step,r.receipt);return progress(next,id,step.id,at);
   }catch{return data;}
 }
@@ -193,7 +237,7 @@ export function enteMoveReady(data:Dataset,phoneRef:string,appRef:string,newDevi
   });
 }
 export function enteHelpPrompt(data:Dataset,t:EnteTask,problem:number,language:Language):string{
-  const step=currentEnteStep(data,t),app=enteApp(data,stepAppRef(data,t,step)),os=app?.kind==='installation'?data.assets.find(d=>d.id===app.deviceRef)?.operatingSystem:'unknown';
+  const step=currentEnteStep(data,t),app=enteApp(data,stepAppRef(data,t,step)),deviceRef=step.webDeviceRef??(app?.kind==='installation'?app.deviceRef:undefined),os=data.assets.find(d=>d.id===deviceRef)?.operatingSystem??'unknown';
   const problems=language==='ja'?['画面が違う','項目がない','非対応・権限がない','解除情報が使えない','同期・取込みが終わらない','別の認証方法で通過した']:['Different screen','Missing item','Unsupported / no permission','Unlock or recovery information unavailable','Sync or import not completed','Another sign-in method was used'];
   const sources=step.sources.map(id=>{const s=SOURCES[id as keyof typeof SOURCES]??PHONE_SOURCES[id];return s?`${s.title}: ${s.url} (${s.checked})`:'';}).filter(Boolean);
   const target=step.id.startsWith('code:')?step.subjectRef:step.id.startsWith('code-open:')?step.id.slice(10):undefined,provider=data.assets.find(a=>a.id===target)?.provider,operation=target?{ja:`選んだ${provider?PROVIDERS[provider]:'サービス'}で、新端末のコードを使う`,en:`Use the new-phone code at the selected ${provider?PROVIDERS[provider]:'service'}`}:step.title;
@@ -201,9 +245,9 @@ export function enteHelpPrompt(data:Dataset,t:EnteTask,problem:number,language:L
 }
 
 export function enteAccountReady(data:Dataset,appRef:string,withoutRefs:string[]=[]):boolean{
- if(data.version!==2)return false;const store=enteStore(data),root=store?.roots.find(v=>v.rootRef===enteConfiguration(data,appRef)?.rootRef);if(!store||!root)return false;
+ if(data.version!==2)return false;const store=enteStore(data),root=store?.roots.find(v=>v.rootRef===enteConfiguration(data,appRef)?.rootRef);if(!store||!root||entePasswordPending(data.securityModel,root.rootRef))return false;
  const copied=(ref?:string)=>{const secret=store.secrets.find(v=>v.entityRef===ref);return !!secret&&available(data,secret.entityRef)&&secret.copies.some(v=>available(data,v.storageRef)&&enteReceiptCurrent(store,v.receiptRef));};
- return copied(root.passwordRef)&&copied(root.recoveryRef)&&store.proofs.some(p=>p.kind==='account-read'&&p.rootRef===root.rootRef&&data.securityModel.facts.some(f=>f.id===p.factRef&&f.requiredRefs.includes(enteApp(data,appRef)?.kind==='installation'?enteApp(data,appRef)!.deviceRef as string:''))&&data.securityModel.routes.some(r=>r.requirements.kind==='fact'&&r.requirements.factId===p.factRef&&evaluateAccess(data.securityModel,r.id,{context:'no-existing-session',now:nowString(),unavailableRefs:withoutRefs}).state==='available'));
+ return copied(root.passwordRef)&&copied(root.recoveryRef)&&store.proofs.some(p=>p.kind==='account-read'&&p.rootRef===root.rootRef&&data.securityModel.facts.some(f=>f.id===p.factRef&&f.requiredRefs.some(ref=>data.securityModel.entities.some(e=>e.id===ref&&e.kind==='credential'&&e.subjectRef===root.rootRef&&['totp','passkey'].includes(e.credentialType)&&e.roles.includes('second-step')))&&f.requiredRefs.includes(enteApp(data,appRef)?.kind==='installation'?enteApp(data,appRef)!.deviceRef as string:''))&&data.securityModel.routes.some(r=>r.requirements.kind==='fact'&&r.requirements.factId===p.factRef&&evaluateAccess(data.securityModel,r.id,{context:'no-existing-session',now:nowString(),unavailableRefs:withoutRefs}).state==='available'));
 }
 export const enteParent=enteParentTask;
 export function reconcileEnteTask(data:Dataset,id:string,at=nowString()):Dataset{
@@ -216,8 +260,8 @@ export function entePhoneSignInRecorded(data:Dataset,phoneRef:string,accountRef:
 
 export function beginEnteChild(data:Dataset,id:string):{data:CurrentDataset;id:string}{
  if(data.version!==2)throw Error('no-ente-parent');const parent=enteTask(data,id),step=parent&&currentEnteStep(data,parent);if(!parent||!step?.child)throw Error('no-ente-child-step');
- const known=enteStore(data)?.tasks.find(t=>enteParent(data,t.id)?.id===parent.id&&t.kind===step.child!.kind&&t.appRef===step.child!.appRef&&['active','deferred'].includes(t.status));
+ const known=enteStore(data)?.tasks.find(t=>enteParent(data,t.id)?.id===parent.id&&t.kind===step.child!.kind&&t.appRef===step.child!.appRef&&t.rootRef===step.child!.rootRef&&['active','deferred'].includes(t.status));
  if(known)return {data:putEnteTask(data,{...known,status:'active'}),id:known.id};
  const created=startEnteTask(data,{...step.child,origin:'map'},undefined,true);
- return {data:putEnteTask(created.data,{...enteTask(created.data,created.id)!,enteReturnV1:{taskRef:parent.id,createdAt:parent.createdAt,appRef:parent.appRef,destinationRef:parent.destinationRef,newDeviceRef:parent.newDeviceRef}}),id:created.id};
+ return {data:putEnteTask(created.data,{...enteTask(created.data,created.id)!,...(step.child.kind==='recovery'&&parent.answers['root-password-state']==='forgot'?{answers:{'recovery-purpose':'forgot'}}:{}),enteReturnV1:{taskRef:parent.id,createdAt:parent.createdAt,appRef:parent.appRef,destinationRef:parent.destinationRef,newDeviceRef:parent.newDeviceRef}}),id:created.id};
 }

@@ -1,4 +1,5 @@
 import { enteExpected } from './enteExpected';
+import { enteRecoverySteps } from './enteRecoveryCatalog';
 import { enteAccountSteps } from './enteAccountCatalog';
 import type { Dataset } from './models';
 import { c, deviceRecipe, emailRecipe, PROVIDERS, type Copy } from './guideCatalog';
@@ -7,7 +8,7 @@ import { fileTransferSteps } from './phoneFileTransfer';
 import type { PhoneWorkflow } from './phoneSchemas';
 
 export type EnteChoice={value:string;label:Copy};
-export type EnteStep={id:string;kind:'question'|'action'|'blocked'|'finished';title:Copy;place?:Copy;action?:Copy;expected?:Copy;button?:Copy;url?:string;choices?:EnteChoice[];refs:string[];sources:string[];requires:string[];effect?:string;child?:{kind:'backup'|'account';appRef:string;rootRef?:string};appRef?:string;subjectRef?:string;question?:string};
+export type EnteStep={id:string;kind:'question'|'action'|'blocked'|'finished';title:Copy;place?:Copy;action?:Copy;expected?:Copy;button?:Copy;url?:string;choices?:EnteChoice[];refs:string[];sources:string[];requires:string[];effect?:string;child?:{kind:'prepare'|'backup'|'account'|'recovery';appRef:string;rootRef?:string};appRef?:string;subjectRef?:string;question?:string;webDeviceRef?:string;physical?:boolean};
 const ch=(value:string,en:string,ja=en):EnteChoice=>({value,label:c(en,ja)});
 const ask=(id:string,title:Copy,choices:EnteChoice[],extra:Partial<EnteStep>={}):EnteStep=>({id,kind:'question',title,choices,refs:[],sources:[],requires:[],...extra});
 const act=(id:string,title:Copy,place:Copy,action:Copy,refs:string[],sources:string[],extra:Partial<EnteStep>={}):EnteStep=>({id,kind:'action',title,place,action,expected:enteExpected(id),button:c('I checked this','確認しました'),refs,sources,requires:[],...extra});
@@ -20,20 +21,22 @@ const place=(data:Dataset,appRef:string)=>c(`${device(data,appRef)?.name??''} ·
 const refs=(data:Dataset,appRef:string)=>[appRef,device(data,appRef)!.id];
 const stop=(id:string)=>block(id,c('Keep this work unfinished','この作業は未完了で残す'),c('Keep existing codes, access and backups. Use Back to correct the actual state, or save this task for later. Do not reset or switch an existing account to match these instructions.','使えるコード・ログイン・バックアップを残します。「戻る」で実際の状態へ直すか、後回しにしてください。手順に合わせるための初期化やAccountの切替はしません。'));
 function preparation(data:Dataset,t:EnteTask,appRef:string,prefix=''):EnteStep[]{
-  const a=t.answers,d=device(data,appRef),p=place(data,appRef),r=refs(data,appRef),id=(s:string)=>prefix+s,steps:EnteStep[]=[];
+  const requiredRoot=t.kind==='prepare'?t.rootRef:undefined,accountName=data.assets.find(v=>v.id===requiredRoot)?.name;
+  const a=t.answers,d=device(data,appRef),basePlace=place(data,appRef),p=accountName?c(`${basePlace.en} · ${accountName}`,`${basePlace.ja} · ${accountName}`):basePlace,r=refs(data,appRef),id=(s:string)=>prefix+s,steps:EnteStep[]=[];
   if(!d||!['ios','android'].includes(d.operatingSystem??''))return [stop(id('unsupported-device'))];
   steps.push(act(id('open'),c('Open the official Ente Auth app','正規のEnte Authを開く'),p,c('Install from the official store if needed, or open the app you already use. Keep existing codes and signed-in accounts. This is Ente Auth, separate from Ente Photos or Locker.','未導入なら正規ストアから導入し、導入済みなら今使うアプリを開きます。既存コードとログインは残します。Ente Photos・Lockerとは別のEnte Authです。'),r,source,{effect:'open',appRef,url:d.operatingSystem==='ios'?'https://apps.apple.com/us/app/ente-auth-2fa-authenticator/id6444121398':'https://play.google.com/store/apps/details?id=io.ente.auth',button:c('Ente Auth is open','Ente Authを開きました')}));
   steps.push(ask(id('version'),c('Does this match your Ente Auth app?','このEnte Authは、案内の対象ですか？'),[ch('supported',`Official Ente Auth 4.4.26; ${d.operatingSystem==='ios'?'iOS / iPadOS 15+':'Android 7+'}; my device`,`正規のEnte Auth 4.4.26・${d.operatingSystem==='ios'?'iOS / iPadOS 15以降':'Android 7以降'}・本人の端末`),ch('other','Another version, managed or self-hosted / unsure','別の版・管理端末・自己ホスト・分からない')],{sources:[...source,'enteVersionSource'],action:versionCheck,appRef}));
   if(!a[id('version')])return steps;if(a[id('version')]!=='supported')return [...steps,stop(id('unsupported-version'))];
-  steps.push(ask(id('state'),c('What is the app’s current state?','いまのアプリは、どの状態ですか？'),[ch('offline','Already using without an Account','Accountなしで使用中'),ch('account','Already signed in to my Ente Account','自分のEnte Accountでログイン済み'),ch('fresh','New app; no codes yet','新しいアプリで、まだコードはない')],{action:c('Match the real app. Do not sign out or remove codes to choose a different mode.','実際の状態に合わせます。別の方法を選ぶためのサインアウト・コード削除はしません。')}));
+  steps.push(ask(id('state'),c('What is the app’s current state?','いまのアプリは、どの状態ですか？'),[ch('offline','Already using without an Account','Accountなしで使用中'),ch('account',requiredRoot?'Already signed in to this exact Account':'Already signed in to my Ente Account',requiredRoot?'今回の同じAccountでログイン済み':'自分のEnte Accountでログイン済み'),ch('fresh','New app; no codes yet','新しいアプリで、まだコードはない'),...(requiredRoot?[ch('different','A different Account / unsure','別のAccount・分からない')]:[])],{action:c('Match the real app. Do not sign out or remove codes to choose a different mode.','実際の状態に合わせます。別の方法を選ぶためのサインアウト・コード削除はしません。')}));
   if(!a[id('state')])return steps;
-  if(a[id('state')]==='fresh'){
+  if(requiredRoot&&['offline','different'].includes(a[id('state')]))return [...steps,stop(id('preserve-existing-app'))];
+  if(a[id('state')]==='fresh'&&!requiredRoot){
     steps.push(ask(id('mode'),c('How will this new app save codes?','新しいアプリの保存方法は？'),[ch('offline','Use without an Account; keep an encrypted file backup','Accountなしで使い、暗号化ファイルを備える'),ch('existing','Use my existing Ente Account','利用中のEnte Accountを使う'),ch('new','Create a new Ente Account','新しいEnte Accountを作る')]));if(!a[id('mode')])return steps;
   }
-  const mode=a[id('state')]==='offline'||a[id('mode')]==='offline'?'offline':'account';
+  const mode=!requiredRoot&&(a[id('state')]==='offline'||a[id('mode')]==='offline')?'offline':'account';
   if(mode==='account'){
-    steps.push(ask(id('root'),c('Which actual Ente Account is this?','実際に使うEnte Accountはどれですか？'),[...data.assets.filter(v=>(a[id('mode')]!=='new'||a[id('root')]===`account:${v.id}`)&&v.kind==='account'&&v.provider==='ente').map(v=>ch(`account:${v.id}`,v.name)),ch('add','Record a different Ente Account','別のEnte Accountを記録する')],{question:'root',appRef}));if(!a[id('root')])return steps;
-    if(data.assets.find(v=>v.id===a[id('root')]?.slice(8))?.purpose==='work')return [...steps,stop(id('managed-account'))];
+    if(!requiredRoot){steps.push(ask(id('root'),c('Which actual Ente Account is this?','実際に使うEnte Accountはどれですか？'),[...data.assets.filter(v=>(a[id('mode')]!=='new'||a[id('root')]===`account:${v.id}`)&&v.kind==='account'&&v.provider==='ente').map(v=>ch(`account:${v.id}`,v.name)),ch('add','Record a different Ente Account','別のEnte Accountを記録する')],{question:'root',appRef}));if(!a[id('root')])return steps;}
+    if(data.assets.find(v=>v.id===(requiredRoot??a[id('root')]?.slice(8)))?.purpose==='work')return [...steps,stop(id('managed-account'))];
     if(a[id('mode')]==='new'){
       steps.push(act(id('new-mail'),c('Keep access to your chosen email','使うメールを、独立して開けるようにする'),p,c('Choose an email you can open now, including without relying only on this Ente app. Keep its working recovery method. Enter the address only in Ente; no address is needed here.','現在開けるメールを使い、このEnteアプリだけに頼らず開く予備手段を残します。実際のアドレスはEnteだけへ入力し、このアプリには入力しません。'),r,['enteCycle']));
       steps.push(act(id('new-password'),c('Prepare a separate Account passphrase','Account用の新しい語句を用意する'),p,c('Use the linked EFF 7776-word list and physical dice: roll five dice for each randomly selected word; repeat independently for at least six words, then join them consistently. Do not choose words yourself or copy an example. Keep a paper reminder in a place you can retrieve without Ente or this phone. This is not the file-backup password or the Security Map passphrase.','同梱のEFFの7776語表とサイコロを使います。1語ごとに5回振って対応する語を選び、独立して6語以上を作って一定の区切りでつなぎます。自分で語を選んだり、完成例をコピーしたりしません。Enteやこのスマホがなくても取り出せる場所へ紙の控えを保管します。ファイル用・Security Mapの保存用の語句とは別です。'),r,['enteFaq','effDice'],{effect:'root-password',appRef,button:c('I prepared and stored the Account passphrase','Account用の語句と控えを用意しました')}));
@@ -165,6 +168,7 @@ export function enteSteps(data:Dataset,t:EnteTask):EnteStep[]{
   else if(t.kind==='backup'){const prep=!entePrepared(data,t.appRef)||Object.hasOwn(t.answers,'version')?preparation(data,t,t.appRef):[];steps=entePrepared(data,t.appRef)?[...prep,...backup(data,t)]:prep;}
   else if(['move','restore'].includes(t.kind))steps=movement(data,t);
   else if(t.kind==='account'){const prep=!entePrepared(data,t.appRef)||Object.hasOwn(t.answers,'version')?preparation(data,t,t.appRef):[];if(!entePrepared(data,t.appRef))steps=prep;else{const backups=!enteBackupCurrent(data,t.appRef)||Object.hasOwn(t.answers,'file-choice')?backup(data,t):[];steps=[...prep,...backups,...((enteBackupCurrent(data,t.appRef)||Object.hasOwn(t.records,'file-copy')||Object.hasOwn(t.records,'file-access'))?enteAccountSteps(data,t):[])];}}
+  else if(t.kind==='recovery')steps=enteRecoverySteps(data,t);
   else steps=[stop('account-guide-pending')];
   if(t.kind==='restore')steps=steps.map(step=>{const adapt=(copy:Copy|undefined)=>copy?{ja:copy.ja.replaceAll('新端末','復元先の端末').replaceAll('新アプリ','復元先のアプリ').replaceAll('新しいEnte','復元先のEnte'),en:copy.en.replaceAll('new phone','destination phone').replaceAll('new app','destination app')}:undefined;return {...step,title:step.subjectRef||step.id.startsWith('code-open:')?step.title:adapt(step.title)!,action:adapt(step.action),expected:adapt(step.expected)};});
   const prior:string[]=[];return steps.map(step=>{const current={...step,requires:[...prior,...step.requires]};if(step.kind==='action')prior.push(step.id);return current;});

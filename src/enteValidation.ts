@@ -30,6 +30,9 @@ export function enteIssues(data:Pick<CurrentDataset,'assets'|'securityModel'|'de
   for(const task of s.tasks){
     if(!profiles.has(task.appRef)||task.destinationRef&&!profiles.has(task.destinationRef)||task.rootRef&&!roots.has(task.rootRef)||task.accountRef&&assets.get(task.accountRef)?.kind!=='account'||task.newDeviceRef&&assets.get(task.newDeviceRef)?.kind!=='device'||task.origin==='phone'&&!data.deviceWorkflows.some(w=>w.id===task.phoneRef)||Object.values(task.resources).some(id=>!ids.has(id)))return ['invalid-ente-task'];
     if(Object.entries(task.records).some(([stepId,id])=>!s.receipts.some(r=>r.id===id&&r.stepId===stepId&&r.taskRef===task.id)))return ['invalid-ente-task-record'];
+    if(task.recoveryStateV1&&(task.kind!=='recovery'||!task.rootRef||task.recoveryStateV1.password&&!secret(task.recoveryStateV1.password.candidateRef,task.rootRef,'account-password')))return ['invalid-ente-recovery-state'];
+    if(task.recoveryStateV1?.factor&&(task.recoveryStateV1.factor.type!==task.answers['recovery-screen']||task.answers['recovery-extra-state']!=='lost'))return ['invalid-ente-factor-recovery-scope'];
+    if(task.kind==='recovery'&&task.resources.protectionDevice&&assets.get(task.resources.protectionDevice)?.kind!=='device')return ['invalid-ente-recovery-device'];
   }
   for(const r of s.receipts){
     if(!s.tasks.some(t=>t.id===r.taskRef)||r.refs.some(id=>!ids.has(id))||r.requires.some(id=>!receipt(id))||r.configRef&&!s.configurations.some(c=>c.id===r.configRef&&r.refs.includes(c.appRef))||r.lockRef&&!s.locks.some(l=>l.id===r.lockRef&&r.refs.includes(l.appRef)))return ['invalid-ente-receipt'];

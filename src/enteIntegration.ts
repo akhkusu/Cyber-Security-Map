@@ -1,8 +1,13 @@
 import {enteParent,reconcileEnteTask} from './enteEngine';
-import type { Dataset } from './models';
+import { guideSchema, type Dataset } from './models';
 import { enteTask, startEnteTask, putEnteTask, withdrawEnteReceipt } from './enteData';
 import { authenticatorSetupRoute, requireAuthenticatorRoots, setAuthCursor } from './authenticatorGuide';
 import { confirmPhoneStep, currentPhoneStep, phoneRecordKey, undoPhoneRecord } from './phoneEngine';
+import { nordSsoStore } from './nordSsoSchemas';
+import { saveNordSsoSession } from './nordSso';
+import { protectionTasks } from './deviceProtectionSchemas';
+import { saveProtectionAccountGuide } from './deviceProtection';
+const decodeScope=(path:string,prefix:string)=>{try{return decodeURIComponent(path.slice(prefix.length));}catch{return undefined;}};
 export function undoEnte(data:Dataset,id:string,stepId:string):Dataset{
  let t=enteTask(data,id),next=data;const seen=new Set<string>();
  while(t&&!seen.has(t.id)){
@@ -15,7 +20,18 @@ export function undoEnte(data:Dataset,id:string,stepId:string):Dataset{
 export function finishEnte(data:Dataset,id:string,seen=new Set<string>()):Dataset{
  if(seen.has(id)||enteTask(data,id)?.status!=='completed')return data;seen.add(id);const parent=enteParent(data,id);if(parent){const next=reconcileEnteTask(data,parent.id);return enteTask(next,parent.id)?.status==='completed'?finishEnte(next,parent.id,seen):next;}
  const t=enteTask(data,id);if(!t||t.status!=='completed')return data;
- if(t.origin==='guide'&&data.guide.cursor===`ente/${id}`&&t.accountRef)return t.kind==='prepare'?setAuthCursor(data,authenticatorSetupRoute(data,t.accountRef)):requireAuthenticatorRoots(data,t.accountRef,t.returnCursor??'manager-select');
+ if(t.origin==='guide'&&t.accountRef){
+  const advance=(child:Dataset)=>t.kind==='prepare'?setAuthCursor(child,authenticatorSetupRoute(child,t.accountRef!)):requireAuthenticatorRoots(child,t.accountRef!,t.returnCursor??'manager-select');
+  if(data.guide.cursor===`ente/${id}`)return advance(data);
+  if(t.scopePath?.startsWith('/nord-connection/')){
+   const sessionId=decodeScope(t.scopePath,'/nord-connection/'),session=nordSsoStore(data)?.sessions.find(s=>s.id===sessionId),parsed=guideSchema.safeParse(session?.guide);
+   if(sessionId&&parsed.success&&parsed.data.cursor===`ente/${id}`)return saveNordSsoSession(data,advance({...data,guide:parsed.data}),sessionId);
+  }
+  if(t.scopePath?.startsWith('/protect/account/')){
+   const parentId=decodeScope(t.scopePath,'/protect/account/'),parent=protectionTasks(data).find(p=>p.id===parentId),parsed=guideSchema.safeParse(parent?.childGuide);
+   if(parentId&&parsed.success&&parsed.data.cursor===`ente/${id}`)return saveProtectionAccountGuide(data,advance({...data,guide:parsed.data}),parentId);
+  }
+ }
  if(t.origin==='phone'&&data.version===2&&t.phoneRef){const w=data.deviceWorkflows.find(v=>v.id===t.phoneRef);if(!w)return data;const step=currentPhoneStep(data,w);if(step.enteSourceRef!==t.appRef)return data;const next=confirmPhoneStep(data,w.id);return next===data?data:putEnteTask(next as typeof data,{...t,phoneRecordKey:phoneRecordKey(w,step)});}
  return data;
 }

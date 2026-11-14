@@ -30,6 +30,13 @@ export function mapConnections(data: Dataset): MapConnection[] {
   }
   return [...data.dependencies, ...known.values(),...planMapConnections(data)];
 }
+export function enteAccountWorkStatus(data:Dataset,rootRef:string,language:Language){
+  const store=enteStore(data);if(!store?.roots.some(r=>r.rootRef===rootRef))return;
+  const tasks=store.tasks.filter(t=>t.kind==='recovery'&&t.rootRef===rootRef),root=store.roots.find(r=>r.rootRef===rootRef)!;
+  const pending=tasks.some(t=>t.recoveryStateV1?.password?.phase==='requested'&&t.recoveryStateV1.password.previousEpoch===root.epoch||t.recoveryStateV1?.factor?.phase==='requested');
+  if(!pending&&!tasks.some(t=>['active','deferred'].includes(t.status)))return;
+  return {tone:'needs-work',label:language==='ja'?pending?'復旧の結果を確認':'Accountの作業を再開':pending?'Check the recovery result':'Resume Account work',reason:language==='ja'?pending?'送信した変更・復旧の結果は未確認':'変更・復旧の作業が途中です。記録した手順から続けられます':pending?'The submitted change or recovery is not confirmed':'Change or recovery work is unfinished; resume its saved step'};
+}
 export function typedMapStatus(data: Dataset, node: MapItem, language: Language) {
   const yes = language === 'ja';
   const entity = data.version === 2 ? data.securityModel.entities.find(e => e.id === node.id) : undefined;

@@ -3,6 +3,13 @@ import type { CurrentDataset, Dataset } from './models';
 import type { AccessFact, SecurityModel } from './securityModel';
 
 const ref=z.string().min(1), time=z.string().datetime({offset:true});
+export const enteRecoveryStateSchema=z.object({
+  version:z.literal(1),
+  password:z.object({candidateRef:ref,phase:z.enum(['prepared','requested','applied']),previousEpoch:ref,
+    requestedAt:time.optional(),appliedAt:time.optional(),appliedEpoch:ref.optional(),
+  }).passthrough().refine(v=>(v.phase==='prepared'||!!v.requestedAt)&&(v.phase!=='applied'||!!v.appliedAt&&!!v.appliedEpoch),'incomplete-ente-password-change').optional(),
+  factor:z.object({type:z.enum(['totp','passkey']),phase:z.enum(['requested','recovered']),requestedAt:time,recoveredAt:time.optional()}).passthrough().refine(v=>v.phase!=='recovered'||!!v.recoveredAt,'incomplete-ente-factor-recovery').optional(),
+}).passthrough();
 export const enteReceiptSchema=z.object({
   id:ref, taskRef:ref, stepId:ref, at:time, requires:z.array(ref), refs:z.array(ref),
   revokedAt:time.optional(), configRef:ref.optional(), lockRef:ref.optional(), rootEpoch:ref.optional(),
@@ -18,6 +25,7 @@ export const enteTaskSchema=z.object({
   cursor:z.string().default(''), history:z.array(z.string()).default([]),
   answers:z.record(z.string(),z.string()).default({}), records:z.record(z.string(),ref).default({}),
   resources:z.record(z.string(),ref).default({}), sourceSnapshot:z.string().optional(),
+  recoveryStateV1:enteRecoveryStateSchema.optional(),
   createdAt:time, updatedAt:time,
 }).passthrough();
 export type EnteTask=z.infer<typeof enteTaskSchema>;
@@ -101,7 +109,13 @@ export function enteFactCurrent(model:SecurityModel,fact:AccessFact):boolean{
     if(app?.kind!=='installation'||!fact.requiredRefs.includes(app.id)||!fact.requiredRefs.includes(app.deviceRef)||proof.configRef&&profile?.configRef!==proof.configRef)return false;
   }
   if(proof.rootRef&&proof.rootEpoch&&s.roots.find(r=>r.rootRef===proof.rootRef)?.epoch!==proof.rootEpoch)return false;
+  if(proof.rootRef&&entePasswordPending(model,proof.rootRef)&&model.routes.some(r=>r.requirements.kind==='fact'&&r.requirements.factId===fact.id&&['sign-in','decrypt'].includes(r.purpose)))return false;
+  if(proof.rootRef&&s.tasks.some(t=>t.kind==='recovery'&&t.rootRef===proof.rootRef&&t.recoveryStateV1?.factor?.type==='totp'&&t.recoveryStateV1.factor.phase==='requested')&&fact.requiredRefs.some(ref=>model.entities.some(e=>e.id===ref&&e.kind==='credential'&&e.subjectRef===proof.rootRef&&e.credentialType==='totp')))return false;
   return !fact.requiredRefs.some(id=>{const c=model.entities.find(e=>e.id===id);return c?.kind==='credential'&&!!c.replicaGroupId&&model.entities.some(e=>e.kind==='credential'&&e.replicaGroupId===c.replicaGroupId&&model.lifecycle[e.id]?.state==='revoked'&&model.lifecycle[e.id]?.evidence==='user-confirmed');});
+}
+export function entePasswordPending(model:SecurityModel,rootRef:string):boolean{
+  const store=enteStore({securityModel:model}),root=store?.roots.find(r=>r.rootRef===rootRef);
+  return !!root&&!!store?.tasks.some(t=>t.kind==='recovery'&&t.rootRef===rootRef&&t.recoveryStateV1?.password?.phase==='requested'&&t.recoveryStateV1.password.previousEpoch===root.epoch);
 }
 export function enteLinkCurrent(model:SecurityModel,id:string):boolean{
   const s=enteStore({securityModel:model}),link=s?.links.find(l=>l.relationRef===id);
@@ -132,10 +146,12 @@ export function enteWithoutEvidence(model:SecurityModel,fact:AccessFact):string[
   if(proof.rootRef&&['account-auth','account-passkey','account-read'].includes(proof.kind)){
     const task=s.tasks.find(t=>t.id===receipt.taskRef),raw=task?.enteReturnV1,v=raw&&typeof raw==='object'?raw as Record<string,unknown>:undefined,parent=v?s.tasks.find(t=>t.id===v.taskRef):undefined;
     const source=parent?model.entities.find(e=>e.id===parent.appRef):undefined,destination=task?model.entities.find(e=>e.id===task.appRef):undefined;
-    const without=parent&&parent.createdAt===v?.createdAt&&parent.appRef===v.appRef&&parent.destinationRef===v.destinationRef&&parent.newDeviceRef===v.newDeviceRef&&parent.destinationRef===task?.appRef&&source?.kind==='installation'&&destination?.kind==='installation'&&parent.newDeviceRef===destination.deviceRef&&source.deviceRef!==destination.deviceRef&&Array.isArray(fact.observedWithoutRefs)&&fact.observedWithoutRefs.includes(source.deviceRef)?[source.deviceRef]:[];
+    const without=parent&&parent.createdAt===v?.createdAt&&parent.appRef===v.appRef&&parent.destinationRef===v.destinationRef&&parent.newDeviceRef===v.newDeviceRef&&parent.destinationRef===task?.appRef&&source?.kind==='installation'&&destination?.kind==='installation'&&(parent.kind==='recovery'?parent.resources.protectionDevice??parent.newDeviceRef:parent.newDeviceRef)===destination.deviceRef&&source.deviceRef!==destination.deviceRef&&Array.isArray(fact.observedWithoutRefs)&&fact.observedWithoutRefs.includes(source.deviceRef)?[source.deviceRef]:[];
+    const recoverySource=task?model.entities.find(e=>e.id===task.appRef):undefined,currentConfig=s.configurations.find(c=>c.id===s.profiles.find(p=>p.appRef===task?.appRef)?.configRef);
+    const recoveryWithout=task?.kind==='recovery'&&receipt.stepId==='recovery-data-read'&&task.rootRef===proof.rootRef&&currentConfig?.rootRef===proof.rootRef&&task.answers['recovery-place']==='web'&&task.newDeviceRef&&recoverySource?.kind==='installation'&&recoverySource.deviceRef!==task.newDeviceRef&&fact.requiredRefs.includes(task.newDeviceRef)&&!fact.requiredRefs.includes(recoverySource.deviceRef)&&Array.isArray(fact.observedWithoutRefs)&&fact.observedWithoutRefs.includes(recoverySource.deviceRef)?[recoverySource.deviceRef]:[];
     const unused=model.entities.filter(e=>e.kind==='credential'&&e.subjectRef===proof.rootRef&&!fact.requiredRefs.includes(e.id)).map(e=>e.id);
-    const fileInputs=s.files.map(f=>f.entityRef),fileSecrets=s.secrets.filter(c=>['export','automatic'].includes(c.purpose)).flatMap(c=>[c.entityRef,...c.copies.map(p=>p.storageRef)]),locks=s.locks.flatMap(l=>l.credentialRef?[l.credentialRef]:[]);
-    return [...new Set([...unused,...fileInputs,...fileSecrets,...locks,...without])].filter(ref=>!fact.requiredRefs.includes(ref));
+    const fileInputs=s.files.flatMap(f=>[f.entityRef,f.storageRef]),fileSecrets=s.secrets.filter(c=>['export','automatic'].includes(c.purpose)).flatMap(c=>[c.entityRef,...c.copies.map(p=>p.storageRef)]),locks=s.locks.flatMap(l=>l.credentialRef?[l.credentialRef]:[]);
+    return [...new Set([...unused,...fileInputs,...fileSecrets,...locks,...without,...recoveryWithout])].filter(ref=>!fact.requiredRefs.includes(ref));
   }
   const task=s.tasks.find(t=>t.id===receipt.taskRef),source=model.entities.find(e=>e.id===task?.appRef),target=model.entities.find(e=>e.id===proof.appRef);
   if(!task||!['move','restore'].includes(task.kind)||source?.kind!=='installation'||target?.kind!=='installation')return [];
