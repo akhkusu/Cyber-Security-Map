@@ -73,6 +73,7 @@ for (const mode of ['standard', 'existing'] as const) test(`${mode}: preserves c
   const f = fixture('ios'); await open(page, f.data); await start(page);
   await advance(page, mode === 'standard' ? '追加パスワードは未設定' : '追加パスワードは設定済み');
   await advance(page, mode === 'standard' ? '通常の設定を維持する' : '現在の設定と控えを確認する');
+  if (mode === 'standard') await expect(page.getByRole('heading', { level: 1 })).toHaveText('重要なログイン情報を一つ、保存して使う');
   for (let n = 0; n < 8; n++) { if (await page.getByRole('heading', { level: 1, name: '重要なログイン情報を一つ、保存して使う', exact: true }).isVisible()) break; await confirm(page); }
   const data = await saved(page); expect(data.assets).toEqual(f.data.assets);
   expect(data.securityModel.routes.some(r => r.id.includes(':proton-extra:'))).toBe(false);

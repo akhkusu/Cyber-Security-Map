@@ -3,13 +3,20 @@ import type { Dataset, Language } from './models';
 import { cloudInstallation, cloudSetupRoute, cloudVault } from './cloudManagers';
 import { extraCycle, extraRecipeId } from './protonPassExtra';
 import { tx } from './ui';
+import { beginRecipe, completeStep } from './guideEngine';
 
 export function ProtonExtraQuestions({ data, language, appId, route, save, trouble }: { data: Dataset; language: Language; appId: string; route: string; save: (data: Dataset) => Promise<boolean>; trouble: ReactNode }) {
   const app = cloudInstallation(data, appId), vault = cloudVault(data, app?.vaultRef), cycle = extraCycle(data, appId);
   if (!app || vault?.productId !== 'proton-pass' || !cycle) return <h1>{tx(language, 'Open the existing Pass store first', '現在のPass保管庫を先に開く')}</h1>;
   const navigate = (cursor: string, answers = data.guide.answers) => void save({ ...data, guide: { ...data.guide, history: [...data.guide.history, data.guide.cursor], cursor, answers: { ...answers, [`${appId}:proton-extra-pending`]: cursor } } });
   const answer = (state: string) => navigate(`cloud-extra-${state === 'off' ? 'choice' : state === 'on' ? 'review-choice' : 'unavailable'}/${appId}`, { ...data.guide.answers, [`${appId}:proton-extra-state:${cycle}`]: state });
-  const begin = (mode: string) => navigate(`do/${appId}/${extraRecipeId(data, appId, mode)}/${mode === 'default' ? 'verify-off' : 'account-copy'}`);
+  const begin = (mode: string) => {
+    if (mode === 'default') {
+      // The prior screen already identified the actual off setting. One click
+      // keeps that setting, records the observation and returns to the guide.
+      void save(completeStep(beginRecipe(data, appId, extraRecipeId(data, appId, mode))));
+    } else navigate(`do/${appId}/${extraRecipeId(data, appId, mode)}/account-copy`);
+  };
   const choice = (label: string, action: () => void) => <button className="choice" onClick={action}><strong>{label}</strong></button>;
   if (route === 'cloud-extra-state') return <><h1>{tx(language, 'What does the extra-password setting show?', '追加パスワードの設定には、何が表示されていますか？')}</h1><div className="choices">{choice(tx(language, 'An extra password is not configured', '追加パスワードは未設定'), () => answer('off'))}{choice(tx(language, 'An extra password is already enabled', '追加パスワードは設定済み'), () => answer('on'))}{choice(tx(language, 'I do not know the current extra password', '現在の追加パスワードが分からない'), () => answer('forgot'))}{choice(tx(language, 'The screen differs / I cannot find it', '画面が違う・項目が見つからない'), () => answer('unknown'))}</div></>;
   if (route === 'cloud-extra-choice') return <><h1>{tx(language, 'Will you add an optional Pass password?', '任意のPass追加パスワードを設定しますか？')}</h1><p>{tx(language, 'The standard account password and MFA remain valid choices. An extra password adds a separate Pass secret and requires Pass sign-in again on all devices. Account recovery information alone is not proof that a forgotten extra password can be recovered.', '通常のアカウント用パスワードとMFAを使い続けることもできます。追加パスワードを設定すると、Pass用の別の秘密が増え、全端末のPassで再ログインが必要です。アカウントの復旧情報だけで、忘れた追加パスワードも復旧できるとは判断しません。')}</p><div className="choices">{choice(tx(language, 'Keep the standard setting', '通常の設定を維持する'), () => begin('default'))}{choice(tx(language, 'Prepare independent access, then set an extra password', '独立した利用手段を確保し、追加パスワードを設定する'), () => begin('enable'))}</div></>;
