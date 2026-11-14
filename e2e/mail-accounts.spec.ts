@@ -40,7 +40,9 @@ for (const language of ['ja', 'en'] as const) test(`emails ${language}: personal
   const resumeTitle = await page.locator('.guide-card h1').textContent();
   await advance(page, word(language, 'この作業を後回しにする', 'Do this later'));
   await page.locator('.mailbox-choice').filter({ hasText: 'work@example.com' }).click();
-  const workTitle = await page.locator('.guide-card h1').textContent();
+  const workTitle = word(language, '仕事・学校の管理ルールを確認する', 'Check your organization’s rules first');
+  await expect(page.locator('.guide-card h1')).toHaveText(workTitle);
+  await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy', 'false');
   await page.reload(); await page.getByLabel(word(language, 'アプリの保存用パスフレーズ', 'App passphrase'), { exact: true }).fill(passphrase); await advance(page, word(language, '開いて再開する', 'Unlock and continue'));
   await expect(page.locator('.guide-card h1')).toHaveText(workTitle!);
   const deferred = page.locator('.guide-main>.records'); await deferred.locator('summary').click();

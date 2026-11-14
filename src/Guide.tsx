@@ -114,7 +114,7 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
     displaysTaskContext = true;
     const {completed:completedSteps,total:progressTotal}=guideProgress(recipe,index,done);
     content = <>
-      <div className="task-context"><span>{titleFor(asset)}{mailboxAddress(asset)&&mailboxAddress(asset)!==asset.name&&<small className="mail-address">{mailboxAddress(asset)}</small>}{asset.services.includes('mail')&&asset.purpose&&<small>{mailPurposeLabel(asset,language)}</small>}</span><span>{tx(language,`${completedSteps} steps completed`,`${completedSteps}件の操作を完了`)}</span></div>
+      <div className="task-context"><span>{titleFor(asset)}{mailboxAddress(asset)&&mailboxAddress(asset)!==asset.name&&<small className="mail-address">{mailboxAddress(asset)}</small>}{asset.services.includes('mail')&&asset.purpose&&<small>{mailPurposeLabel(asset,language)}</small>}</span><span>{tx(language,`${completedSteps} ${completedSteps===1?'step':'steps'} completed`,`${completedSteps}件の操作を完了`)}</span></div>
       <progress className="guide-step-progress" value={completedSteps} max={progressTotal} aria-label={tx(language,'Progress for this setting','この設定の進み具合')}/>
 
       <span className="eyebrow">{say(recipe.title, language)}</span><h1>{say(step.title, language)}</h1>
