@@ -326,9 +326,11 @@ iOSのiCloudとAndroidのGoogle Driveの同期先を別に記録します。同�
 
 ### A4.4 Ente Auth
 
-オンライン同期とオフラインの利用を分けます。オフラインのコードについて、OSの移行や一般の端末バックアップだけで必ず戻るとは扱いません。暗号化エクスポート、保存先、解除用パスワード、別の信頼する環境での読み込み確認を一連の経路にします。[公式の書き出し・ローカルバックアップ](https://help-content.ente.io/help/auth/migration/export)
+オンライン同期とオフラインの利用を分けます。オフラインのコードについて、OSの移行や一般の端末バックアップだけで必ず戻るとは扱いません。暗号化エクスポート、保存先、解除用パスワード、別の信頼する環境での読み込み確認を一連の経路にします。[公式の書き出し・ローカルバックアップ](https://ente.com/help/auth/migration/export)
 
-復旧用メールを開くコードがEnte Authの中だけにある場合も点検します。アカウントの回復キーと、書き出したファイルの解除パスワードを分けます。[循環依存の公式説明](https://help-content.ente.io/help/auth/faq/enteception/)
+復旧用メールを開くコードがEnte Authの中だけにある場合も点検します。アカウントの回復キーと、書き出したファイルの解除パスワードを分けます。[循環依存の公式説明](https://ente.com/help/auth/faq/enteception/)
+
+[Enteの専用契約EN01〜36](ENTE-AUTH-GUIDE.md)で、配布版・実際の日英表示、Accountなし／同期、手動と自動の秘密・保存先、パスキー・メール確認・循環依存、旧端末なしの復旧、Photos・Auth・Lockerの共有する変更・削除を管理します。AuthのEmail verificationは既定OFFです。一般的なMFA有効化として一律にONへ変えず、独立した復旧と実際の追加認証を先に確認します。資料確認日: 2026-11-14。実装・検証の状況は専用契約の末尾と実装状況で区別します。
 
 ### A4.5 Proton Authenticator
 

@@ -1,3 +1,4 @@
+import { ENTE_SOURCES } from './enteSources';
 import {TWOFAS_SOURCES} from './twofasSources';
 import type { Asset, Language } from './models';
 import { CLOUD_SOURCES } from './cloudSources';
@@ -9,6 +10,7 @@ export const say = (copy: Copy, language: Language) => copy[language];
 export type Source = { title: string; url: string; checked: string; scope: string; reviewMethod: 'official-documentation' | 'official-search-excerpt' };
 const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-13', reviewMethod: 'official-documentation' });
 export const SOURCES = {
+  ...ENTE_SOURCES,
   ...TWOFAS_SOURCES,
   ...CLOUD_SOURCES,
   applePasswords: source('Apple · パスワードアプリ', 'https://support.apple.com/ja-jp/120758', 'iOS / iPadOS 18+ / macOS Sequoia+'),
@@ -112,7 +114,7 @@ export type Recipe = { id: string; title: Copy; steps: GuideStep[] };
 const next = c('Next', '次へ');
 const checked = c('I checked this', '確認しました');
 const step = (id: string, title: Copy, place: Copy, action: Copy, expected: Copy, sources: SourceId[], extra: Partial<GuideStep> = {}): GuideStep => ({ id, title, place, action, expected, sources, button: next, ...extra });
-export const PROVIDERS = { apple: 'iCloud / Apple Account', google: 'Gmail / Google', microsoft: 'Outlook / Microsoft', proton: 'Proton Mail', fastmail: 'Fastmail', tuta: 'Tuta / Tutanota', zoho: 'Zoho Mail', yahoo: 'Yahoo.com', startmail: 'StartMail', mailcom: 'mail.com', gmx: 'GMX.com', bitwarden: 'Bitwarden', '1password': '1Password', nord: 'Nord Account', other: 'Other' };
+export const PROVIDERS = { apple: 'iCloud / Apple Account', google: 'Gmail / Google', microsoft: 'Outlook / Microsoft', proton: 'Proton Mail', fastmail: 'Fastmail', tuta: 'Tuta / Tutanota', zoho: 'Zoho Mail', yahoo: 'Yahoo.com', startmail: 'StartMail', mailcom: 'mail.com', gmx: 'GMX.com', bitwarden: 'Bitwarden', '1password': '1Password', nord: 'Nord Account', ente: 'Ente Account', other: 'Other' };
 export const PLATFORMS = { ios: 'iPhone / iPad', macos: 'Mac', android: 'Android', windows: 'Windows', web: 'Web' };
 export type Platform = keyof typeof PLATFORMS;
 

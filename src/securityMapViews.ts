@@ -1,3 +1,4 @@
+import {enteStore,enteProfile,entePrepared,enteFileCurrent,enteLinkCurrent,enteDependencyCurrent} from './enteSchemas';
 import {twofasStore,twofasFileCurrent,twofasPrepared,twofasLinkCurrent,twofasDependencyCurrent} from './twofasSchemas';
 import {protectionBindingCurrent} from './deviceProtectionEvidence';
 import { accessPlanStore } from './accessPlanSchemas';
@@ -23,9 +24,9 @@ export function mapItems(data: Dataset, language: Language): MapItem[] {
 export function mapConnections(data: Dataset): MapConnection[] {
   if (data.version !== 2) return data.dependencies;
   const known = new Map<string, MapConnection>();
-  for (const r of data.securityModel.relations.filter(r => r.evidence === 'user-confirmed' && protectionBindingCurrent(data.securityModel,r) && twofasLinkCurrent(data.securityModel,r.id))) {
+  for (const r of data.securityModel.relations.filter(r => r.evidence === 'user-confirmed' && protectionBindingCurrent(data.securityModel,r) && twofasLinkCurrent(data.securityModel,r.id) && enteLinkCurrent(data.securityModel,r.id))) {
     const key = JSON.stringify([r.fromRef, r.toRef, r.kind]);
-    if (!known.has(key)) known.set(key, { id: r.id, assetId: r.toRef, recoveryAssetId: r.fromRef, relation: r.kind, createdAt: r.checkedAt, typed: true, historical:twofasStore(data)?.links.some(l=>l.relationRef===r.id&&l.historical)??false });
+    if (!known.has(key)) known.set(key, { id: r.id, assetId: r.toRef, recoveryAssetId: r.fromRef, relation: r.kind, createdAt: r.checkedAt, typed: true, historical:(twofasStore(data)?.links.some(l=>l.relationRef===r.id&&l.historical)??false)||(enteStore(data)?.links.some(l=>l.relationRef===r.id&&l.historical)??false) });
   }
   return [...data.dependencies, ...known.values(),...planMapConnections(data)];
 }
@@ -33,6 +34,18 @@ export function typedMapStatus(data: Dataset, node: MapItem, language: Language)
   const yes = language === 'ja';
   const entity = data.version === 2 ? data.securityModel.entities.find(e => e.id === node.id) : undefined;
   if(entity&&(entity.kind==='session'||entity.kind==='grant')&&entity.expiresAt&&Date.parse(entity.expiresAt)<=Date.now())return {tone:'needs-work',label:yes?'記録した有効期限を過ぎています':'Recorded expiry has passed',reason:yes?'正規の設定で現在の状態を確認する':'Check the current state in official settings'};
+  const ente=enteStore(data),enteFile=ente?.files.find(f=>f.entityRef===node.id);
+  if(enteFile&&data.version===2){
+    if(enteFile.role==='transfer')return {tone:'unknown',label:yes?'転送用の一時コピー':'Temporary transfer copy',reason:yes?'残す暗号化バックアップとは別の物理コピー':'A physical copy separate from the retained encrypted backup'};
+    if(enteFile.role==='source')return {tone:'unknown',label:yes?'元の暗号化ファイル':'Original encrypted file',reason:yes?'端末外で取り出せるコピーの確認は別に記録':'Access to an off-phone copy is recorded separately'};
+    const current=enteFileCurrent(data.securityModel,enteFile.entityRef);return {tone:current?'recorded':'needs-work',label:yes?current?'暗号化コピーの保管記録あり':'バックアップの更新・確認が必要':current?'Encrypted copy stored':'Backup needs an update or check',reason:yes?'ファイル・解除情報・現在のコードの範囲。復元と実利用は別':'File, password access and current code coverage; restoration and use are separate'};
+  }
+  if(enteProfile(data,node.id)&&entity?.kind==='installation'&&data.version===2){
+    if(!entePrepared(data,node.id))return {tone:'needs-work',label:yes?'アプリ・ロックの確認が必要':'App or lock check needed',reason:yes?'現在の端末・保存方法・ロックの確認':'Current device, storage and lock checks'};
+    const used=ente?.proofs.some(p=>p.appRef===node.id&&p.kind==='totp-code'&&data.securityModel.routes.some(r=>r.requirements.kind==='fact'&&r.requirements.factId===p.factRef&&evaluateAccess(data.securityModel,r.id,{context:'new-device',now:new Date().toISOString()}).state==='available'));
+    const enrolled=entity.controls?.codeAccepted==='verified'&&entity.controlEvidence?.codeAccepted==='user-confirmed';
+    return {tone:used||enrolled?'recorded':'unknown',label:yes?used?'新端末でコード利用の記録あり':enrolled?'コード登録の記録あり':'コードの確認待ち':used?'Code used on new phone':enrolled?'Code registration recorded':'Code check needed',reason:yes?'アプリの準備と、正規サービス側のコード確認を区別':'App preparation and official service acceptance are separate checks'};
+  }
   const file=data.version===2?twofasStore(data)?.files.find(f=>f.entityRef===node.id):undefined;
   if(file&&!file.permanent)return {tone:'unknown',label:yes?'転送用の一時コピー':'Temporary transfer copy',reason:yes?'恒久的なバックアップと別の物理コピー':'A physical copy separate from the permanent backup'};
   if(file&&!file.external)return {tone:'unknown',label:yes?'スマホ内の暗号化コピー':'Encrypted copy on a phone',reason:yes?'別の保管先へのコピーは別に記録':'A separate-location copy is recorded separately'};
@@ -47,7 +60,7 @@ export function typedMapStatus(data: Dataset, node: MapItem, language: Language)
   if (entity?.kind === 'grant' && entity.nordSsoGrant === 'v1' && data.version === 2 && data.securityModel.revision >= 5) {
     const binding = nordSsoStore(data)?.bindings.find(b => b.id === entity.nordSsoBindingRef), life = data.securityModel.lifecycle[entity.id];
     const revoked = life?.evidence === 'user-confirmed' && ['revoked', 'deleted', 'retired', 'transferred'].includes(life.state);
-    const connected = !revoked && binding?.grantRef === entity.id && !!binding.records.connection && data.securityModel.relations.some(r => r.nordSsoEvidence === 'v1' && r.nordSsoBindingRef === binding.id && r.evidence === 'user-confirmed' && protectionBindingCurrent(data.securityModel,r) && twofasLinkCurrent(data.securityModel,r.id));
+    const connected = !revoked && binding?.grantRef === entity.id && !!binding.records.connection && data.securityModel.relations.some(r => r.nordSsoEvidence === 'v1' && r.nordSsoBindingRef === binding.id && r.evidence === 'user-confirmed' && protectionBindingCurrent(data.securityModel,r) && twofasLinkCurrent(data.securityModel,r.id) && enteLinkCurrent(data.securityModel,r.id));
     const used = connected && data.securityModel.routes.some(r => r.targetRef === binding?.rootRef && r.requirements.kind === 'fact' && data.securityModel.facts.some(f => f.id === (r.requirements.kind === 'fact' ? r.requirements.factId : '') && f.nordSsoEvidence === 'v1' && f.requiredRefs.includes(entity.id)) && evaluateAccess(data.securityModel, r.id, { context: r.contexts.includes('new-device') ? 'new-device' : 'normal', now: new Date().toISOString() }).state === 'available');
     return { tone: used ? 'recorded' : 'unknown', label: yes ? revoked ? '接続権限の失効を記録' : used ? '接続ログインの利用記録あり' : connected ? '接続済み・ログイン試験は別' : '接続の確認待ち' : revoked ? 'Permission revoked' : used ? 'Connected sign-in used' : connected ? 'Connected; sign-in check separate' : 'Connection unconfirmed', reason: yes ? '実際の提供元・接続先と、設定・利用の記録を区別' : 'Exact provider, destination, configuration and use are separate' };
   }
@@ -74,7 +87,7 @@ export function typedMapStatus(data: Dataset, node: MapItem, language: Language)
     const missing = completeOnOneDevice ? [] : required.filter(c => node.controls[c] !== 'verified').concat(['device-context']);
     return { tone: missing.length ? 'unknown' : 'recorded', label: yes ? missing.length ? '利用確認待ち' : '利用の記録あり' : missing.length ? 'Use check needed' : 'Use recorded', reason: yes ? entity.kind === 'vault' ? missing.length ? 'アプリと保存情報の利用を確認する' : '少なくとも1台で利用を確認した記録' : missing.length ? 'この端末での設定・ログインを確認する' : 'この端末で保存情報を利用した記録' : entity.kind === 'vault' ? 'Checks for at least one device; see each app separately' : 'Checks for this device only' };
   }
-  const confirmed = data.version === 2 && data.securityModel.relations.some(r => (r.fromRef === node.id || r.toRef === node.id) && r.evidence === 'user-confirmed' && protectionBindingCurrent(data.securityModel,r) && twofasLinkCurrent(data.securityModel,r.id));
+  const confirmed = data.version === 2 && data.securityModel.relations.some(r => (r.fromRef === node.id || r.toRef === node.id) && r.evidence === 'user-confirmed' && protectionBindingCurrent(data.securityModel,r) && twofasLinkCurrent(data.securityModel,r.id) && enteLinkCurrent(data.securityModel,r.id));
   return { tone: confirmed ? 'recorded' : 'unknown', label: yes ? confirmed ? 'つながりの記録あり' : '関係は未確認' : confirmed ? 'Connection recorded' : 'Connection unconfirmed', reason: node.type };
 }
 
@@ -88,7 +101,7 @@ export function mapAffectedItems(data: Dataset, missing: string | readonly strin
     const reverse = new Set(['installed-on','stored-in','synced-via','restores-from']);
     const forward = new Set(['authenticates-to','unlocks','decrypts','session-for','grants-access-to','delegated-to','recovers','requires-for-restore','backs-up','hosts','routes','manages-domain']);
     let expanded=true;
-    while(expanded){expanded=false;for(const relation of data.securityModel.relations){if(relation.evidence!=='user-confirmed'||(!protectionBindingCurrent(data.securityModel,relation)||!twofasDependencyCurrent(data.securityModel,relation.id)))continue;const from=reverse.has(relation.kind)?relation.toRef:relation.fromRef,to=reverse.has(relation.kind)?relation.fromRef:relation.toRef;if((reverse.has(relation.kind)||forward.has(relation.kind))&&affected.has(from)&&!affected.has(to)){affected.add(to);expanded=true;}}for(const edge of data.dependencies)if(affected.has(edge.recoveryAssetId)&&!affected.has(edge.assetId)){affected.add(edge.assetId);expanded=true;}}
+    while(expanded){expanded=false;for(const relation of data.securityModel.relations){if(relation.evidence!=='user-confirmed'||(!protectionBindingCurrent(data.securityModel,relation)||!twofasDependencyCurrent(data.securityModel,relation.id)||!enteDependencyCurrent(data.securityModel,relation.id)))continue;const from=reverse.has(relation.kind)?relation.toRef:relation.fromRef,to=reverse.has(relation.kind)?relation.fromRef:relation.toRef;if((reverse.has(relation.kind)||forward.has(relation.kind))&&affected.has(from)&&!affected.has(to)){affected.add(to);expanded=true;}}for(const edge of data.dependencies)if(affected.has(edge.recoveryAssetId)&&!affected.has(edge.assetId)){affected.add(edge.assetId);expanded=true;}}
     const now = new Date().toISOString();
     for (const r of data.securityModel.routes) {
       const context = r.purpose==='device-management'?r.contexts[0]:r.contexts.includes('enrollment') ? 'enrollment' : r.contexts.includes('new-device') ? 'new-device' : 'normal';
