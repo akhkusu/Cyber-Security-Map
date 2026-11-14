@@ -17,7 +17,7 @@ function writable(data: Dataset) {
   return next;
 }
 function write(data: CurrentDataset, store: ReturnType<typeof empty>): CurrentDataset {
-  return currentDatasetSchema.parse({...data,securityModel:{...data.securityModel,revision:6,mapRecordsV1:store}});
+  return currentDatasetSchema.parse({...data,securityModel:{...data.securityModel,revision:data.securityModel.revision>=6?data.securityModel.revision:6,mapRecordsV1:store}});
 }
 function put(data: CurrentDataset, draft: MapRecordDraft) {
   const store=mapRecordStore(data)??empty();return write(data,{...store,drafts:[...store.drafts.filter(d=>d.id!==draft.id),draft]});

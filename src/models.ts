@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { emptySecurityModel, securityModelIssues, securityModelSchema } from './securityModel';
+import { keyStoreSchema } from './hardwareKeySchemas';
 import { nordSsoStoreSchema } from './nordSsoSchemas';
 import { mapRecordStoreSchema } from './mapRecordSchemas';
 import { nordRecoveryStoreSchema } from './nordRecoverySchemas';
@@ -110,6 +111,25 @@ export const currentDatasetSchema = z.object({
   securityModel: securityModelSchema.default(emptySecurityModel),
   deviceWorkflows: z.array(phoneWorkflowSchema).default([]),
 }).passthrough().superRefine((data, context) => {
+  if (data.securityModel.revision >= 7 && Object.hasOwn(data.securityModel, 'hardwareKeysV1')) {
+    const parsed = keyStoreSchema.safeParse(data.securityModel.hardwareKeysV1);
+    const fail = () => context.addIssue({code:'custom',path:['securityModel','hardwareKeysV1'],message:'invalid-hardware-key-store'});
+    if (!parsed.success) fail();
+    else {
+      const ids = new Set<string>(), refs = new Set([...data.assets,...data.securityModel.entities].map(e=>e.id));
+      for (const task of parsed.data.tasks) {
+        const account=data.assets.find(a=>a.id===task.accountRef&&a.kind==='account');
+        if(ids.has(task.id)||!account||!['google','apple','bitwarden'].includes(account.provider??'')||(task.mode&&!task.mode.startsWith(account.provider==='apple'?'apple-':account.provider==='google'?'google-':'bitwarden-')))fail();
+        ids.add(task.id);
+        if(task.deviceRef&&!data.assets.some(a=>a.id===task.deviceRef&&a.kind==='device'))fail();
+        if(task.browserRef&&!data.securityModel.entities.some(e=>e.id===task.browserRef&&e.kind==='installation'&&e.deviceRef===task.deviceRef))fail();
+        if(task.vaultRef&&!data.securityModel.entities.some(e=>e.id===task.vaultRef&&e.kind==='vault'&&e.productId==='bitwarden'&&e.authenticationAccountRef===task.accountRef))fail();
+        if(new Set(task.keyRefs).size!==task.keyRefs.length||task.keyRefs.some(ref=>!data.securityModel.entities.some(e=>e.id===ref&&e.kind==='security-key')))fail();
+        if(task.registrationRefs.some((ref,i)=>!data.securityModel.entities.some(e=>e.id===ref&&e.kind==='credential'&&e.subjectRef===task.accountRef&&e.storageRef===task.keyRefs[i])))fail();
+        if(Object.values(task.records).some(r=>r.refs.some(ref=>!refs.has(ref))||r.requires.some(ref=>!task.records[ref])))fail();
+      }
+    }
+  }
   for(const session of data.securityModel.entities.filter(e=>e.kind==='session'))if(session.kind==='session'&&(!data.assets.some(a=>a.id===session.accountRef&&a.kind==='account')||(session.deviceRef&&!data.assets.some(a=>a.id===session.deviceRef&&a.kind==='device'))||(session.installationRef&&!data.securityModel.entities.some(e=>e.id===session.installationRef&&e.kind==='installation'))))context.addIssue({code:'custom',path:['securityModel'],message:'invalid-session-reference'});
   if (data.securityModel.revision < 6 && data.securityModel.entities.some(e => e.kind === 'session')) context.addIssue({ code: 'custom', path: ['securityModel'], message: 'session-requires-revision-6' });
   if (data.securityModel.revision >= 6 && Object.hasOwn(data.securityModel, 'mapRecordsV1')) {

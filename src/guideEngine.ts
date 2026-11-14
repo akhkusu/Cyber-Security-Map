@@ -15,6 +15,7 @@ import { cloudRecipeFor, cloudRequiredSteps, cloudTaskRedirect } from './cloudRu
 import { nordAccountRecipe } from './nordAccountCatalog';
 import { recordCloudObservation, undoCloudObservation } from './cloudObservations';
 import { cloudHelpContext } from './cloudHelpContext';
+import { appleKeyRecoveryRecipe, hasAppleKeyRegistration } from './hardwareKeyCatalog';
 
 export const taskCursor = (assetId: string, recipeId: string, stepId: string) => `do/${assetId}/${recipeId}/${stepId}`;
 export const isRecorded = (asset: { controls: Asset['controls'] } | undefined, control: string) => !!asset && ['implemented', 'verified'].includes(asset.controls[control]);
@@ -28,6 +29,7 @@ export function back(data: Dataset): Dataset {
   return cursor ? { ...data, guide: { ...data.guide, cursor, history } } : data;
 }
 function baseRecipeFor(data: Dataset, asset: Asset, recipeId: string): Recipe | undefined {
+  if(recipeId==='recovery'&&asset.provider==='apple'&&hasAppleKeyRegistration(data,asset.id))return appleKeyRecoveryRecipe();
   if (recipeId.startsWith('cloud-')) return cloudRecipeFor(data, asset, recipeId);
   if (asset.provider === 'nord' && ['email-mfa', 'recovery'].includes(recipeId)) return nordAccountRecipe(recipeId === 'recovery', asset.id);
   if (recipeId.startsWith('native-password:')) return builtinPasswordRecipe(data, asset, recipeId.slice('native-password:'.length));
@@ -151,7 +153,7 @@ export function afterRecipe(data: Dataset, asset: Asset, recipeId: string): Data
   if (recipeId.startsWith('cloud-')) { const app = cloudInstallation(data, asset.id); if (app) return move(data, cloudSetupRoute({ ...data, guide: { ...data.guide, managerId: app.vaultRef, answers: { ...data.guide.answers, [`${app.vaultRef}:installation`]: app.id } } }, app.vaultRef!)); }
   if (recipeId === 'builtin-manager') { const email = data.assets.find(a => a.id === data.guide.accountId); return email ? beginRecipe(data, email.id, 'password') : move(data, 'start'); }
   if (recipeId === 'email-mfa') return selectedAuthenticator(data, asset.id) ? beginRecipe(data, asset.id, 'recovery') : move(data, `auth-location/${asset.id}`);
-  if (recipeId === 'recovery') return move(data, `recovery-location/${asset.id}`);
+  if (recipeId === 'recovery') return asset.provider==='apple'&&hasAppleKeyRegistration(data,asset.id)?requireAuthenticatorRoots(data,asset.id,'manager-select'):move(data, `recovery-location/${asset.id}`);
   if (recipeId === 'manager') { const email = data.assets.find(a => a.id === data.guide.accountId); if (!selectedAuthenticator(data, asset.id)) return move(data, `auth-location/${asset.id}`); const next = email ? beginRecipe(data, email.id, 'password') : move(data, 'device-select'); return requireAuthenticatorRoots(next, asset.id, next.guide.cursor); }
   if (recipeId === 'password' || recipeId.startsWith('native-password:')) return move(data, 'device-select');
   if (recipeId === 'device') return move(data, `backup-location/${asset.id}`);

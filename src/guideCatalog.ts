@@ -54,6 +54,7 @@ export const SOURCES = {
   iosLock: source('Apple · Device passcode', 'https://support.apple.com/en-ie/119586', 'iPhone / iPad'),
   androidLock: source('Google · Screen lock', 'https://support.google.com/android/answer/9079129', 'Android / manufacturer variations'),
   appleMfa: source('Apple · 2ファクタ認証 / Two-factor authentication', 'https://support.apple.com/ja-jp/102660', 'iPhone / iPad / Mac / Web'),
+  appleSecurityKeys: { ...source('Apple · Account security keys', 'https://support.apple.com/ja-jp/102637', 'FIDO Certified / separate spare / limits of recovery'), checked: '2026-11-14' },
   appleRecovery: source('Apple · Trusted phone numbers and devices', 'https://support.apple.com/en-us/122621', 'iOS / iPadOS / macOS / Web'),
   googleAuthMenus: source('iA · Google Authenticatorの導入・操作図', 'https://files.ia.ca/-/media/files/ia/authentification-multifactorielle-conseillers/pdf/2025/f13-1234a_installationguide_googleauthenticator_advisors_acc.pdf', 'App menu images in official service deployment guide / not a Google service enrollment recipe'),
   bwAuthenticator: source('Bitwarden · 単独のAuthenticatorアプリ', 'https://bitwarden.com/help/bitwarden-authenticator/', 'iOS 15+ / Android 9+ / local versus synced codes'),

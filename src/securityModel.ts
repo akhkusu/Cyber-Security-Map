@@ -74,7 +74,7 @@ const controlBaselineSchema = z.object({
   answerKey: id.optional(), answer: assessmentAnswerSchema.optional(),
 }).passthrough();
 export const securityModelSchema = z.object({
-  revision: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]), entities: z.array(securityEntitySchema).default([]), relations: z.array(securityRelationSchema).default([]),
+  revision: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]), entities: z.array(securityEntitySchema).default([]), relations: z.array(securityRelationSchema).default([]),
   facts: z.array(accessFactSchema).default([]), routes: z.array(accessRouteSchema).default([]),
   lifecycle: z.record(z.string(), lifecycleSchema).default({}),
   controlBaselines: z.record(z.string(), controlBaselineSchema).default({}),

@@ -10,6 +10,7 @@ import { entityKindLabel, mapRelationLabel, typedMapStatus, type MapConnection, 
 import { tx } from './ui';
 import { extraSetting } from './protonPassExtra';
 import { nordRecoveryTasks } from './nordRecoverySchemas';
+import { HardwareKeyRecords } from './HardwareKeyGuide';
 import { AccessChecks } from './AccessChecks';
 
 export function NativeMapDetails({ data, item, nodes, connections, language, startGuide, missing }: { data: Dataset; item: MapItem; nodes: MapItem[]; connections: MapConnection[]; language: Language; startGuide: (data: Dataset) => Promise<void>; missing: string }) {
@@ -38,6 +39,7 @@ export function NativeMapDetails({ data, item, nodes, connections, language, sta
     {vault && cloudVault(data, vault.id) && install && data.version === 2 && data.deviceWorkflows.filter(w => Object.entries(w.answers).some(([key, ref]) => key.startsWith('cloud-destination:') && (ref === install.id || ref === `installation:${install.id}`))).map(w => <Link className="button secondary" key={w.id} to={`/phone/${w.id}`}>{tx(language, 'Continue this phone change', 'この機種変更を続ける')}<ArrowRight size={16} /></Link>)}
     {vault?.productId === 'proton-pass' && <p>{tx(language, 'Optional extra password: ', '任意の追加パスワード：')}{tx(language, extraSetting(data, vault.id)?.extraState === 'enabled' ? 'Enabled setting recorded; see use checks separately' : extraSetting(data, vault.id)?.extraState === 'disabled' ? 'Not configured at inspection' : 'Unconfirmed', extraSetting(data, vault.id)?.extraState === 'enabled' ? '有効な設定の記録あり（利用確認は別）' : extraSetting(data, vault.id)?.extraState === 'disabled' ? '確認時点では未設定' : '未確認')}</p>}
     {vault?.productId === 'nordpass' && nordRecoveryTasks(data).filter(t => t.vaultRef === vault.id).map(t => <Link key={t.id} className="record-link" to={`/recover/nord/${t.id}`}>{tx(language, t.status === 'completed' ? 'Review vault recovery' : 'Continue vault recovery', t.status === 'completed' ? '保管庫の復旧記録を確認する' : '保管庫の復旧を続ける')}</Link>)}
+    <HardwareKeyRecords data={data} language={language} targetRef={entity.id} />
     <AccessChecks data={data} targetId={entity.kind === 'installation' && vault ? vault.id : entity.kind === 'credential' && entity.credentialType === 'password' && install ? entity.protonPassExtraCredential === 'v1' ? vault?.id ?? entity.subjectRef : entity.subjectRef : item.id} installationRef={install?.id} credentialRef={entity.kind === 'credential' && entity.credentialType === 'password' ? entity.id : undefined} missing={missing} language={language} /><h3>{tx(language, 'Confirmed connections', '確認したつながり')}</h3>{related.length ? <ul>{related.map(r => <li key={r.id}>{nodes.find(n => n.id === r.recoveryAssetId)?.name} → {nodes.find(n => n.id === r.assetId)?.name} · {mapRelationLabel(language, r.relation)}</li>)}</ul> : <p className="subtle">{tx(language, 'Choosing an item does not confirm its connections. Check it in the guide first.', '項目を選んだだけでは、つながりを確認済みにしません。先にガイドで確認します。')}</p>}
   </section>;
 }

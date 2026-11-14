@@ -91,3 +91,5 @@ NordPassの[忘れたマスターの復旧](docs/NORDPASS-RECOVERY.md)では、�
 既存の個人用Nord AccountのGoogle・Apple接続ログインを追加しました。[専用契約](docs/NORDPASS-CONNECTED-SIGN-IN.md)に、実際の本人情報・独立した復旧・新端末での利用・主ガイドを保つ補助経路・残る範囲を記載しています。
 
 Security Mapに、回線・物理キー・認証の登録・セッション・権限・復旧協力等を一問ずつ記録する任意ガイドを追加しました。[登録・訂正・非表示の契約](docs/SECURITY-MAP-RECORDS.md)に、主ガイド保持、実利用との区別、参照の訂正と失効、既存データの保持を記載しています。
+
+Google・Apple Account・Bitwardenの[物理キーとパスキー](docs/HARDWARE-KEY-GUIDE.md)を、主ガイドから必要時に始められます。設定の確認と実際の利用を分け、Appleの別々の2本、Bitwardenのログインと保管庫の復号、既存方法を残した新規ログイン確認へ分岐します。端末内・同期型パスキーや全管理環境への対応とは区別しています。
