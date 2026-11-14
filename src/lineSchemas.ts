@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Dataset, CurrentDataset } from './models';
 import type { SecurityModel, AccessFact } from './securityModel';
+import {lineAccessReceiptFresh,lineAccessProfile,lineUsesPasskey,lineAccessRefs} from './lineAccessSchemas';
 
 const ref = z.string().min(1), time = z.string().datetime({ offset: true });
 const phoneOS = z.enum(['ios', 'android', 'unknown']);
@@ -23,7 +24,7 @@ export const lineTaskSchema = z.object({
   destinationAppRef: ref.optional(), destinationSessionRef: ref.optional(), dataRef: ref.optional(), backupRef: ref.optional(),
   cursor: z.string().default('account'), history: z.array(z.string()).default([]), answers: z.record(z.string(), z.string()).default({}),
   records: z.record(z.string(), ref).default({}), status: z.enum(['active', 'deferred', 'completed']).default('active'),
-  cutover: z.object({ phase: z.enum(['requested', 'applied']), requestedAt: time, appliedAt: time.optional(), epoch: ref }).passthrough().optional(),
+  cutover: z.object({ phase: z.enum(['requested', 'applied']), requestedAt: time, appliedAt: time.optional(), epoch: ref, passkeyBinding:z.object({keyRef:ref,storeRef:ref,rootRef:ref,appRef:ref}).passthrough().optional() }).passthrough().optional(),
   createdAt: time, updatedAt: time,
 }).passthrough();
 export type LineTask = z.infer<typeof lineTaskSchema>;
@@ -57,24 +58,32 @@ export function lineReceiptCurrent(store: LineStore, id: string): boolean {
   return true;
 }
 export const lineRecorded = (data: Dataset, task: LineTask, step: string) => {
-  const s = lineStore(data), id = task.records[step]; return !!s && !!id && lineReceiptCurrent(s, id);
+  const s = lineStore(data), id = task.records[step]; return data.version===2&&!!s&&!!id&&lineProofCurrent(data.securityModel,s,id);
 };
+function lineProofCurrent(model:SecurityModel,s:LineStore,id:string):boolean{
+  if(!lineReceiptCurrent(s,id))return false;
+  const records=new Map(s.receipts.map(r=>[r.id,r])),pending=[id],seen=new Set<string>();
+  while(pending.length){const ref=pending.pop()!;if(seen.has(ref))continue;seen.add(ref);const r=records.get(ref)!;if(!lineAccessReceiptFresh(model,s,r))return false;pending.push(...r.requires);}
+  return true;
+}
 export function lineLinkCurrent(model: SecurityModel, id: string): boolean {
   const s = lineStore({ securityModel: model }), l = s?.links.find(l => l.relationRef === id);
-  return !l || !!s && lineReceiptCurrent(s, l.receiptRef);
+  return !l || !!s && lineProofCurrent(model,s,l.receiptRef);
 }
 export function lineFactCurrent(model: SecurityModel, fact: AccessFact): boolean {
   const s = lineStore({ securityModel: model }), p = s?.proofs.find(p => p.factRef === fact.id);
   if(s?.tasks.some(t=>t.cutover?.phase==='requested'&&t.sourceSessionRef&&fact.requiredRefs.includes(t.sourceSessionRef)))return false;
   if (!p) return true; const t = s?.tasks.find(t => t.id === p.taskRef);
-  return !!s && !!t && t.cutover?.phase === 'applied' && t.cutover.epoch === p.epoch && lineReceiptCurrent(s, p.receiptRef);
+  if(s&&t&&typeof fact.linePasskeyUseV1==='string'){const b=t.cutover?.passkeyBinding;if(!b||t.answers['key-login:result']!=='passkey'||b.keyRef!==fact.linePasskeyUseV1||![b.keyRef,b.storeRef,b.rootRef,b.appRef].every(ref=>fact.requiredRefs.includes(ref))||!t.records['key-login:result']||!lineProofCurrent(model,s,t.records['key-login:result']))return false;}
+  return !!s && !!t && t.cutover?.phase === 'applied' && t.cutover.epoch === p.epoch && lineProofCurrent(model,s,p.receiptRef);
 }
 export function lineMoveReady(data: Dataset, task: LineTask): boolean {
   if (data.version !== 2 || !lineDeviceContextCurrent(data, task) || task.cutover?.phase !== 'applied' || !task.newDeviceRef || !task.accountRef || !task.recoveryMailRef || !task.destinationAppRef || !task.destinationSessionRef) return false;
-  const refs = [task.newDeviceRef, task.accountRef, task.destinationAppRef, task.destinationSessionRef,task.recoveryMailRef];
+  if(lineUsesPasskey(data,task)){const p=lineAccessProfile(data,task.id);if(!p?.keyRef||!p.storeRef||!p.rootRef||!p.newStoreAppRef)return false;}
+  const refs = [task.newDeviceRef, task.accountRef, task.destinationAppRef, task.destinationSessionRef,task.recoveryMailRef,...lineAccessRefs(data,task)];
   if (refs.some(id => ['lost', 'unavailable', 'revoked', 'deleted', 'retired', 'transferred'].includes(data.securityModel.lifecycle[id]?.state ?? ''))) return false;
   const records = ['new-account', 'data-read', 'future-access', 'old-session'];
-  return records.every(id => lineRecorded(data, task, id)) && refs.every(id => {
+  return records.every(id => lineRecorded(data, task, id)) && [task.newDeviceRef,task.accountRef,task.destinationAppRef,task.destinationSessionRef,...(!lineAccessProfile(data,task.id)?[task.recoveryMailRef]:[])].every(id => {
     const reset = data.securityModel.lifecycle[id]?.accessResetAt;
     return !reset || records.every(step => Date.parse(lineStore(data)!.receipts.find(r => r.id === task.records[step])!.at) > Date.parse(reset));
   });

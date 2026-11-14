@@ -10,18 +10,15 @@ export const PHONE_PRODUCT_NAMES: Record<PhoneProduct, Copy> = {
   eid: c('Electronic ID or certificate', '電子ID・電子証明書'), work: c('Work or school access', '仕事・学校の利用'),
   other: c('Another app that needs a move', 'ほかに引き継ぐアプリがある'), unknown: c('I still need to identify some items', 'まだ分からない項目がある'),
 };
-export type LineStep = {
-  id: string; kind: 'question' | 'action' | 'blocked' | 'finished' | 'prepared'; title: Copy; text?: Copy;
-  place?: Copy; action?: Copy; expected?: Copy; button?: Copy; choices?: { value: string; label: Copy }[];
-  sources: string[]; phase: 'prepare' | 'transfer' | 'use'; effect?: 'source' | 'backup' | 'request' | 'sign-in' | 'read';
-};
-const ch = (value: string, en: string, ja = en) => ({ value, label: c(en, ja) });
-const q = (id: string, title: Copy, choices: LineStep['choices'], sources = ['lineQr'], text?: Copy): LineStep => ({ id, kind: 'question', title, choices, sources, text, phase: 'prepare' });
-const a = (id: string, title: Copy, place: Copy, action: Copy, expected: Copy, sources: string[] = ['lineQr'], extra: Partial<LineStep> = {}): LineStep => ({ id, kind: 'action', title, place, action, expected, sources, phase: 'prepare', button: c('I checked this', '確認しました'), ...extra });
-const blocked = (id: string, title: Copy, text: Copy, sources = ['lineMethods']): LineStep => ({ id, kind: 'blocked', title, text, sources, phase: 'prepare' });
+export type {LineStep} from './lineStep';
+import {lineAction as a,lineQuestion as q,lineChoice as ch,lineBlocked as blocked,type LineStep} from './lineStep';
+import {lineAccessProfile,lineUsesPasskey} from './lineAccessSchemas';
+import {linePasskeyMovePreparation,linePasskeyNativeSteps} from './linePasskeyMoveCatalog';
+import {lineFutureAccessV2} from './lineAccessCatalog';
 const sameAccount = c('Check the exact existing LINE account; do not create a new one.', '今回の既存LINEアカウントか確かめてください。「新規登録」は使いません。');
 
 function futureAccessSteps(data: CurrentDataset, t: LineTask, post: boolean): LineStep[] {
+  if(lineAccessProfile(data,t.id))return lineFutureAccessV2(data,t,post);
   const label = data.assets.find(d => d.id === (post ? t.newDeviceRef : t.oldDeviceRef))?.name ?? (post ? 'New phone' : 'Previous phone');
   const place = c(`${post?'New phone':'Previous phone'} · ${label} · LINE`, `${post?'新端末':'旧端末'} · ${label} · LINE`), out: LineStep[] = [];
   out.push(a(post?'current-access-home':'access-home', c('Open the LINE Home tab', 'LINEの「ホーム」を開く'), place, c('Return to LINE’s Home tab.', 'LINEの「ホーム」へ戻ります。'), c('Home is open.', '「ホーム」が開いていること。'), ['lineAccount']));
@@ -42,11 +39,11 @@ function futureAccessSteps(data: CurrentDataset, t: LineTask, post: boolean): Li
   out.push(a('future-access', c('Keep those sign-in details available', '今後使うログイン情報を確保する'), place, c('Check that the same registered mailbox and saved LINE password will remain accessible without the old phone. Keep them separate from the app storage passphrase and the chat-backup PIN. This records availability, not a password-reset test.', '登録した同じメールと、今のLINEパスワードを、旧端末がなくても取り出せる状態にします。このアプリの保存用パスフレーズやトークのバックアップ用PINとは別です。情報を確保した記録であり、パスワード再設定の試験ではありません。'), c('The mailbox and saved LINE password are accessible outside the old phone.', '旧端末の外で、登録メールと保存したLINEパスワードを利用できること。'), ['lineAccount', 'linePremium'], { button: c('I have access to them', '取り出せることを確認しました') }));
   return out;
 }
-function restorationSteps(t:LineTask,newPlace:Copy,standard:boolean,premium:boolean,android:boolean):LineStep[]{
+function restorationSteps(t:LineTask,newPlace:Copy,standard:boolean,premium:boolean,android:boolean,qr=true):LineStep[]{
   const out:LineStep[]=[];
   for(let index=0;index<10;index++){
     const id=`restore-screen:${index}`,screen=t.answers[id];
-    const choices=[ch('restore','Restore chat history','トーク履歴を復元'),...(!premium?[ch('pin','Enter backup PIN','バックアップ用PINの入力')]:[ch('password','Enter LINE password','LINEパスワードの入力')]),...(standard&&android?[ch('cloud','Choose a Google account','Google アカウントを選択')]:[]),...(!standard&&!premium?[ch('skip','Skip on the chat-restore screen','トーク履歴の復元画面の「スキップ」')]:[]),ch('progress','Restoration is in progress','トークを復元中'),ch('home','Home or Chats is open','ホーム・トークが開いた'),ch('other','An error or another screen','エラー・別の画面')];
+    const choices=[ch('restore','Restore chat history','トーク履歴を復元'),...(!premium?[ch('pin','Enter backup PIN','バックアップ用PINの入力')]:[ch('password','Enter LINE password','LINEパスワードの入力')]),...(standard&&android?[ch('cloud','Choose a Google account','Google アカウントを選択')]:[]),...(!standard&&!premium&&qr?[ch('skip','Skip on the chat-restore screen','トーク履歴の復元画面の「スキップ」')]:[]),ch('progress','Restoration is in progress','トークを復元中'),ch('home','Home or Chats is open','ホーム・トークが開いた'),ch('other','An error or another screen','エラー・別の画面')];
     out.push({...q(id,c('What does the restoration screen show now?','復元の画面には今、何が表示されていますか？'),choices,['lineRestore','lineQrGuide','linePremium']),phase:'use'});
     if(!screen)return out;
     if(screen==='home')return out;
@@ -128,7 +125,14 @@ export function lineSteps(data: Dataset, t: LineTask): LineStep[] {
       c(mode === 'qr' ? 'Keep the old main LINE usable and online. You selected only the last 14 days, or left chat preservation unconfirmed. Recent chats may still move automatically. This does not create a cloud backup.' : mode === 'standard' ? 'Read the completed backup status and its date in LINE. Make sure it covers the messages you want and the chosen actual cloud account is available on the new phone. Do not treat an enabled schedule as a completed backup.' : 'Read the Premium Backup screen. Its initial backup must have completed, required content must be included, and no pending or excluded data you still need may remain. Keep the existing LINE password; resetting it during transfer can delete this backup.', mode === 'qr' ? '旧メイン端末のLINEを使えて、通信できる状態にします。直近14日分、または履歴の保管を確認しない選択です。直近分が自動移行する場合もあり、クラウドバックアップを作成した意味ではありません。' : mode === 'standard' ? 'LINEで正常終了と保存日時を読みます。必要な文章が対象に入り、新端末でも同じ実際のクラウドアカウントを使えることを確認します。自動保存がオンという表示だけでは正常終了にしません。' : 'プレミアムの画面で初回バックアップの終了と必要な内容を確認します。保存待ち・対象外に、まだ残したいデータがあれば未完了です。今のLINEパスワードを確保し、引き継ぎ中に再設定しません。'),
       c('The chosen history scope is ready for this actual transfer method.', '今回の方式で、選んだ履歴を移す準備ができていること。'), ['lineQr', mode === 'premium' ? 'linePremium' : 'lineBackup'], { effect: 'backup', button: c('I checked the result', '結果を確認しました') }));
     if (!fresh) { out.push({ id: 'prepared', kind: 'prepared', title: c('Continue when you have the new phone', '新しいスマホを用意したら続けられます'), text: c('Preparation is saved. No phone transfer or new login has been recorded.', '準備を保存しています。機種変更や新端末でのログインは完了にしていません。'), sources: ['linePrepare'], phase: 'prepare' }); return out; }
-    if (answer['destination-state'] !== 'same') {
+    const keyEligible=lineUsesPasskey(data,t)&&sameOS&&(answer.history==='none'||answer.history==='recent'||answer.history==='text');
+    if(keyEligible){
+      if(!ask(q('transfer-method',c('How will you sign in to the new LINE?','新端末のLINEへ、どの方法で入りますか？'),[ch('qr','Use the old phone’s transfer QR','旧端末の引き継ぎQRを使う'),ch('passkey','Use the passkey prepared on the new phone','新端末に準備したパスキーを使う')],['lineQr','linePasskeyMove'],c('A new main-device sign-in can end the old LINE session. Your history preparation comes first.','新しいメイン端末でログインすると、旧LINEの利用が終わる場合があります。先に履歴の準備を済ませます。'))))return out;
+      if(answer['transfer-method']==='passkey'){
+        const preparation=linePasskeyMovePreparation(data,t,oldPlace);out.push(...preparation);if(preparation.at(-1)?.kind==='blocked'||preparation.some(s=>s.kind==='question'&&!answer[s.id]))return out;
+      }
+    }
+    if (answer['destination-state'] !== 'same' && !(keyEligible&&answer['transfer-method']==='passkey')) {
       out.push(a('new-login', c('Choose Log in on the new phone', '新端末で「ログイン」を選ぶ'), newPlace, c('Tap Log in, not Sign up.', '「新規登録」ではなく「ログイン」をタップします。'), c('The sign-in options are visible.', 'ログイン方法が表示されていること。'), ['lineQr'], { button: c('I opened the login options', 'ログイン方法を開きました') }));
       if (fresh.operatingSystem === 'android') out.push(a('new-role', c('Choose Main device', '「メイン端末」を選ぶ'), newPlace, c('If LINE asks for the device role, select Main device and confirm OK. If the role was already selected, check it is the main-device transfer.', '端末の役割を聞かれた場合は「メイン端末」を選び「OK」で確認します。既に選択済みなら、メイン端末の引き継ぎであることを確かめます。'), c('This is the new main-device sign-in flow.', '新メイン端末へのログインを進めていること。'), ['lineQr', 'lineDevices']));
       out.push(a('new-qr', c('Choose QR code login', '「QRコードでログイン」を選ぶ'), newPlace, c('Tap Log in with QR code.', '「QRコードでログイン」をタップします。'), c('The QR sign-in option is open.', 'QRログインの画面が開いていること。')));
@@ -146,7 +150,10 @@ export function lineSteps(data: Dataset, t: LineTask): LineStep[] {
     return out;
   }
   if (!fresh) return [blocked('destination-missing', c('Keep this transfer record', '引き継ぎの記録を残す'), c('The recorded new phone is missing. Do not repeat a main-device switch.', '記録した新端末が見つかりません。メイン端末の切替を繰り返さないでください。'))];
-  if (t.cutover.phase === 'requested' && answer['destination-state'] !== 'same') out.push(a('native-login', c('Confirm Log in in the new LINE', '新端末のLINEで「ログイン」を確定する'), newPlace, c('On the account you checked, tap LINE’s final Log in button once. If you already did so, do not repeat it: continue here to check the current result. The old main LINE can stop working from this point.', '確認したアカウントで、LINE側の最後の「ログイン」を一度押します。既に押した場合は繰り返さず、ここから現在の結果を確認してください。この時点から旧メインのLINEを使えなくなる場合があります。'), c('You have performed the native operation or are ready to report its current result.', 'LINE側の操作を行った、または現在の結果を確認できる状態であること。'), ['lineQr'], { phase: 'transfer', button: c('Check the current result', '現在の結果を確認する') }));
+  if(t.cutover.passkeyBinding){
+    const native=linePasskeyNativeSteps(t,newPlace,fresh.operatingSystem==='android');out.push(...native);if(!answer['key-login:result']||answer['key-login:result']==='unknown')return out;
+  }
+  if (t.cutover.phase === 'requested' && answer['destination-state'] !== 'same' && answer['transfer-method']!=='passkey') out.push(a('native-login', c('Confirm Log in in the new LINE', '新端末のLINEで「ログイン」を確定する'), newPlace, c('On the account you checked, tap LINE’s final Log in button once. If you already did so, do not repeat it: continue here to check the current result. The old main LINE can stop working from this point.', '確認したアカウントで、LINE側の最後の「ログイン」を一度押します。既に押した場合は繰り返さず、ここから現在の結果を確認してください。この時点から旧メインのLINEを使えなくなる場合があります。'), c('You have performed the native operation or are ready to report its current result.', 'LINE側の操作を行った、または現在の結果を確認できる状態であること。'), ['lineQr'], { phase: 'transfer', button: c('Check the current result', '現在の結果を確認する') }));
   const result = q('cutover-result', c('What does the new LINE show now?', '新端末のLINEには今、何が表示されていますか？'), [ch('restore', 'Restore chat history', 'トーク履歴の復元'), ch('home', 'The Home or Chats screen', 'ホーム・トーク画面'), ch('waiting', 'Still waiting / an error / another account', '待機中・エラー・別アカウント')], ['lineQr', 'lineRestore'], c('Report the actual screen. A copy or login button alone does not prove the history was restored.', '実際の画面を選びます。コピーやログインの操作だけで、履歴が戻ったとは扱いません。')); result.phase = 'use'; out.push(result);
   if (!answer['cutover-result']) return out;
   if (answer['cutover-result'] === 'waiting') { out.push(blocked('cutover-unknown', c('Keep the transfer result unconfirmed', '引き継ぎの結果を未確認で残す'), c('Keep both apps and existing data. Do not repeat the switch, create an account, or delete the old session record. Correct the current-screen answer when the result is known.', '両方のアプリとデータを残します。切替の繰り返し、新規作成、旧ログイン記録の削除は行いません。結果が分かったら、現在の画面の回答を訂正します。'))); return out; }
@@ -155,9 +162,9 @@ export function lineSteps(data: Dataset, t: LineTask): LineStep[] {
   if (answer['cutover-result'] === 'restore') {
     if(answer.history!=='none'){
       const standard=answer.history==='text'&&sameOS,premium=!['recent','none'].includes(answer.history)&&!standard;
-      const restore=restorationSteps(t,newPlace,standard,premium,fresh.operatingSystem==='android');out.push(...restore);
+      const restore=restorationSteps(t,newPlace,standard,premium,fresh.operatingSystem==='android',answer['transfer-method']!=='passkey');out.push(...restore);
       const last=restore.at(-1);if(!last||last.kind==='blocked'||t.answers[last.id]!=='home')return out;
-    }else out.push(a('restore-omit',c('Skip only the older backup restoration','以前のバックアップの復元だけを省く'),newPlace,c('Only if older-backup restoration is not needed, tap Skip on the chat-restore screen. Recent QR chats may still move automatically. Chat preservation stays unconfirmed here.','以前のバックアップの復元が不要な場合だけ、トーク復元画面の「スキップ」を選びます。QRで直近分が自動移行する場合があり、このアプリでは履歴の保管は未確認のままです。'),c('You knowingly skipped the older cloud backup without claiming chat preservation was checked.','以前のクラウドバックアップを復元せず進み、履歴の保管を確認済みにしていないこと。'),['lineQrGuide'],{phase:'use'}));
+    }else out.push(a('restore-omit',c('Skip only the older backup restoration','以前のバックアップの復元だけを省く'),newPlace,c(t.cutover?.passkeyBinding?'Only if you do not need chat restoration and LINE actually offers Skip on this screen, select it. If the item is absent, leave this step unfinished. Chat preservation stays unconfirmed.':'Only if older-backup restoration is not needed, tap Skip on the chat-restore screen. Recent QR chats may still move automatically. Chat preservation stays unconfirmed here.',t.cutover?.passkeyBinding?'履歴の復元が不要で、LINEの現在の画面に「スキップ」がある場合だけ選びます。項目がなければ、この操作を未完了で残します。履歴の保管は未確認のままです。':'以前のバックアップの復元が不要な場合だけ、トーク復元画面の「スキップ」を選びます。QRで直近分が自動移行する場合があり、このアプリでは履歴の保管は未確認のままです。'),c('You knowingly skipped the older cloud backup without claiming chat preservation was checked.','以前のクラウドバックアップを復元せず進み、履歴の保管を確認済みにしていないこと。'),['lineQrGuide'],{phase:'use'}));
   }
   out.push(a('new-account', c('Open the intended LINE account on the new phone', '新端末で、対象のLINEアカウントを開く'), newPlace, c('Check the same existing account, not a new account or another person’s account. Open Home or Chats without signing out. This records current new-phone access, not a separate MFA test.', '新規や他人のものではなく、今回の同じ既存アカウントか確かめます。ログアウトせず「ホーム」か「トーク」を開いてください。新端末での現在の利用を記録し、別のMFA試験とは扱いません。'), c('The exact intended existing account opens on the new main phone.', '新メイン端末で、今回の同じ既存アカウントを開けること。'), ['lineQr'], { phase: 'use', effect: 'sign-in', button: c('I opened the correct account', '対象のアカウントを開けました') }));
   out.push(a('data-read', c(answer.history === 'none' ? 'Check the account data you will keep' : 'Open the history you chose to keep', answer.history === 'none' ? '残して使うアカウント情報を確認する' : '残すと決めた履歴を開く'), newPlace, c(answer.history === 'none' ? 'Check the intended account and the account information you need. Your record leaves chat preservation unconfirmed.' : 'Wait for the selected restore to finish. Open the actual messages and media in the chosen date range, including older text or media if you requested them. A thumbnail, a Home screen or a running restore is not completion. Do not paste chat contents here.', answer.history === 'none' ? '対象アカウントと、必要なアカウント情報を確認します。トーク履歴の保管・復元は未確認のまま残します。' : '選んだ復元の終了を待ち、必要な期間の文章・メディアを実際に開きます。以前の文章やメディアを選んだ場合は、その範囲も確かめます。プレビュー・ホーム表示・復元中だけでは完了にしません。会話はここへ入力しません。'), c('Your selected data can actually be read, with no unresolved restoration needed for that scope.', '選んだ対象を実際に読めて、その範囲の必要な復元が未解決で残っていないこと。'), ['lineData', 'lineRestore'], { phase: 'use', effect: 'read', button: c('I checked the selected data', '選んだデータを確認しました') }));
@@ -171,4 +178,4 @@ export function lineSteps(data: Dataset, t: LineTask): LineStep[] {
 export function currentLineStep(data: Dataset, t: LineTask): LineStep {
   const steps = lineSteps(data, t); return steps.find(s => s.id === t.cursor) ?? steps.find(s => ['question', 'action'].includes(s.kind) && !lineRecorded(data, t, s.id)) ?? steps.at(-1)!;
 }
-export function lineCanStartTransfer(data: Dataset, t: LineTask) { return !!t.newDeviceRef && (t.answers['destination-state']==='same' ? ['account','future-access','history','coverage'].every(id=>lineRecorded(data,t,id)) : linePrepared(data,t)); }
+export function lineCanStartTransfer(data: Dataset, t: LineTask) { if(t.answers['transfer-method']==='passkey'&&(!lineUsesPasskey(data,t)||t.oldOS!==t.newOS||t.answers.history!=='none'&&!lineRecorded(data,t,'key-move:pin-keep')))return false;return !!t.newDeviceRef && (t.answers['destination-state']==='same' ? ['account','future-access','history','coverage'].every(id=>lineRecorded(data,t,id)) : linePrepared(data,t)); }

@@ -1,11 +1,16 @@
 import type { Dataset, Language } from './models';
-import { lineStore, lineMoveReady, lineReceiptCurrent } from './lineSchemas';
+import { lineStore, lineMoveReady, lineReceiptCurrent,lineRecorded,lineFactCurrent } from './lineSchemas';
+import {lineAccessProfile} from './lineAccessSchemas';
 
 export function lineMapStatus(data: Dataset, ref: string, language: Language) {
-  const store = lineStore(data), tasks = store?.tasks.filter(t => [t.accountRef, t.sourceAppRef, t.sourceSessionRef, t.destinationAppRef, t.destinationSessionRef, t.dataRef, t.backupRef].includes(ref)) ?? [];
+  const store = lineStore(data), tasks = store?.tasks.filter(t => [t.accountRef, t.sourceAppRef, t.sourceSessionRef, t.destinationAppRef, t.destinationSessionRef, t.dataRef, t.backupRef,lineAccessProfile(data,t.id)?.keyRef].includes(ref)) ?? [];
   const isAccount = data.assets.some(a => a.id === ref && a.provider === 'line');
   if (!tasks.length && !isAccount) return;
   const ja = language === 'ja', current = [...tasks].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0];
+  if(current&&lineAccessProfile(data,current.id)?.keyRef===ref){
+    const prepared=lineRecorded(data,current,'access2:key-check'),used=data.version===2&&store?.proofs.some(p=>p.taskRef===current.id&&p.kind==='sign-in'&&data.securityModel.facts.some(f=>f.id===p.factRef&&f.linePasskeyUseV1===ref&&lineFactCurrent(data.securityModel,f)));
+    return {tone:used?'recorded':'unknown',label:ja?used?'パスキーでのログインを記録':prepared?'パスキーを準備済み・ログイン未確認':'パスキーの保存先を確認する':used?'Passkey login recorded':prepared?'Passkey prepared; login untested':'Passkey store needs checking',reason:ja?'登録・保存先・実際の利用を区別。履歴復元とは別':'Registration, storage and actual use are separate from chat restoration'};
+  }
   const oldEnded = current?.sourceAppRef === ref && current.cutover?.phase === 'applied';
   if (oldEnded) return { tone: 'unknown', label: ja ? '旧メインのLINEは利用終了' : 'Old main LINE session ended', reason: ja ? 'スマホ自体と、ほかのアプリの用途は別' : 'The phone and other apps keep their own roles' };
   if (current?.backupRef === ref) {

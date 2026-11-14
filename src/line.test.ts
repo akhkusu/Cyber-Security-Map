@@ -21,6 +21,8 @@ export function lineFixture(oldOS: 'ios'|'android'='ios', newOS: 'ios'|'android'
   data.guide={...data.guide,cursor:'manager-select',history:['start','provider'],answers:{private:'leave main alone'},steps:{unrelated:{status:'done',updatedAt:new Date().toISOString()}}};
   data=startPhoneWorkflow(data,'/guide','old','phone');Object.assign(data.deviceWorkflows[0],{newDeviceRef:planned?undefined:'fresh',answers:{stage:planned?'planning':'using',availability:'available',ownership:'personal',setup:'ready',authenticator:'none','special-apps':'yes','phone-line':'no-line','old-fate':'sell','ios-generation':'18','sale-theft-menu':'older','android-maker':'pixel'}});
   const inventory=startPhoneProducts(data,'phone');data=addPhoneProduct(inventory.data,inventory.id,'line');data=reviewPhoneProducts(data,inventory.id) as CurrentDataset;
+  // Keep the original revision13 tasks as explicit compatibility fixtures.
+  const {lineAccessV1: ignored,...model}=data.securityModel;void ignored;data={...data,securityModel:{...model,revision:13}};
   return {data,inventoryRef:inventory.id,id:lineStore(data)!.tasks[0].id};
 }
 export function driveLine(data:CurrentDataset,id:string,answers:Record<string,string>={},until?:string) {
@@ -28,7 +30,7 @@ export function driveLine(data:CurrentDataset,id:string,answers:Record<string,st
     const t=lineTask(data,id)!,s=currentLineStep(data,t);if(s.id===until||['finished','prepared','blocked'].includes(s.kind))return data;
     let next:CurrentDataset;
     if(s.kind==='question'){
-      const defaults:Record<string,string>={account:'add','destination-state':'login','new-version':'current','source-state':'usable',version:'current','recovery-email':'available','recovery-mail':'add','recovery-provider':'google','password-access':'known',history:'recent','destination-match':'yes','cutover-result':'home','number-changed':'no','premium-state':'using','pin-state':'ready'};
+      const defaults:Record<string,string>={account:'add','destination-state':'login','new-version':'current','source-state':'usable',version:'current','recovery-email':'available','recovery-mail':'add','recovery-provider':'google','access2:mail-state':'available','access2:mail-account':'add','access2:mail-provider':'google','access2:method':'password','password-access':'known',history:'recent','destination-match':'yes','cutover-result':'home','number-changed':'no','premium-state':'using','pin-state':'ready'};
       const value=answers[s.id]??(s.id.startsWith('restore-screen:')?'home':['source-app','previous-app'].includes(s.id)?s.choices![0].value:s.id==='backup-account'?data.assets.find(a=>a.id===t.oldDeviceRef)?.operatingSystem==='ios'?'add:apple':'add:google':defaults[s.id]);if(!value)throw Error('Missing test choice '+s.id);
       next=answerLine(data,id,value) as CurrentDataset;
     }else next=confirmLine(data,id) as CurrentDataset;

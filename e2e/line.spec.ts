@@ -1,37 +1,10 @@
-import { expect, test, type Page } from '@playwright/test';
-import { makeAsset, newDataset, type CurrentDataset, type Language } from '../src/models';
-import { startPhoneWorkflow, jumpPhoneStep } from '../src/phoneEngine';
-import { startPhoneProducts, addPhoneProduct, reviewPhoneProducts } from '../src/lineData';
-import { lineStore, lineTask, lineMoveReady, phoneProductsReady, lineRecorded } from '../src/lineSchemas';
-import { currentLineStep } from '../src/lineCatalog';
+import {expect,test} from '@playwright/test';
+import {lineTask,lineMoveReady,phoneProductsReady,lineRecorded} from '../src/lineSchemas';
+import {readTwofasData} from './twofas-driver';
+import {passphrase,advance} from './helpers';
 import {securityEntitySchema} from '../src/securityModel';
-import { openTwofasData, readTwofasData } from './twofas-driver';
-import { passphrase, advance } from './helpers';
-
+import {fixture,open,drive} from './line-driver';
 test.setTimeout(120000);
-function fixture(language:Language='ja',oldOS:'ios'|'android'='ios',newOS:'ios'|'android'='android',extra=false){
- let data=newDataset(language);data.assets=['old','fresh'].map(id=>({...makeAsset({kind:'device',type:'Smartphone',name:id==='old'?'これまでのスマホ':'新しいスマホ',operatingSystem:id==='old'?oldOS:newOS,importance:'critical'}),id}));
- data.guide={...data.guide,cursor:'manager-select',history:['start','provider'],answers:{original:'main guide remains exactly'}};
- data=startPhoneWorkflow(data,'/guide','old','move');Object.assign(data.deviceWorkflows[0],{newDeviceRef:'fresh',answers:{stage:'using',availability:'available',ownership:'personal',setup:'ready',authenticator:'none','special-apps':'yes','phone-line':'no-line','old-fate':'sell','ios-generation':'18','sale-theft-menu':'older','android-maker':'pixel'}});
- const i=startPhoneProducts(data,'move');data=addPhoneProduct(i.data,i.id,'line');if(extra)data=addPhoneProduct(data,i.id,'eid');data=reviewPhoneProducts(data,i.id) as CurrentDataset;data=jumpPhoneStep(data,'move','special-app-move') as CurrentDataset;
- return {data,id:lineStore(data)!.tasks[0].id,inventoryRef:i.id,main:structuredClone(data.guide)};
-}
-async function open(page:Page,data:CurrentDataset,id:string){
- await openTwofasData(page,data);await page.getByRole('link',{name:data.settings.language==='ja'?'機種変更を再開する':'Resume phone-change task',exact:false}).first().click();await advance(page,data.settings.language==='ja'?'引き継ぐアプリ・サービスを確認する':'Open the apps to move');await page.locator(`a[href$="/line/${id}"]`).first().click();await expect(page.locator('.line-content')).toBeVisible();
-}
-async function drive(page:Page,id:string,answers:Record<string,string>={},until?:string){
- for(let count=0;count<160;count++){
-  const data=await readTwofasData(page),t=lineTask(data,id)!;if(!await page.locator('.line-content').count())return data;
-  const s=currentLineStep(data,t),card=page.locator('.line-content'),lang=data.settings.language;await expect(card.locator('h1')).toHaveText(s.title[lang]);if(s.id===until)return data;
-  if(s.kind==='question'){
-   const defaults:Record<string,string>={account:'add','destination-state':'login','new-version':'current','source-state':'usable',version:'current','recovery-email':'available','recovery-mail':'add','recovery-provider':'google','password-access':'known',history:'recent','destination-match':'yes','cutover-result':'home','number-changed':'no','premium-state':'using','pin-state':'ready'};
-   const value=answers[s.id]??(s.id.startsWith('restore-screen:')?'home':['source-app','previous-app'].includes(s.id)?s.choices![0].value:s.id==='backup-account'?data.assets.find(a=>a.id===t.oldDeviceRef)?.operatingSystem==='ios'?'add:apple':'add:google':defaults[s.id]);const option=s.choices?.find(c=>c.value===value);if(!option)throw Error(`Missing choice ${value} at ${s.id}`);await card.getByRole('button',{name:option.label[lang],exact:true}).click();
-  }else if(s.kind==='action')await card.getByRole('button',{name:lineRecorded(data,t,s.id)?lang==='ja'?'この確認で続ける':'Continue with this confirmation':s.button?.[lang]??(lang==='ja'?'確認しました':'I checked this'),exact:true}).click();
-  else if(s.kind==='finished'){await card.getByRole('button',{name:lang==='ja'?'機種変更の続きを進める':'Continue phone change',exact:true}).click();return await readTwofasData(page);}
-  else throw Error('Unexpected '+s.id);
-  await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy','false');
- }throw Error('LINE UI did not finish');
-}
 for(const language of ['ja','en'] as const)test(`LINE QR ${language}: saved cutover, mobile keyboard and same-parent return update Map`,async({page})=>{
  const f=fixture(language,language==='ja'?'ios':'android',language==='ja'?'android':'ios');await open(page,f.data,f.id);await drive(page,f.id,{},'transfer-ready');
  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);const button=page.locator('.line-content').getByRole('button',{name:language==='ja'?'引き継ぎを進める':'Continue the transfer',exact:true});await button.focus();await expect(button).toBeFocused();await page.screenshot({path:`/tmp/qa-line/line-${language}.png`,fullPage:true});await page.keyboard.press('Enter');await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy','false');

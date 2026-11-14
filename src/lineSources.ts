@@ -1,6 +1,14 @@
 import type { Source } from './guideCatalog';
 const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-14', reviewMethod: 'official-documentation' });
 export const LINE_SOURCES: Record<string, Source> = {
+  linePasskey: source('LINE · パスキーの登録と制限','https://help.line.me/line/smartphone?contentId=200002149&lang=ja','LINE26.17+ / main device / registered email / PRF / one per device / ten per account'),
+  linePasskeyGuide: source('LINE · パスキーの設定と引き継ぎ','https://guide.line.me/ja/account-and-settings/passkey.html','Guide updated2026-11-05 / official deep link redirect observed; native launch not tested / cross-OS copy needs separate OS recipe'),
+  linePasskeyMove: source('LINE · パスキーで引き継ぐ','https://help.line.me/line/smartphone?contentId=200002270&lang=ja','Same OS and actual Apple/Google account / login with another method / passkey / actual native result'),
+  lineAppleSaved: source('Apple · 保存済みパスキーの確認','https://support.apple.com/ja-jp/104955','iOS18+ Passwords / unlock / categories and account item / existing data retained'),
+  lineAppleSync: source('Apple · iCloudパスワードの同期','https://support.apple.com/ja-jp/109016','iCloud Passwords / same Apple Account / Sync this iPhone; existing guide source'),
+  lineApplePasskey: {...source('Apple · パスキーでの作成とサインイン','https://support.apple.com/ja-jp/guide/iphone/iphf538ea8d0/ios','Official indexed creation and screen-unlock text; Japanese/English focused page requests429; no unverified native button name'),reviewMethod:'official-search-excerpt'},
+  lineGoogleSaved: source('Google · パスワードとパスキーの保存先','https://support.google.com/accounts/answer/6197437?co=GENIE.Platform%3DAndroid&hl=ja','Android Settings search Password Manager / actual Google account / same-account sync / saved app item'),
+  lineAndroidPasskey: source('Google · アプリのパスキー','https://support.google.com/android/answer/14124480?hl=ja','Native create / account selection / screen unlock / provider settings; general support does not prove LINE PRF support'),
   lineICloud: { ...source('Apple · iPhoneのiCloud Drive', 'https://support.apple.com/guide/iphone/set-up-icloud-drive-iphbbcf8827d/ios', 'Official indexed English/Japanese text: Settings / name / iCloud / Drive / Sync this iPhone; full request429'), reviewMethod: 'official-search-excerpt' },
   lineQrGuide: { ...source('LINE · QR引き継ぎの復元・スキップ', 'https://guide.line.me/ja/account-and-settings/account-transfer.html', 'Official indexed text: same-OS backup restore versus QR last 14 days; Skip may still carry recent chats'), reviewMethod: 'official-search-excerpt' },
   lineAndroid: source('LINE · Android間の引き継ぎ', 'https://help2.line.me/line/smartphone?contentId=200002101&lang=ja', 'Cloud account / backup date and size / Skip differs by actual method'),

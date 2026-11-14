@@ -23,6 +23,8 @@ export function lineIssues(data: Pick<CurrentDataset, 'assets' | 'securityModel'
     for (const id of [t.dataRef, t.backupRef]) { const e = m.entities.find(e => e.id === id); if (id && (e?.kind !== 'data-set' || e.dataType !== 'messages' || e.ownerRef !== t.accountRef)) return ['invalid-line-data']; }
     if (Object.entries(t.records).some(([stepId, id]) => !s.receipts.some(r => r.id === id && r.taskRef === t.id && r.stepId === stepId))) return ['invalid-line-receipt-owner'];
     if (t.cutover && !t.newDeviceRef || t.cutover?.phase === 'applied' && (!t.cutover.appliedAt || !t.destinationAppRef || !t.destinationSessionRef)) return ['invalid-line-cutover'];
+    const binding=t.cutover?.passkeyBinding;
+    if(binding){const key=m.entities.find(e=>e.id===binding.keyRef),store=m.entities.find(e=>e.id===binding.storeRef),app=m.entities.find(e=>e.id===binding.appRef);if(m.revision<14||key?.kind!=='credential'||key.credentialType!=='passkey'||key.subjectRef!==t.accountRef||key.storageRef!==binding.storeRef||store?.kind!=='vault'||store.authenticationAccountRef!==binding.rootRef||app?.kind!=='installation'||app.vaultRef!==store.id||app.deviceRef!==t.newDeviceRef)return ['invalid-line-passkey-cutover'];}
   }
   for (const r of s.receipts) if (!s.tasks.some(t => t.id === r.taskRef) || r.refs.some(ref => !refs.has(ref)) || r.requires.some(id => !s.receipts.some(other => other.id === id && other.taskRef === r.taskRef))) return ['invalid-line-receipt'];
   if (s.links.some(l => !m.relations.some(r => r.id === l.relationRef) || !s.receipts.some(r => r.id === l.receiptRef))) return ['invalid-line-link'];

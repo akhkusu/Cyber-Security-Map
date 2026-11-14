@@ -1,3 +1,4 @@
+import {startLineAccess} from './lineAccessData';
 import { DataUpgradeConflict, makeAsset, upgradeDataset, type Dataset, type CurrentDataset, type Asset } from './models';
 import { securityEntitySchema, type SecurityEntity, type SecurityRelation } from './securityModel';
 import { lineStore, lineStoreSchema, lineTaskSchema, lineRecorded, phoneInventory, linePhoneOS, type LineStore, type LineTask, type LineReceipt, type PhoneProduct } from './lineSchemas';
@@ -38,7 +39,8 @@ export function addPhoneProduct(data: Dataset, inventoryRef: string, product: Ph
   if (!i || !phone || phoneInventory(next,phone.id)?.id !== i.id) throw new Error('phone-product-context-changed');
   const taskRef = product === 'line' ? crypto.randomUUID() : undefined, item = { id: crypto.randomUUID(), product, taskRef };
   const t = taskRef ? lineTaskSchema.parse({ id: taskRef, phoneRef: i.phoneRef, inventoryRef: i.id, itemRef: item.id, oldDeviceRef: i.oldDeviceRef, newDeviceRef: i.newDeviceRef, oldOS:i.oldOS, newOS:i.newOS, createdAt: at, updatedAt: at }) : undefined;
-  return putLineStore(next, { ...s, inventories: s.inventories.map(v => v.id === i.id ? { ...v, reviewedAt: undefined, updatedAt: at, items: [...v.items, item] } : v), tasks: t ? [...s.tasks, t] : s.tasks });
+  const saved=putLineStore(next, { ...s, inventories: s.inventories.map(v => v.id === i.id ? { ...v, reviewedAt: undefined, updatedAt: at, items: [...v.items, item] } : v), tasks: t ? [...s.tasks, t] : s.tasks });
+  return taskRef?startLineAccess(saved,taskRef,at):saved;
 }
 export function reviewPhoneProducts(data: Dataset, id: string, at = new Date().toISOString()): Dataset {
   if (data.version !== 2) return data; const s = lineStore(data), i = s?.inventories.find(i => i.id === id);
@@ -100,9 +102,10 @@ export function applyLineCutover(data: CurrentDataset, task: LineTask, at: strin
   return { data: next, task };
 }
 export function recordLineUse(data: CurrentDataset, task: LineTask, receipt: LineReceipt, kind: 'sign-in' | 'read') {
-  const s = lineStoreFor(data), refs = [task.accountRef!, task.newDeviceRef!, task.destinationAppRef!, task.destinationSessionRef!];
+  const binding=kind==='sign-in'&&task.answers['key-login:result']==='passkey'&&lineRecorded(data,task,'key-login:result')?task.cutover?.passkeyBinding:undefined;
+  const s = lineStoreFor(data), refs = [task.accountRef!, task.newDeviceRef!, task.destinationAppRef!, task.destinationSessionRef!,...(binding?[binding.keyRef,binding.storeRef,binding.rootRef,binding.appRef]:[])];
   const factRef = crypto.randomUUID(), routeRef = crypto.randomUUID();
-  let next: CurrentDataset = { ...data, securityModel: { ...data.securityModel, facts: [...data.securityModel.facts, { id: factRef, label: data.settings.language==='ja' ? kind==='read'?'新端末で選んだLINE履歴を確認':'新端末で既存のLINEを利用' : kind === 'read' ? 'Selected LINE history read on new phone' : 'Existing LINE account open on new phone', state: 'available', evidence: 'user-confirmed', checkedAt: receipt.at, requiredRefs: refs, contexts: ['new-device'], sourceIds: ['lineQr', 'lineData'] }], routes: [...data.securityModel.routes, { id: routeRef, label: data.settings.language==='ja'?'LINE · 新端末での現在の利用':'LINE · current new-phone session', targetRef: kind === 'read' ? task.dataRef! : task.accountRef!, purpose: kind === 'read' ? 'decrypt' : 'sign-in', contexts: ['new-device'], requirements: { kind: 'fact', factId: factRef }, sourceIds: ['lineQr', 'lineData'] }] } };
+  let next: CurrentDataset = { ...data, securityModel: { ...data.securityModel, facts: [...data.securityModel.facts, { id: factRef, label: data.settings.language==='ja' ? kind==='read'?'新端末で選んだLINE履歴を確認':'新端末で既存のLINEを利用' : kind === 'read' ? 'Selected LINE history read on new phone' : 'Existing LINE account open on new phone', state: 'available', evidence: 'user-confirmed', checkedAt: receipt.at, requiredRefs: refs, contexts: ['new-device'], ...(binding?{linePasskeyUseV1:binding.keyRef}:{}),sourceIds: [task.cutover?.passkeyBinding?'linePasskeyMove':'lineQr', 'lineData'] }], routes: [...data.securityModel.routes, { id: routeRef, label: data.settings.language==='ja'?'LINE · 新端末での現在の利用':'LINE · current new-phone session', targetRef: kind === 'read' ? task.dataRef! : task.accountRef!, purpose: kind === 'read' ? 'decrypt' : 'sign-in', contexts: ['new-device'], requirements: { kind: 'fact', factId: factRef }, sourceIds: ['lineQr', 'lineData'] }] } };
   next = putLineStore(next, { ...s, proofs: [...s.proofs, { factRef, receiptRef: receipt.id, taskRef: task.id, epoch: task.cutover!.epoch, kind }] });
   if (kind === 'sign-in') {
     next = lineLink(next, receipt, task.destinationAppRef!, task.newDeviceRef!, 'installed-on', ['lineQr']);

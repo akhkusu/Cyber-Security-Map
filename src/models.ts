@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { lineIssues } from './lineValidation';
+import {lineAccessIssues} from './lineAccessValidation';
 import { emptySecurityModel, securityModelIssues, securityModelSchema } from './securityModel';
 import { accessPlanIssues } from './accessPlanValidation';
 import {protectionIssues} from './deviceProtectionValidation';
@@ -118,6 +119,7 @@ export const currentDatasetSchema = z.object({
   deviceWorkflows: z.array(phoneWorkflowSchema).default([]),
 }).passthrough().superRefine((data, context) => {
   for(const message of lineIssues(data))context.addIssue({code:'custom',path:['securityModel','linePhoneV1'],message});
+  for(const message of lineAccessIssues(data))context.addIssue({code:'custom',path:['securityModel','lineAccessV1'],message});
   for(const message of enteIssues(data))context.addIssue({code:'custom',path:['securityModel','enteV1'],message});
   for(const message of twofasIssues(data))context.addIssue({code:'custom',path:['securityModel','twofasV1'],message});
   for(const message of nordKeyReturnIssues(data))context.addIssue({code:'custom',path:['securityModel','hardwareKeysV1'],message});
