@@ -28,5 +28,5 @@ export function NordConnectionSession({ data, language, save }: Props) {
     const shared = saveNordSsoSession(data, next, session.id), done = nordSsoStore(shared)?.sessions.find(s => s.id === session.id)?.finished;
     const success = await save(shared); if (success && done) navigate(session.returnTo); return success;
   };
-  return <div><p className="subtle"><Link to={session.returnTo}>{tx(language, 'Return to my previous task', '元の作業へ戻る')}</Link> · {tx(language, 'Only the needed connected-account work; your main guide is saved', '接続先の必要な作業だけを確認します。通常ガイドは保存されています')}</p><Guide data={child} language={language} save={saveChild} /></div>;
+  return <div><p className="subtle"><Link to={session.returnTo}>{tx(language, 'Return to my previous task', '元の作業へ戻る')}</Link> · {tx(language, 'Only the needed connected-account work; your main guide is saved', '接続先の必要な作業だけを確認します。通常ガイドは保存されています')}</p><Guide data={child} language={language} save={saveChild} nordSessionRef={session.id} /></div>;
 }

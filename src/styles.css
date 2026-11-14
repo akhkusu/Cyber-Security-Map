@@ -56,3 +56,5 @@
 .access-plan-details .primary-actions { flex-wrap: wrap; }
 .access-plan-details .completed-record { flex-wrap: wrap; }
 .access-plan-guide .guide-card { overflow-wrap: anywhere; }
+
+.key-task-option{display:flex;flex-direction:column;gap:4px;text-align:start;min-width:0}.key-task-option small{color:var(--muted);overflow-wrap:anywhere}

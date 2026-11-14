@@ -46,7 +46,7 @@ function migrateDataset(value: unknown): Dataset {
   if (value.version !== 1 && value.version !== 2) throw new UnsupportedVaultError('version');
   if (value.version === 2 && 'securityModel' in value) {
     const model = value.securityModel;
-    if (model && typeof model === 'object' && 'revision' in model && typeof model.revision === 'number' && model.revision !== 1 && model.revision !== 2 && model.revision !== 3 && model.revision !== 4 && model.revision !== 5 && model.revision !== 6 && model.revision !== 7 && model.revision !== 8 && model.revision !== 9) throw new UnsupportedVaultError('version');
+    if (model && typeof model === 'object' && 'revision' in model && typeof model.revision === 'number' && model.revision !== 1 && model.revision !== 2 && model.revision !== 3 && model.revision !== 4 && model.revision !== 5 && model.revision !== 6 && model.revision !== 7 && model.revision !== 8 && model.revision !== 9 && model.revision !== 10) throw new UnsupportedVaultError('version');
   }
   const parsed = datasetSchema.safeParse(value);
   if (!parsed.success) throw new UnsupportedVaultError('data');

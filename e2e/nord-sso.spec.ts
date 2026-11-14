@@ -2,9 +2,15 @@ import { test, expect, type Page } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { currentDatasetSchema, makeAsset, newDataset, type CurrentDataset } from '../src/models';
 import { recordControl } from '../src/controlRecords';
-import { chooseCloudDevice, cloudAnswer, configureCloudRoot, makeCloudVault, selectedCloudInstallation, setCloudAnswer } from '../src/cloudManagers';
+import { chooseCloudDevice, cloudAnswer, configureCloudRoot, cloudSetupRoute, makeCloudVault, selectedCloudInstallation, setCloudAnswer } from '../src/cloudManagers';
 import { nordSsoBinding, nordSsoReady, nordSsoStore } from '../src/nordSsoSchemas';
 import { answerPhoneQuestion, jumpPhoneStep, startPhoneWorkflow } from '../src/phoneEngine';
+import {startKeyGuide,answerKeyGuide,currentKeyStep} from '../src/hardwareKeys';
+import {keyTasks} from '../src/hardwareKeySchemas';
+import {driveNestedKey} from './nested-key-driver';
+import {startNordSsoSession,saveNordSsoSession,selectNordSsoAccount,selectNordSsoProvider} from '../src/nordSso';
+import {guideSchema} from '../src/models';
+import {beginRecipe,completeStep} from '../src/guideEngine';
 import { nordRecoveryTasks } from '../src/nordRecoverySchemas';
 import { decryptVault } from '../src/crypto';
 import { advance, passphrase, readSavedVault, sealRawVault, writeSavedVault } from './helpers';
@@ -87,6 +93,37 @@ test('missing provider protection is guided within a phone side session while th
   await confirmConnection(page); await expect(page).toHaveURL(/(?:#)?\/phone\/replacement$/);
   const after = await saved(page); expect(after.guide).toEqual(original); expect(after.assets.find(a => a.id === f.providerId)?.controls).toMatchObject({ mfa: 'verified', recovery: 'verified' }); expect(nordSsoStore(after)?.sessions[0].finished).toBe(true); expect(cloudAnswer(after, f.rootId, 'method')).toBe('sso');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('基盤アカウントの利用手段を旧端末の外に残す');
+});
+for(const language of ['ja','en'] as const)test(`${language}: a deferred physical-key task returns to the connected-account side session and preserves the whole main guide`,async({page})=>{
+  const f=fixture('google','ios',true,false,language);let data=f.data;data.guide.cursor='device-select';
+  data.assets.push({...data.assets[2],id:'new',name:'新しいスマホ'});data=startPhoneWorkflow(data,'/guide','device','replacement');Object.assign(data.deviceWorkflows[0],{newDeviceRef:'new',answers:{stage:'using',availability:'available',ownership:'personal',authenticator:'none','old-fate':'spare'}});
+  data=answerPhoneQuestion(jumpPhoneStep(data,'replacement',`cloud-use:${f.vaultId}`),'replacement','new') as CurrentDataset;
+  await page.setViewportSize({width:390,height:844});const original=structuredClone(data.guide);await open(page,data);await page.locator('.phone-launcher a').first().click();await advance(page,language==='ja'?'先に接続先のログインを確認する':'Check the connected sign-in first');await advance(page,'Google');await advance(page,f.providerName);for(let n=0;n<4;n++)await primary(page);await expect(page.getByRole('heading',{level:1})).toHaveText(language==='ja'?'接続先のアカウントを保護する':'Protect the connected provider account');await advance(page,language==='ja'?'このアカウントの認証を設定・確認する':'Set or check this account’s authentication');
+  const childUrl=page.url();await page.locator('.key-launcher > summary').click();await page.locator('.key-launcher .button.secondary').click();await expect(page.locator('.key-guide')).toBeVisible();const keyUrl=page.url();await page.reload();await page.getByLabel(language==='ja'?'アプリの保存用パスフレーズ':'App passphrase',{exact:true}).fill(passphrase);await advance(page,language==='ja'?'開いて再開する':'Unlock and continue');await expect(page).toHaveURL(keyUrl);const defer=page.getByRole('button',{name:language==='ja'?'この作業を後回しにする':'Do this later',exact:true});await defer.focus();await page.keyboard.press('Enter');await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy','false');
+  await expect(page).toHaveURL(childUrl);await expect(page.getByRole('heading',{level:1})).toHaveText(language==='ja'?'アカウントの設定を開く':'Open your account settings');expect((await saved(page)).guide).toEqual(original);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);await mkdir('test-results/nested-key',{recursive:true});await page.screenshot({path:`test-results/nested-key/return-${language}.png`,fullPage:true});
+});
+function nestedKeyFixture(provider:'google'|'apple'){
+  const f=fixture(provider,'ios',true,false);let data=f.data;data.guide.cursor='device-select';
+  data.assets.push({...data.assets[2],id:'new',name:'新しいスマホ'},...['pc','mac'].map(id=>({...makeAsset({kind:'device',type:'Computer',name:id,importance:'critical',operatingSystem:id==='mac'?'macos':'windows'}),id})));
+  data.securityModel.entities.push({id:'key1',kind:'security-key',label:'主に使うキー',transports:['usb-c'],createdAt:new Date().toISOString()},{id:'key2',kind:'security-key',label:'別に保管するキー',transports:['usb-c'],createdAt:new Date().toISOString()},{id:'key-browser',kind:'installation',productId:'chrome',deviceRef:provider==='apple'?'mac':'pc',label:'本人の確認用プロフィール',createdAt:new Date().toISOString()});
+  data=startPhoneWorkflow(data,'/guide','device','replacement');data.deviceWorkflows[0].newDeviceRef='new';data=selectNordSsoAccount(selectNordSsoProvider(data,'nord',provider),'nord','provider') as CurrentDataset;
+  const main=structuredClone(data.guide),phone=structuredClone(data.deviceWorkflows),side=startNordSsoSession(data,f.appId,'/phone/replacement'),session=nordSsoStore(side.data)!.sessions[0];
+  let child={...side.data,guide:guideSchema.parse(session.guide)};child={...child,guide:{...child.guide,cursor:cloudSetupRoute(child,f.vaultId)}};for(let n=0;n<4;n++)child=completeStep(child) as CurrentDataset;child={...child,guide:{...child.guide,answers:{...child.guide.answers,'provider:platform':provider==='apple'?'macos':'web',[`return/provider/email-mfa`]:`cloud-sso-resume/${f.vaultId}`}}};child=beginRecipe(child,'provider','email-mfa') as CurrentDataset;data=saveNordSsoSession(side.data,child,session.id) as CurrentDataset;
+  return {data,session,main,phone,child};
+}
+async function openNestedKeySession(page:Page,data:CurrentDataset,sessionRef:string){
+  await open(page,data);const url=new URL(page.url());if(url.hash.startsWith('#/'))url.hash='/nord-connection/'+encodeURIComponent(sessionRef);else url.pathname=url.pathname.replace(/\/guide$/,'/nord-connection/'+encodeURIComponent(sessionRef));await page.goto(url.toString());await expect(page.getByRole('heading',{level:1})).toBeVisible();const password=page.getByLabel(data.settings.language==='ja'?'アプリの保存用パスフレーズ':'App passphrase',{exact:true});if(await password.isVisible()){await password.fill(passphrase);await advance(page,data.settings.language==='ja'?'開いて再開する':'Unlock and continue');}
+}
+for(const provider of ['google','apple'] as const)test(`${provider}: completing a physical key returns to provider recovery inside the same phone detour`,async({page})=>{
+  const {data,session,main,phone}=nestedKeyFixture(provider);
+  await openNestedKeySession(page,data,session.id);await expect(page.getByRole('heading',{level:1})).toHaveText('アカウントの設定を開く');await page.locator('.key-launcher > summary').click();await page.locator('.key-launcher .button.secondary').click();
+  const result=await driveNestedKey(page,provider==='apple'?'apple-keys':'google-second-step');await expect(page).toHaveURL(new RegExp('/nord-connection/'+session.id+'$'));expect(result.data.guide).toEqual(main);expect(result.data.deviceWorkflows).toEqual(phone);expect(result.data.assets.find(a=>a.id==='provider')?.controls.mfa).toBe('verified');expect(result.data.assets.find(a=>a.id==='provider')?.controls.recovery).toBe('unknown');expect(result.data.securityModel.relations.some(r=>r.nordSsoPurpose==='connection'&&r.evidence==='user-confirmed')).toBe(false);await expect(page.getByText('どの端末でログインを承認しますか？',{exact:true})).toHaveCount(0);
+});
+test('an earlier key task keeps its progress when explicitly assigned to this detour, and the return choice can be undone',async({page})=>{
+  await page.setViewportSize({width:390,height:844});const f=nestedKeyFixture('google'),old=startKeyGuide({...f.data,guide:f.child.guide},'provider','/guide');old.data=answerKeyGuide(old.data,old.id,'google-second-step') as CurrentDataset;old.data=answerKeyGuide(old.data,old.id,'personal') as CurrentDataset;
+  const before=structuredClone(keyTasks(old.data)[0]),title=currentKeyStep(old.data,before).title.ja,data=saveNordSsoSession(f.data,old.data,f.session.id) as CurrentDataset;await openNestedKeySession(page,data,f.session.id);await page.locator('.key-launcher > summary').click();await page.getByText('以前のキーの作業を、ここで続ける',{exact:true}).click();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);await page.getByRole('button',{name:/この既存の作業を使う/}).click();await expect(page.locator('.key-guide')).toBeVisible();await expect(page.getByRole('heading',{level:1})).toHaveText(title);
+  let d=await saved(page);expect(keyTasks(d)).toHaveLength(1);expect(keyTasks(d)[0].id).toBe(before.id);expect(keyTasks(d)[0].history).toEqual(before.history);expect(keyTasks(d)[0].records).toEqual(before.records);expect(d.guide).toEqual(f.main);expect(d.assets.find(a=>a.id==='provider')?.controls.mfa).toBe('unknown');
+  await page.reload();await page.getByLabel('アプリの保存用パスフレーズ',{exact:true}).fill(passphrase);await advance(page,'開いて再開する');await expect(page.getByRole('heading',{level:1})).toHaveText(title);await page.getByText('選んだ戻り先を元に戻す',{exact:true}).click();await advance(page,'元の戻り先へ戻す');await expect(page).toHaveURL(/(?:#)?\/guide$/);d=await saved(page);expect(d.guide).toEqual(f.main);expect(keyTasks(d)[0].returnTo).toBe(before.returnTo);expect(keyTasks(d)[0].originGuideCursor).toBe(before.originGuideCursor);expect(Object.hasOwn(keyTasks(d)[0],'nordSsoKeyReturnV1')).toBe(false);expect(keyTasks(d)[0].history).toEqual(before.history);expect(keyTasks(d)[0].records).toEqual(before.records);
 });
 for (const provider of ['google', 'apple'] as const) test(`${provider}: phone sign-in uses the connected provider, then Nord MFA, then the existing master`, async ({ page }) => {
   const f = fixture(provider, 'ios', true); await open(page, f.data); await prepare(page, f); await confirmConnection(page); let data = await saved(page); data.guide.cursor = 'device-select'; data.assets.push({ ...data.assets[2], id: 'new', operatingSystem: 'android', name: '新しいスマホ' });

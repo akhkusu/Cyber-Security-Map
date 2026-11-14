@@ -1,7 +1,11 @@
 import { DataUpgradeConflict, guideSchema, makeAsset, upgradeDataset, type CurrentDataset, type Dataset, type Language } from './models';
 import { c } from './guideCatalog';
 import { protectionTasks, protectionStore } from './deviceProtectionSchemas';
-import { beginRecipe, currentTask, move } from './guideEngine';
+import {createNordKeyOrigin,keyNordOrigin} from './nordKeyReturn';
+import {cloudSetupRoute} from './cloudManagers';
+import {nordSsoBinding,nordSsoStore} from './nordSsoSchemas';
+import {saveNordSsoSession} from './nordSso';
+import { afterRecipe, beginRecipe, currentTask, move } from './guideEngine';
 import { keyRegistrationCandidates, keySourceIds, keySteps, KEY_SOURCES, type KeyStep } from './hardwareKeyCatalog';
 import { keyStoreSchema, keyTaskSchema, keyTasks, type KeyTask } from './hardwareKeySchemas';
 import { safeMapNickname } from './mapRecords';
@@ -23,13 +27,19 @@ function put(data: CurrentDataset, task: KeyTask): CurrentDataset {
   const parsed=keyStoreSchema.safeParse(data.securityModel.hardwareKeysV1),store=parsed.success?parsed.data:{version:1 as const,tasks:[]};
   return {...data,securityModel:{...data.securityModel,revision:data.securityModel.revision>=7?data.securityModel.revision:7,hardwareKeysV1:{...store,tasks:[...store.tasks.filter(t=>t.id!==task.id),task]}}};
 }
-export function startKeyGuide(data: Dataset, accountRef: string, returnTo: '/guide'|'/map' = '/map', now=nowString(), forceNew=false, protectionParentRef?:string): {data: CurrentDataset; id: string} {
-  const next=writable(data);
+export function startKeyGuide(data: Dataset, accountRef: string, returnTo: '/guide'|'/map' = '/map', now=nowString(), forceNew=false, protectionParentRef?:string,nordSessionRef?:string): {data: CurrentDataset; id: string} {
+  let next=writable(data);
   if(!keyAccountSupported(next,accountRef))throw new Error('unsupported-key-account');
   const parent=protectionParentRef?protectionTasks(next).find(t=>t.id===protectionParentRef&&t.accountRef===accountRef&&t.childGuide):undefined;
   if(protectionParentRef&&!parent)throw new Error('invalid-protection-key-parent');
-  const pending=forceNew?undefined:keyTasks(next).find(t=>t.accountRef===accountRef&&keyProtectionParent(t,next)===protectionParentRef&&['active','deferred'].includes(t.status));
-  const task=pending?{...pending,status:'active' as const}:keyTaskSchema.parse({id:crypto.randomUUID(),accountRef,returnTo:parent?'/map':returnTo,originGuideCursor:parent?guideSchema.parse(parent.childGuide).cursor:data.guide.cursor,createdAt:now,updatedAt:now,...(parent?{deviceProtectionKeyReturnV1:{version:1,taskRef:parent.id}}:{})});
+  if(protectionParentRef&&nordSessionRef)throw new Error('ambiguous-key-origin');
+  const nordOrigin=nordSessionRef?createNordKeyOrigin(next,nordSessionRef,accountRef):undefined;
+  if(nordSessionRef&&!nordOrigin)throw new Error('invalid-nord-key-origin');
+  if(nordOrigin&&next.securityModel.revision<10&&keyTasks(next).some(t=>Object.hasOwn(t,'nordSsoKeyReturnV1')))throw new DataUpgradeConflict();
+  const nordParent=nordOrigin?nordSsoStore(next)?.sessions.find(s=>s.id===nordOrigin.sessionRef):undefined;
+  const pending=forceNew?undefined:keyTasks(next).find(t=>t.accountRef===accountRef&&keyProtectionParent(t,next)===protectionParentRef&&keyNordOrigin(next,t)?.sessionRef===nordOrigin?.sessionRef&&keyNordOrigin(next,t)?.bindingRef===nordOrigin?.bindingRef&&['active','deferred'].includes(t.status));
+  if(nordOrigin&&!pending)next={...next,securityModel:{...next.securityModel,revision:next.securityModel.revision>=10?next.securityModel.revision:10}};
+  const task=pending?{...pending,status:'active' as const}:keyTaskSchema.parse({id:crypto.randomUUID(),accountRef,returnTo:parent||nordParent?'/map':returnTo,originGuideCursor:parent?guideSchema.parse(parent.childGuide).cursor:nordParent?guideSchema.parse(nordParent.guide).cursor:data.guide.cursor,createdAt:now,updatedAt:now,...(parent?{deviceProtectionKeyReturnV1:{version:1,taskRef:parent.id}}:{}),...(nordOrigin?{nordSsoKeyReturnV1:nordOrigin}:{})});
   return {data:put(next,task),id:task.id};
 }
 export function keyRecordValid(data: Dataset, task: KeyTask, id: string, visiting = new Set<string>()): boolean {
@@ -191,18 +201,39 @@ export function keyProtectionParent(task:KeyTask,data:Dataset):string|undefined 
   if(data.version!==2||data.securityModel.revision<9)return;
   const v=task.deviceProtectionKeyReturnV1;return v&&typeof v==='object'&&'version' in v&&v.version===1&&'taskRef' in v&&typeof v.taskRef==='string'?v.taskRef:undefined;
 }
-export const keyReturnPath=(task:KeyTask,data:Dataset)=>keyProtectionParent(task,data)?`/protect/account/${encodeURIComponent(keyProtectionParent(task,data)!)}`:task.returnTo==='/map'?`/map?item=${encodeURIComponent(task.accountRef)}`:task.returnTo;
+export const keyReturnPath=(task:KeyTask,data:Dataset)=>keyNordOrigin(data,task)?`/nord-connection/${encodeURIComponent(keyNordOrigin(data,task)!.sessionRef)}`:keyProtectionParent(task,data)?`/protect/account/${encodeURIComponent(keyProtectionParent(task,data)!)}`:task.returnTo==='/map'?`/map?item=${encodeURIComponent(task.accountRef)}`:task.returnTo;
 function returnKeyToGuide(data:Dataset,task:KeyTask):Dataset {
-  if(task.status!=='completed'||task.returnTo!=='/guide'||data.guide.cursor!==task.originGuideCursor)return data;
+  if(task.status!=='completed'||currentKeyStep(data,task).kind!=='finished'||task.returnTo!=='/guide'||data.guide.cursor!==task.originGuideCursor)return data;
   const current=currentTask(data),account=data.assets.find(a=>a.id===task.accountRef);
   if(current?.asset.id!==task.accountRef||!account)return data;
-  if(current.recipe.id==='email-mfa'&&task.mode!=='bitwarden-login')return beginRecipe(data,account.id,'recovery');
+  if(task.mode!=='bitwarden-login'&&(!['verified','implemented'].includes(account.controls.mfa)||account.controlEvidence.mfa!=='user-confirmed'))return data;
+  if(current.recipe.id==='email-mfa'&&task.mode!=='bitwarden-login')return /^(cloud-password-resume|cloud-sso-resume|cloud-resume|authenticator-root-security|native-resume)\//.test(data.guide.answers[`return/${account.id}/email-mfa`]??'')?afterRecipe(data,account,'email-mfa'):beginRecipe(data,account.id,'recovery');
   // The launcher only substitutes for the manager's MFA section after setup.
   if(current.recipe.id==='manager'&&task.mode==='bitwarden-second-step'&&['auth-ready','auth-open','auth-scan','auth-activate','auth-test','recovery'].includes(current.step.id))return data.guide.accountId?beginRecipe(data,data.guide.accountId,'password'):move(data,'device-select');
   return data;
 }
+export function adoptNordKeyGuide(data:Dataset,id:string,sessionRef:string,now=nowString()):Dataset{
+  let next=writable(data);const task=keyTasks(next).find(t=>t.id===id);
+  if(!task||task.status==='cancelled'||keyProtectionParent(task,next)||keyNordOrigin(next,task))return data;
+  const origin=createNordKeyOrigin(next,sessionRef,task.accountRef),parent=nordSsoStore(next)?.sessions.find(s=>s.id===sessionRef);if(!origin||!parent)return data;
+  if(Object.hasOwn(task,'nordSsoKeyReturnV1')||(next.securityModel.revision<10&&keyTasks(next).some(t=>Object.hasOwn(t,'nordSsoKeyReturnV1'))))throw new DataUpgradeConflict();
+  next={...next,securityModel:{...next.securityModel,revision:next.securityModel.revision>=10?next.securityModel.revision:10}};
+  return put(next,{...task,returnTo:'/map',originGuideCursor:guideSchema.parse(parent.guide).cursor,status:task.status==='completed'&&currentKeyStep(data,task).kind==='finished'?'completed':'active',updatedAt:now,nordSsoKeyReturnV1:{...origin,adoptedFrom:{returnTo:task.returnTo,originGuideCursor:task.originGuideCursor,at:now}}});
+}
+export function restoreNordKeyOrigin(data:Dataset,id:string,now=nowString()):Dataset{
+  if(data.version!==2)return data;const task=keyTasks(data).find(t=>t.id===id),previous=task&&keyNordOrigin(data,task)?.adoptedFrom;if(!task||!previous)return data;
+  const next:KeyTask={...task,returnTo:previous.returnTo,originGuideCursor:previous.originGuideCursor,updatedAt:now};delete next.nordSsoKeyReturnV1;return put(data,next);
+}
 export function returnFromKeyGuide(data:Dataset,id:string):Dataset {
   const task=keyTasks(data).find(t=>t.id===id);if(!task)return data;
+  const nordOrigin=keyNordOrigin(data,task);
+  if(nordOrigin){
+    const store=nordSsoStore(data),parent=store?.sessions.find(s=>s.id===nordOrigin.sessionRef),binding=store?.bindings.find(b=>b.id===nordOrigin.bindingRef);
+    if(!parent||!binding)return data;
+    if(nordSsoBinding(data,binding.rootRef)?.id!==binding.id){const current={...data,guide:guideSchema.parse(parent.guide)};return saveNordSsoSession(data,move(current,cloudSetupRoute(current,parent.vaultRef)),parent.id);}
+    const child=returnKeyToGuide({...data,guide:guideSchema.parse(parent.guide)},{...task,returnTo:'/guide'});
+    return saveNordSsoSession(data,child,parent.id);
+  }
   const parentRef=data.version===2&&data.securityModel.revision>=9?keyProtectionParent(task,data):undefined;
   if(!parentRef)return returnKeyToGuide(data,task);
   const store=protectionStore(data),parent=store?.tasks.find(t=>t.id===parentRef&&t.accountRef===task.accountRef);

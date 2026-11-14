@@ -125,7 +125,7 @@ for (const format of ['newer-payload', 'newer-model', 'unsupported-envelope']) t
   await page.goto('./'); await page.locator('.language-picker select').selectOption('ja');
   const original = format === 'newer-payload'
     ? await sealRawVault({ ...newDataset('ja'), version: 3, futureEntities: [{ id: 'keep-original' }] })
-    : format === 'newer-model' ? await sealRawVault({ ...newDataset('ja'), securityModel: { ...newDataset('ja').securityModel, revision: 10 } })
+    : format === 'newer-model' ? await sealRawVault({ ...newDataset('ja'), securityModel: { ...newDataset('ja').securityModel, revision: 11 } })
     : { format: 'future-envelope-format', ciphertext: 'opaque-original-data', metadata: { keep: true } };
   await writeSavedVault(page, original); await page.reload();
   if (format !== 'unsupported-envelope') {

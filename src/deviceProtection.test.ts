@@ -5,7 +5,7 @@ import {protectionSettingKey,protectionStore,protectionTasks} from './deviceProt
 import {protectionRecordCurrent,protectionBindingCurrent} from './deviceProtectionEvidence';
 import {protectionRefValue} from './deviceProtectionCatalog';
 import {evaluateAccess} from './securityModel';
-import {keyReturnPath,returnFromKeyGuide,startKeyGuide} from './hardwareKeys';
+import {answerKeyGuide,confirmKeyGuide,currentKeyStep,keyReturnPath,returnFromKeyGuide,startKeyGuide} from './hardwareKeys';
 import {keyTasks} from './hardwareKeySchemas';
 import {recordProtectionDisposal,undoProtectionDisposal} from './deviceProtection';
 import {protectionMapStatus} from './deviceProtectionViews';
@@ -74,9 +74,10 @@ describe('optional device protection guide',()=>{
   it('returns from physical-key account preparation to the child guide while preserving every main-guide field',()=>{
     const f=fixture(),device=walk(f.d,f.id,{'apple-theft-choice':'check','biometric-menu':'face','stolen-device-protection-state':'setup'}),started=beginProtectionAccountGuide(device,f.id) as CurrentDataset;
     const t=task(started,f.id),child={...started,guide:guideSchema.parse(t.childGuide)};
-    const key=startKeyGuide(child,'account','/map',at,false,t.id),keyTask=keyTasks(key.data).find(t=>t.id===key.id)!;
-    expect(keyReturnPath(keyTask,key.data)).toBe(`/protect/account/${t.id}`);keyTask.status='completed';keyTask.mode='apple-keys';key.data.assets[1].controls.mfa='verified';key.data.assets[1].controlEvidence.mfa='user-confirmed';
-    const store=key.data.securityModel.hardwareKeysV1 as {tasks:typeof keyTask[]};store.tasks=[keyTask];
+    child.assets=[...child.assets,{...makeAsset({kind:'device',type:'Computer',name:'本人のMac',importance:'important',operatingSystem:'macos'}),id:'mac'}];child.securityModel={...child.securityModel,entities:[...child.securityModel.entities,{id:'key1',kind:'security-key',label:'本人のキー',transports:['usb-c'],createdAt:at},{id:'key2',kind:'security-key',label:'別の予備キー',transports:['usb-c'],createdAt:at}]};
+    const key=startKeyGuide(child,'account','/map',at,false,t.id);expect(keyReturnPath(keyTasks(key.data).find(t=>t.id===key.id)!,key.data)).toBe(`/protect/account/${t.id}`);
+    for(let n=0;n<100;n++){const k=keyTasks(key.data).find(t=>t.id===key.id)!,s=currentKeyStep(key.data,k);if(s.kind==='finished')break;const answers:Record<string,string>={mode:'apple-keys',scope:'personal',device:'mac','key-1':'key1','key-2':'key2','registration-1':'existing','registration-2':'existing'};key.data=(s.kind==='operation'?confirmKeyGuide(key.data,k.id,at):answerKeyGuide(key.data,k.id,answers[s.id]??s.choices?.[0]?.value??'本人用',at)) as CurrentDataset;expect(s.kind).not.toBe('blocked');}
+    expect(keyTasks(key.data).find(t=>t.id===key.id)?.status).toBe('completed');
     const saved=saveProtectionAccountGuide(started,key.data,f.id) as CurrentDataset,returned=returnFromKeyGuide(saved,key.id);
     const retry=startKeyGuide(saved,'account','/map',at,true,t.id);expect(keyTasks(retry.data).find(k=>k.id===retry.id)?.originGuideCursor).toBe(child.guide.cursor);
     expect(returned.guide).toEqual(f.main);expect(task(returned,f.id).childGuide).not.toMatchObject({cursor:child.guide.cursor});expect(currentDatasetSchema.safeParse(returned).success).toBe(true);

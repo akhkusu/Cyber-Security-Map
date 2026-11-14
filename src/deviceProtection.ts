@@ -22,11 +22,11 @@ function writable(data:Dataset):CurrentDataset{
   if(m.revision<9&&(Object.hasOwn(m,'deviceProtectionV1')||[...d.assets,...m.entities,...m.facts,...m.relations,...m.routes].some(own)))throw new DataUpgradeConflict();
   if(m.revision<9&&keyTasks(d).some(t=>Object.hasOwn(t,'deviceProtectionKeyReturnV1')))throw new DataUpgradeConflict();
   if(m.revision>=9&&Object.hasOwn(m,'deviceProtectionV1')&&!protectionStoreSchema.safeParse(m.deviceProtectionV1).success)throw new DataUpgradeConflict();
-  return {...d,securityModel:{...m,revision:9}};
+  return {...d,securityModel:{...m,revision:m.revision>=9?m.revision:9}};
 }
 const storeOf=(data:Dataset)=>protectionStore(data)??protectionStoreSchema.parse({version:1});
 function put(data:CurrentDataset,task:ProtectionTask,store=storeOf(data)):CurrentDataset{
-  return {...data,securityModel:{...data.securityModel,revision:9,deviceProtectionV1:{...store,tasks:[...store.tasks.filter(t=>t.id!==task.id),task]}}};
+  return {...data,securityModel:{...data.securityModel,revision:data.securityModel.revision>=9?data.securityModel.revision:9,deviceProtectionV1:{...store,tasks:[...store.tasks.filter(t=>t.id!==task.id),task]}}};
 }
 const entity=(data:CurrentDataset,e:SecurityEntity):CurrentDataset=>({...data,securityModel:{...data.securityModel,entities:[...data.securityModel.entities.filter(x=>x.id!==e.id),e]}});
 export function protectionReturnPath(task:ProtectionTask){return task.returnTo==='phone'?`/phone/${encodeURIComponent(task.phoneWorkflowRef!)}`:task.returnTo==='map'?`/map?item=${encodeURIComponent(task.deviceRef)}`:'/guide';}
