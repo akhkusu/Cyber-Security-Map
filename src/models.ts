@@ -1,4 +1,19 @@
 import { z } from 'zod';
+import { lineIssues } from './lineValidation';
+import {lineAccessIssues} from './lineAccessValidation';
+import { emptySecurityModel, securityModelIssues, securityModelSchema } from './securityModel';
+import { accessPlanIssues } from './accessPlanValidation';
+import {protectionIssues} from './deviceProtectionValidation';
+import {enteIssues} from './enteValidation';
+import {twofasIssues} from './twofasValidation';
+import {nordKeyReturnIssues} from './nordKeyReturn';
+import { keyStoreSchema } from './hardwareKeySchemas';
+import { nordSsoStoreSchema } from './nordSsoSchemas';
+import { mapRecordStoreSchema } from './mapRecordSchemas';
+import { nordRecoveryStoreSchema } from './nordRecoverySchemas';
+import { phoneWorkflowSchema } from './phoneSchemas';
+import { CONTROL_STATES, controlEvidenceSchema, assessmentAnswerSchema, type AssessmentAnswer, type ControlState } from './recordSchemas';
+export { CONTROL_STATES, controlEvidenceSchema, assessmentAnswerSchema, type AssessmentAnswer, type ControlState, type ControlEvidence } from './recordSchemas';
 
 export const LANGUAGES = ['en', 'ja'] as const;
 export type Language = (typeof LANGUAGES)[number];
@@ -6,19 +21,8 @@ export const ASSET_KINDS = ['device', 'account', 'backup', 'network', 'identity'
 export type AssetKind = (typeof ASSET_KINDS)[number];
 export const IMPORTANCE = ['critical', 'important', 'useful'] as const;
 export type Importance = (typeof IMPORTANCE)[number];
-export const CONTROL_STATES = ['unknown', 'needs-improvement', 'implemented', 'verified', 'na'] as const;
-export type ControlState = (typeof CONTROL_STATES)[number];
 export const OPERATING_SYSTEMS = ['windows', 'macos', 'ubuntu', 'ios', 'android', 'chromeos', 'other', 'unknown'] as const;
 export type OperatingSystem = (typeof OPERATING_SYSTEMS)[number];
-
-export const controlEvidenceSchema = z.enum(['not-assessed', 'unknown', 'user-reported', 'user-confirmed', 'not-applicable']);
-export type ControlEvidence = z.infer<typeof controlEvidenceSchema>;
-export const assessmentAnswerSchema = z.object({
-  response: z.enum(['yes', 'no', 'unsure', 'not-applicable']),
-  evidence: z.enum(['user-reported', 'user-confirmed']).default('user-reported'),
-  updatedAt: z.string(),
-});
-export type AssessmentAnswer = z.infer<typeof assessmentAnswerSchema>;
 
 export const assetSchema = z.object({
   id: z.string().min(1),
@@ -32,7 +36,10 @@ export const assetSchema = z.object({
   controlEvidence: z.record(z.string(), controlEvidenceSchema).default({}),
   operatingSystem: z.enum(OPERATING_SYSTEMS).optional(),
   notes: z.string().max(300).optional(),
-});
+  provider: z.enum(['apple', 'google', 'microsoft', 'proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx', 'bitwarden', '1password', 'nord', 'ente', 'line', 'other']).optional(),
+  purpose: z.enum(['personal', 'work']).optional(),
+  services: z.array(z.enum(['mail', 'cloud', 'manager'])).default([]),
+}).passthrough();
 export type Asset = z.infer<typeof assetSchema>;
 
 export const dependencySchema = z.object({
@@ -41,27 +48,29 @@ export const dependencySchema = z.object({
   recoveryAssetId: z.string().min(1),
   relation: z.string().max(80),
   createdAt: z.string(),
-});
+  relationType: z.enum(['recovery-email', 'authentication', 'backup', 'offline-recovery']).optional(),
+}).passthrough();
 export type RecoveryDependency = z.infer<typeof dependencySchema>;
 
 export const actionSchema = z.object({
   id: z.string(), completedAt: z.string().optional(), titleEn: z.string().optional(), titleJa: z.string().optional(), assetName: z.string().optional(),
   status: z.enum(['in-progress', 'completed', 'remind-me-later', 'not-applicable']).optional(), updatedAt: z.string().optional(),
-});
+  parentId: z.string().optional(), targetId: z.string().optional(), controlId: z.string().optional(), origin: z.string().optional(),
+}).passthrough();
 export type SecurityActionRecord = z.infer<typeof actionSchema>;
-export const reviewSchema = z.object({ id: z.string(), completedAt: z.string(), kind: z.enum(['weekly', 'monthly']) });
+export const reviewSchema = z.object({ id: z.string(), completedAt: z.string(), kind: z.enum(['weekly', 'monthly']) }).passthrough();
 export type SecurityReview = z.infer<typeof reviewSchema>;
 export const validationRecordSchema = z.object({
   id: z.string(), validationId: z.string(), status: z.enum(['tested', 'passed', 'failed', 'partially-tested', 'not-tested', 'unknown']),
   testedAt: z.string(), method: z.string().max(160), note: z.string().max(300).optional(),
-});
+}).passthrough();
 export type ValidationRecord = z.infer<typeof validationRecordSchema>;
 
 export const threatModelSchema = z.object({
   concerns: z.array(z.string()).default([]), audience: z.enum(['self', 'family']).default('self'),
   knowledge: z.enum(['beginner', 'comfortable', 'advanced']).default('beginner'),
   priority: z.enum(['convenience', 'balanced', 'strongest']).default('balanced'),
-});
+}).passthrough();
 export type ThreatModel = z.infer<typeof threatModelSchema>;
 
 export const settingsSchema = z.object({
@@ -70,12 +79,25 @@ export const settingsSchema = z.object({
   threatProfile: z.enum(['essential', 'advanced', 'high-assurance']).default('essential'),
   reviewIntervalDays: z.union([z.literal(30), z.literal(90), z.literal(180)]).default(90),
   autoLockMinutes: z.number().min(1).max(60),
-});
+}).passthrough();
 
-// Zod strips unknown properties by default. This intentionally discards legacy agent
-// snapshots and software inventory while allowing compatible local vault data to open.
-export const datasetSchema = z.object({
-  version: z.literal(1),
+export const guideSchema = z.object({
+  cursor: z.string().default('start'),
+  history: z.array(z.string()).default([]),
+  accountId: z.string().optional(),
+  managerId: z.string().optional(),
+  deviceId: z.string().optional(),
+  draftAccountId: z.string().optional(),
+  pendingProvider: z.enum(['apple', 'google', 'microsoft', 'proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx', 'bitwarden', '1password', 'nord', 'other']).optional(),
+  answers: z.record(z.string(), z.string()).default({}),
+  steps: z.record(z.string(), z.object({ status: z.enum(['done', 'later']), authenticatorRef: z.string().optional(), authenticatorEnrollment: z.string().optional(), updatedAt: z.string(), beforeControl: z.enum(CONTROL_STATES).optional(), beforeEvidence: controlEvidenceSchema.optional(), beforeAnswer: assessmentAnswerSchema.optional() }).passthrough()).default({}),
+}).passthrough().default({ cursor: 'start', history: [], answers: {}, steps: {} });
+export type GuideState = z.infer<typeof guideSchema>;
+
+// Preserve opaque legacy fields when reading and writing a supported payload version.
+// UI and help prompts use known fields only; retained data does not enable old integrations.
+const datasetFields = {
+  guide: guideSchema,
   assets: z.array(assetSchema),
   dependencies: z.array(dependencySchema),
   actions: z.array(actionSchema),
@@ -83,19 +105,123 @@ export const datasetSchema = z.object({
   workflowProgress: z.record(z.string(), z.array(z.string())),
   reviews: z.array(reviewSchema),
   assessmentAnswers: z.record(z.string(), assessmentAnswerSchema).default({}),
-  checkupProgress: z.object({ activeDomain: z.string().default('identity'), startedAt: z.string().optional(), lastCompletedAt: z.string().optional() }).default({ activeDomain: 'identity' }),
+  checkupProgress: z.object({ activeDomain: z.string().default('identity'), startedAt: z.string().optional(), lastCompletedAt: z.string().optional() }).passthrough().default({ activeDomain: 'identity' }),
   threatModel: threatModelSchema.default({ concerns: [], audience: 'self', knowledge: 'beginner', priority: 'balanced' }),
   validationRecords: z.array(validationRecordSchema).default([]),
-  onboarding: z.object({ complete: z.boolean(), goals: z.array(z.string()), completedAt: z.string().optional() }),
+  onboarding: z.object({ complete: z.boolean(), goals: z.array(z.string()), completedAt: z.string().optional() }).passthrough(),
   settings: settingsSchema,
+};
+export const CURRENT_DATASET_VERSION = 2;
+export const legacyDatasetSchema = z.object({ version: z.literal(1), ...datasetFields }).passthrough();
+export const currentDatasetSchema = z.object({
+  version: z.literal(CURRENT_DATASET_VERSION), ...datasetFields,
+  securityModel: securityModelSchema.default(emptySecurityModel),
+  deviceWorkflows: z.array(phoneWorkflowSchema).default([]),
+}).passthrough().superRefine((data, context) => {
+  for(const message of lineIssues(data))context.addIssue({code:'custom',path:['securityModel','linePhoneV1'],message});
+  for(const message of lineAccessIssues(data))context.addIssue({code:'custom',path:['securityModel','lineAccessV1'],message});
+  for(const message of enteIssues(data))context.addIssue({code:'custom',path:['securityModel','enteV1'],message});
+  for(const message of twofasIssues(data))context.addIssue({code:'custom',path:['securityModel','twofasV1'],message});
+  for(const message of nordKeyReturnIssues(data))context.addIssue({code:'custom',path:['securityModel','hardwareKeysV1'],message});
+  for(const message of protectionIssues(data,v=>guideSchema.safeParse(v).success))context.addIssue({code:'custom',path:['securityModel','deviceProtectionV1'],message});
+  for(const message of accessPlanIssues(data))context.addIssue({code:'custom',path:['securityModel','accessPlansV1'],message});
+  if (data.securityModel.revision >= 7 && Object.hasOwn(data.securityModel, 'hardwareKeysV1')) {
+    const parsed = keyStoreSchema.safeParse(data.securityModel.hardwareKeysV1);
+    const fail = () => context.addIssue({code:'custom',path:['securityModel','hardwareKeysV1'],message:'invalid-hardware-key-store'});
+    if (!parsed.success) fail();
+    else {
+      const ids = new Set<string>(), refs = new Set([...data.assets,...data.securityModel.entities].map(e=>e.id));
+      for (const task of parsed.data.tasks) {
+        const account=data.assets.find(a=>a.id===task.accountRef&&a.kind==='account');
+        if(ids.has(task.id)||!account||!['google','apple','bitwarden'].includes(account.provider??'')||(task.mode&&!task.mode.startsWith(account.provider==='apple'?'apple-':account.provider==='google'?'google-':'bitwarden-')))fail();
+        ids.add(task.id);
+        if(task.deviceRef&&!data.assets.some(a=>a.id===task.deviceRef&&a.kind==='device'))fail();
+        if(task.browserRef&&!data.securityModel.entities.some(e=>e.id===task.browserRef&&e.kind==='installation'&&e.deviceRef===task.deviceRef))fail();
+        if(task.vaultRef&&!data.securityModel.entities.some(e=>e.id===task.vaultRef&&e.kind==='vault'&&e.productId==='bitwarden'&&e.authenticationAccountRef===task.accountRef))fail();
+        if(new Set(task.keyRefs).size!==task.keyRefs.length||task.keyRefs.some(ref=>!data.securityModel.entities.some(e=>e.id===ref&&e.kind==='security-key')))fail();
+        if(task.registrationRefs.some((ref,i)=>!data.securityModel.entities.some(e=>e.id===ref&&e.kind==='credential'&&e.subjectRef===task.accountRef&&e.storageRef===task.keyRefs[i])))fail();
+        if(Object.values(task.records).some(r=>r.refs.some(ref=>!refs.has(ref))||r.requires.some(ref=>!task.records[ref])))fail();
+      }
+    }
+  }
+  for(const session of data.securityModel.entities.filter(e=>e.kind==='session'))if(session.kind==='session'&&(!data.assets.some(a=>a.id===session.accountRef&&a.kind==='account')||(session.deviceRef&&!data.assets.some(a=>a.id===session.deviceRef&&a.kind==='device'))||(session.installationRef&&!data.securityModel.entities.some(e=>e.id===session.installationRef&&e.kind==='installation'))))context.addIssue({code:'custom',path:['securityModel'],message:'invalid-session-reference'});
+  if (data.securityModel.revision < 6 && data.securityModel.entities.some(e => e.kind === 'session')) context.addIssue({ code: 'custom', path: ['securityModel'], message: 'session-requires-revision-6' });
+  if (data.securityModel.revision >= 6 && Object.hasOwn(data.securityModel, 'mapRecordsV1')) {
+    const parsed = mapRecordStoreSchema.safeParse(data.securityModel.mapRecordsV1);
+    const refs = new Set([...data.assets, ...data.securityModel.entities].map(e => e.id));
+    const invalid = !parsed.success || parsed.data.manualRefs.some(ref => !refs.has(ref)) || parsed.data.archivedRefs.some(ref => !refs.has(ref)) || new Set(parsed.data.drafts.map(d => d.id)).size !== parsed.data.drafts.length || parsed.data.drafts.some(d => d.editRef && !refs.has(d.editRef));
+    if (invalid) context.addIssue({ code: 'custom', path: ['securityModel', 'mapRecordsV1'], message: 'invalid-map-record-store' });
+  }
+  for (const issue of securityModelIssues(data.securityModel, data.assets)) {
+    context.addIssue({ code: 'custom', path: ['securityModel'], message: `${issue.code}: ${issue.recordId}` });
+  }
+  if (data.securityModel.revision >= 5 && Object.hasOwn(data.securityModel, 'nordSsoV1')) {
+    const parsed = nordSsoStoreSchema.safeParse(data.securityModel.nordSsoV1);
+    const issue = (message: string) => context.addIssue({ code: 'custom', path: ['securityModel', 'nordSsoV1'], message });
+    if (!parsed.success) issue('invalid-nord-sso-store');
+    else {
+      const ids = new Set<string>(), store = parsed.data;
+      for (const b of store.bindings) {
+        const root = data.assets.find(a => a.id === b.rootRef && a.kind === 'account' && a.provider === 'nord');
+        const provider = data.assets.find(a => a.id === b.providerRef && a.kind === 'account' && a.provider === b.provider);
+        if (ids.has(b.id) || !root || !provider || b.rootRef === b.providerRef) issue('invalid-nord-sso-binding');
+        ids.add(b.id);
+        if (b.grantRef) { const grant = data.securityModel.entities.find(e => e.id === b.grantRef && e.kind === 'grant'); if (!grant || grant.kind !== 'grant' || grant.grantType !== 'sso' || grant.grantorRef !== b.providerRef || grant.granteeRef !== b.rootRef || !grant.targetRefs.includes(b.rootRef)) issue('invalid-nord-sso-grant'); }
+      }
+      for (const ref of Object.keys({ ...store.methods, ...store.directPasswords })) if (!data.assets.some(a => a.id === ref && a.kind === 'account' && a.provider === 'nord')) issue('invalid-nord-sso-method');
+      for (const [ref, selected] of Object.entries(store.selections)) if (!data.assets.some(a => a.id === ref && a.kind === 'account' && a.provider === 'nord') || (selected.bindingRef && !store.bindings.some(b => b.id === selected.bindingRef && b.rootRef === ref && b.provider === selected.provider))) issue('invalid-nord-sso-selection');
+      for (const session of store.sessions) {
+        const app = data.securityModel.entities.find(e => e.id === session.appRef && e.kind === 'installation');
+        if (ids.has(session.id) || !app || app.vaultRef !== session.vaultRef || !data.securityModel.entities.some(e => e.id === session.vaultRef && e.kind === 'vault' && e.productId === 'nordpass') || !guideSchema.safeParse(session.guide).success) issue('invalid-nord-sso-session');
+        ids.add(session.id);
+      }
+    }
+  }
+  if (data.securityModel.revision >= 4 && Object.hasOwn(data.securityModel, 'nordRecoveryV1')) {
+    const store = nordRecoveryStoreSchema.safeParse(data.securityModel.nordRecoveryV1);
+    if (!store.success) context.addIssue({ code: 'custom', path: ['securityModel', 'nordRecoveryV1'], message: 'invalid-nord-recovery-store' });
+    else {
+      const taskIds = new Set<string>();
+      for (const task of store.data.tasks) {
+        const vault = data.securityModel.entities.find(e => e.id === task.vaultRef && e.kind === 'vault');
+        const app = data.securityModel.entities.find(e => e.id === task.targetRef && e.kind === 'installation');
+        if (taskIds.has(task.id) || !vault || vault.productId !== 'nordpass' || vault.authenticationAccountRef !== task.rootRef || !app || app.vaultRef !== vault.id || !data.assets.some(a => a.id === task.rootRef)) context.addIssue({ code: 'custom', path: ['securityModel', 'nordRecoveryV1'], message: 'invalid-nord-recovery-reference' });
+        const refs = new Set([...data.assets, ...data.securityModel.entities].map(e => e.id));
+        const linked = [task.sourceRef, task.sourceDeviceRef, task.initialCodeRef, task.currentCodeRef, task.usedCodeRef, task.masterRef, task.masterPaperRef, ...Object.values(task.records).flatMap(r => [...r.refs, ...r.controls.map(c => c.targetRef)]), ...Object.values(task.mutations).flatMap(m => [m.ref, m.sourceRef])];
+        const source = task.sourceRef ? data.securityModel.entities.find(e => e.id === task.sourceRef && e.kind === 'installation') : undefined;
+        if (linked.some(ref => ref && !refs.has(ref)) || (task.sourceRef && (!source || source.vaultRef !== task.vaultRef || source.deviceRef !== task.sourceDeviceRef)) || (task.sourceDeviceRef && !data.assets.some(a => a.id === task.sourceDeviceRef && a.kind === 'device')) || (task.originPhone && !data.deviceWorkflows.some(w => w.id === task.originPhone!.id))) context.addIssue({ code: 'custom', path: ['securityModel', 'nordRecoveryV1'], message: 'missing-nord-recovery-reference' });
+        taskIds.add(task.id);
+      }
+    }
+  }
+  const ids = new Set<string>();
+  for (const workflow of data.deviceWorkflows) {
+    if (ids.has(workflow.id)) context.addIssue({ code: 'custom', path: ['deviceWorkflows'], message: 'duplicate-workflow-id' });
+    ids.add(workflow.id);
+    for (const ref of [workflow.oldDeviceRef, workflow.newDeviceRef]) {
+      if (ref && !data.assets.some(a => a.id === ref && a.kind === 'device')) context.addIssue({ code: 'custom', path: ['deviceWorkflows'], message: 'missing-workflow-device' });
+    }
+    if (workflow.oldDeviceRef && workflow.oldDeviceRef === workflow.newDeviceRef) context.addIssue({ code: 'custom', path: ['deviceWorkflows'], message: 'same-workflow-device' });
+  }
 });
+export const datasetSchema = z.union([legacyDatasetSchema, currentDatasetSchema]);
+export type CurrentDataset = z.infer<typeof currentDatasetSchema>;
 export type Dataset = z.infer<typeof datasetSchema>;
+export class DataUpgradeConflict extends Error {
+  constructor() { super('legacy-feature-key-conflict'); this.name = 'DataUpgradeConflict'; }
+}
+export function upgradeDataset(data: Dataset): CurrentDataset {
+  if (data.version === CURRENT_DATASET_VERSION) return data;
+  // Do not reinterpret an opaque v1 field as a new feature or silently replace it.
+  if (Object.hasOwn(data, 'securityModel') || Object.hasOwn(data, 'deviceWorkflows')) throw new DataUpgradeConflict();
+  return currentDatasetSchema.parse({ ...data, version: CURRENT_DATASET_VERSION, securityModel: emptySecurityModel(), deviceWorkflows: [] });
+}
 
 // Keep the persisted format ID stable for compatibility with existing backups.
 export const envelopeSchema = z.object({
   format: z.literal('personal-cyber-os-v1'), algorithm: z.literal('AES-256-GCM'), kdf: z.literal('PBKDF2-SHA-256'),
   iterations: z.number().min(600_000), salt: z.string(), iv: z.string(), ciphertext: z.string(),
-});
+}).passthrough();
 export type VaultEnvelope = z.infer<typeof envelopeSchema>;
 
 export const CONTROL_CATALOG: Record<AssetKind, { id: string; en: string; ja: string }[]> = {
@@ -120,8 +246,8 @@ export const CONTROL_CATALOG: Record<AssetKind, { id: string; en: string; ja: st
   ],
 };
 
-export const newDataset = (language: Language = 'en', goals: string[] = []): Dataset => ({
-  version: 1, assets: [], dependencies: [], actions: [], incidentProgress: {}, workflowProgress: {}, reviews: [],
+export const newDataset = (language: Language = 'en', goals: string[] = []): CurrentDataset => ({
+  version: CURRENT_DATASET_VERSION, securityModel: emptySecurityModel(), deviceWorkflows: [], guide: guideSchema.parse(undefined), assets: [], dependencies: [], actions: [], incidentProgress: {}, workflowProgress: {}, reviews: [],
   assessmentAnswers: {}, checkupProgress: { activeDomain: 'identity' },
   threatModel: { concerns: [], audience: 'self', knowledge: 'beginner', priority: 'balanced' }, validationRecords: [],
   onboarding: { complete: false, goals },
@@ -133,6 +259,7 @@ export const makeAsset = (input: Pick<Asset, 'kind' | 'type' | 'name' | 'importa
   const catalog = CONTROL_CATALOG[input.kind];
   return {
     id: crypto.randomUUID(), ...input, createdAt: now, updatedAt: now,
+    services: [],
     controls: Object.fromEntries(catalog.map((control) => [control.id, controls[control.id] ?? 'unknown'])), controlEvidence: {},
   };
 };
@@ -160,8 +287,8 @@ const demoAssets = [
   makeAsset({ kind: 'backup', type: 'Cloud photo storage', name: 'Photo library', importance: 'important' }, { encrypted: 'implemented', offsite: 'unknown', restoreTest: 'needs-improvement' }),
 ];
 const demoAssetKey = (controlId: string, name: string) => `${controlId}@${demoAssets.find((asset) => asset.name === name)!.id}`;
-export const DEMO_DATA: Dataset = {
-  version: 1,
+export const DEMO_DATA: CurrentDataset = {
+  version: CURRENT_DATASET_VERSION, securityModel: emptySecurityModel(), deviceWorkflows: [], guide: guideSchema.parse(undefined),
   assets: demoAssets,
   dependencies: [], actions: [], incidentProgress: {}, workflowProgress: {}, reviews: [],
   assessmentAnswers: {

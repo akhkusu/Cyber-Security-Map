@@ -1,0 +1,27 @@
+import type { Source } from './guideCatalog';
+const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-14', reviewMethod: 'official-documentation' });
+export const LINE_SOURCES: Record<string, Source> = {
+  linePasskey: source('LINE · パスキーの登録と制限','https://help.line.me/line/smartphone?contentId=200002149&lang=ja','LINE26.17+ / main device / registered email / PRF / one per device / ten per account'),
+  linePasskeyGuide: source('LINE · パスキーの設定と引き継ぎ','https://guide.line.me/ja/account-and-settings/passkey.html','Guide updated2026-11-05 / official deep link redirect observed; native launch not tested / cross-OS copy needs separate OS recipe'),
+  linePasskeyMove: source('LINE · パスキーで引き継ぐ','https://help.line.me/line/smartphone?contentId=200002270&lang=ja','Same OS and actual Apple/Google account / login with another method / passkey / actual native result'),
+  lineAppleSaved: source('Apple · 保存済みパスキーの確認','https://support.apple.com/ja-jp/104955','iOS18+ Passwords / unlock / categories and account item / existing data retained'),
+  lineAppleSync: source('Apple · iCloudパスワードの同期','https://support.apple.com/ja-jp/109016','iCloud Passwords / same Apple Account / Sync this iPhone; existing guide source'),
+  lineApplePasskey: {...source('Apple · パスキーでの作成とサインイン','https://support.apple.com/ja-jp/guide/iphone/iphf538ea8d0/ios','Official indexed creation and screen-unlock text; Japanese/English focused page requests429; no unverified native button name'),reviewMethod:'official-search-excerpt'},
+  lineGoogleSaved: source('Google · パスワードとパスキーの保存先','https://support.google.com/accounts/answer/6197437?co=GENIE.Platform%3DAndroid&hl=ja','Android Settings search Password Manager / actual Google account / same-account sync / saved app item'),
+  lineAndroidPasskey: source('Google · アプリのパスキー','https://support.google.com/android/answer/14124480?hl=ja','Native create / account selection / screen unlock / provider settings; general support does not prove LINE PRF support'),
+  lineICloud: { ...source('Apple · iPhoneのiCloud Drive', 'https://support.apple.com/guide/iphone/set-up-icloud-drive-iphbbcf8827d/ios', 'Official indexed English/Japanese text: Settings / name / iCloud / Drive / Sync this iPhone; full request429'), reviewMethod: 'official-search-excerpt' },
+  lineQrGuide: { ...source('LINE · QR引き継ぎの復元・スキップ', 'https://guide.line.me/ja/account-and-settings/account-transfer.html', 'Official indexed text: same-OS backup restore versus QR last 14 days; Skip may still carry recent chats'), reviewMethod: 'official-search-excerpt' },
+  lineAndroid: source('LINE · Android間の引き継ぎ', 'https://help2.line.me/line/smartphone?contentId=200002101&lang=ja', 'Cloud account / backup date and size / Skip differs by actual method'),
+  lineAccount: source('LINE · パスワードとメールの確認', 'https://help2.line.me/line/smartphone?contentId=20000060&lang=ja', 'Existing main account / password not displayed / registered email / 24-hour restrictions'),
+  lineNumber: source('LINE · 電話番号の確認と変更', 'https://help2.line.me/line/smartphone?contentId=20000120&lang=ja', 'Existing main account / 24-hour change restriction / SMS or call'),
+  lineQr: source('LINE · かんたん引き継ぎQRコード', 'https://help.line.me/line/smartphone?contentId=20023519&lang=ja', 'Both main phones available / QR / old session ends'),
+  lineBackup: source('LINE · 標準バックアップ', 'https://help.line.me/line/smartphone?contentId=20023473&lang=ja', 'Same OS / text / iCloud Drive or Google Drive'),
+  linePin: source('LINE · バックアップ用PIN', 'https://help.line.me/line/smartphone?contentId=20020033&lang=ja', 'Six-digit backup PIN / last 14 days / main device'),
+  lineData: source('LINE · 移行できるデータ', 'https://help2.line.me/line/smartphone?contentId=20000100&lang=ja', 'OS / text and media / paid items differ'),
+  linePremium: source('LINE · プレミアムバックアップ', 'https://help.line.me/line/smartphone?contentId=200000425&lang=ja', 'Initial backup / exclusions / password reset deletes backup'),
+  lineRestore: source('LINE · バックアップしたトークの復元', 'https://help.line.me/line/smartphone/?contentId=20007389', 'iOS during transfer / Android Settings / English full text'),
+  lineDevices: source('LINE · Main and sub devices', 'https://help.line.me/line/smartphone/?contentId=20000132', 'iPhone main only / Android sub restrictions / English full text'),
+  linePrepare: source('LINE · 引き継ぎ前の準備', 'https://help.line.me/line/smartphone?contentId=20023724&lang=ja', 'Existing account / app versions / data preparation'),
+  lineEnvironment: source('LINE · 利用環境', 'https://help2.line.me/line/smartphone?contentId=10002433&lang=ja', 'Current recommended iOS18+ / Android11+; old usable editions differ'),
+  lineMethods: source('LINE · 引き継ぎ方法と例外', 'https://help2.line.me/line/smartphone?contentId=20000098&lang=ja', 'QR / passkey / number / linked providers; not all routes implemented'),
+};

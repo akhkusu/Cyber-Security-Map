@@ -26,10 +26,31 @@ function toArrayBuffer(value: Uint8Array): ArrayBuffer {
   return copy.buffer;
 }
 
-export interface UnlockContext { key: CryptoKey; salt: Uint8Array; iterations: number }
+export interface UnlockContext { key: CryptoKey; salt: Uint8Array; iterations: number; envelopeMetadata?: Record<string, unknown> }
+
+export class UnsupportedVaultError extends Error {
+  constructor(public readonly kind: 'format' | 'version' | 'data') {
+    super(`unsupported-vault-${kind}`);
+    this.name = 'UnsupportedVaultError';
+  }
+}
+
+function parseEnvelope(value: unknown): VaultEnvelope {
+  const parsed = envelopeSchema.safeParse(value);
+  if (!parsed.success) throw new UnsupportedVaultError('format');
+  return parsed.data;
+}
 
 function migrateDataset(value: unknown): Dataset {
-  const data = datasetSchema.parse(value);
+  if (!value || typeof value !== 'object' || !('version' in value)) throw new UnsupportedVaultError('data');
+  if (value.version !== 1 && value.version !== 2) throw new UnsupportedVaultError('version');
+  if (value.version === 2 && 'securityModel' in value) {
+    const model = value.securityModel;
+    if (model && typeof model === 'object' && 'revision' in model && typeof model.revision === 'number' && model.revision !== 1 && model.revision !== 2 && model.revision !== 3 && model.revision !== 4 && model.revision !== 5 && model.revision !== 6 && model.revision !== 7 && model.revision !== 8 && model.revision !== 9 && model.revision !== 10 && model.revision !== 11 && model.revision !== 12 && model.revision !== 13 && model.revision !== 14) throw new UnsupportedVaultError('version');
+  }
+  const parsed = datasetSchema.safeParse(value);
+  if (!parsed.success) throw new UnsupportedVaultError('data');
+  const data = parsed.data;
   const assessmentAnswers = { ...data.assessmentAnswers };
   for (const control of CHECKUP_CONTROLS) {
     if (!control.assetKind || !control.assetControl) continue;
@@ -59,15 +80,16 @@ async function encryptDataset(data: Dataset, context: UnlockContext): Promise<Va
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: toArrayBuffer(iv) }, context.key, encoder.encode(JSON.stringify(parsed)));
   return {
+    ...context.envelopeMetadata,
     format: 'personal-cyber-os-v1', algorithm: 'AES-256-GCM', kdf: 'PBKDF2-SHA-256',
     iterations: context.iterations, salt: toBase64(context.salt), iv: toBase64(iv),
     ciphertext: toBase64(new Uint8Array(ciphertext)),
   };
 }
 
-export async function createEncryptedVault(passphrase: string, data: Dataset): Promise<{ envelope: VaultEnvelope; context: UnlockContext }> {
+export async function createEncryptedVault(passphrase: string, data: Dataset, envelopeMetadata?: Record<string, unknown>): Promise<{ envelope: VaultEnvelope; context: UnlockContext }> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const context = { key: await deriveKey(passphrase, salt), salt, iterations: ITERATIONS };
+  const context = { key: await deriveKey(passphrase, salt), salt, iterations: ITERATIONS, envelopeMetadata };
   return { envelope: await encryptDataset(data, context), context };
 }
 
@@ -76,20 +98,23 @@ export async function updateEncryptedVault(data: Dataset, context: UnlockContext
 }
 
 export async function decryptVault(envelopeInput: unknown, passphrase: string): Promise<{ data: Dataset; context: UnlockContext }> {
-  const envelope = envelopeSchema.parse(envelopeInput);
+  const envelope = parseEnvelope(envelopeInput);
   const salt = fromBase64(envelope.salt);
-  const context: UnlockContext = { key: await deriveKey(passphrase, salt, envelope.iterations), salt, iterations: envelope.iterations };
+  const envelopeMetadata = Object.fromEntries(Object.entries(envelope).filter(([key]) => !['format', 'algorithm', 'kdf', 'iterations', 'salt', 'iv', 'ciphertext'].includes(key)));
+  const context: UnlockContext = { key: await deriveKey(passphrase, salt, envelope.iterations), salt, iterations: envelope.iterations, envelopeMetadata };
+  let clear: ArrayBuffer;
   try {
-    const clear = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: toArrayBuffer(fromBase64(envelope.iv)) }, context.key, toArrayBuffer(fromBase64(envelope.ciphertext)));
-    const data = migrateDataset(JSON.parse(decoder.decode(clear)));
-    return { data, context };
+    clear = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: toArrayBuffer(fromBase64(envelope.iv)) }, context.key, toArrayBuffer(fromBase64(envelope.ciphertext)));
   } catch {
     throw new Error('wrong-passphrase-or-damaged-vault');
   }
+  let value: unknown;
+  try { value = JSON.parse(decoder.decode(clear)); } catch { throw new UnsupportedVaultError('data'); }
+  return { data: migrateDataset(value), context };
 }
 
-export async function rekeyVault(data: Dataset, newPassphrase: string): Promise<{ envelope: VaultEnvelope; context: UnlockContext }> {
-  return createEncryptedVault(newPassphrase, data);
+export async function rekeyVault(data: Dataset, newPassphrase: string, previousContext?: UnlockContext): Promise<{ envelope: VaultEnvelope; context: UnlockContext }> {
+  return createEncryptedVault(newPassphrase, data, previousContext?.envelopeMetadata);
 }
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -101,13 +126,18 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
-export async function readEnvelope(): Promise<VaultEnvelope | null> {
+export async function readStoredEnvelope(): Promise<unknown | null> {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
     const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(VAULT_KEY);
-    request.onsuccess = () => { db.close(); resolve(request.result ? envelopeSchema.parse(request.result) : null); };
+    request.onsuccess = () => { db.close(); resolve(request.result === undefined ? null : request.result); };
     request.onerror = () => { db.close(); reject(request.error); };
   });
+}
+
+export async function readEnvelope(): Promise<VaultEnvelope | null> {
+  const stored = await readStoredEnvelope();
+  return stored === null ? null : parseEnvelope(stored);
 }
 
 export async function writeEnvelope(envelope: VaultEnvelope): Promise<void> {
@@ -132,11 +162,16 @@ export async function deleteEnvelope(): Promise<void> {
 }
 
 export function downloadEncryptedBackup(envelope: VaultEnvelope): void {
-  const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
+  downloadStoredBackup(envelope, 'cyber-security-map-backup');
+}
+
+// Keep the stored object intact even when this app cannot interpret its format.
+export function downloadStoredBackup(value: unknown, prefix = 'cyber-security-map-original'): void {
+  const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `cyber-security-map-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  anchor.download = `${prefix}-${new Date().toISOString().slice(0, 10)}.json`;
   anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }

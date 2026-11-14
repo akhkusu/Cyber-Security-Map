@@ -1,56 +1,21 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 test.setTimeout(60_000);
-const passphrase = 'public hosting test phrase';
+import { createWorkspace, chooseApple, advance, passphrase } from './helpers';
 
-async function createWorkspace(page: Page) {
-  await page.goto('./');
-  await page.locator('.language-picker select').selectOption('en');
-  await page.getByRole('button', { name: 'Start Security Checkup' }).click();
-  await page.getByLabel('App passphrase', { exact: true }).fill(passphrase);
-  await page.getByLabel('Confirm passphrase').fill(passphrase);
-  for (let step = 0; step < 4; step++) await page.getByRole('button', { name: 'Continue' }).click();
-  await page.getByRole('button', { name: 'Open my workspace' }).click();
-  await expect(page.getByRole('heading', { name: 'Good to see you.' })).toBeVisible();
-}
-
-test('project URLs reload correctly and user input stays encrypted and local', async ({ page, context, baseURL }) => {
-  const site = new URL(baseURL!);
-  const unexpected: string[] = [];
-  context.on('request', (request) => {
-    const url = new URL(request.url());
-    if (url.origin !== site.origin || !url.pathname.startsWith(site.pathname) || request.method() !== 'GET') unexpected.push(request.url());
-  });
-  await createWorkspace(page);
-  await expect(page).toHaveTitle('Cyber-Security-Map');
-  await page.getByRole('link', { name: 'My digital life' }).click();
-  await page.getByRole('button', { name: 'Add something' }).click();
-  await page.getByLabel('Category').selectOption('device');
-  const name = '<img src=x onerror="window.__publicHostProbe=1">';
-  await page.getByLabel('Friendly nickname').fill(name);
-  await page.getByRole('button', { name: 'Add to inventory' }).click();
-  await expect(page.getByRole('button', { name: /__publicHostProbe/ })).toBeVisible();
-  await expect(page.locator('img[src="x"]')).toHaveCount(0);
-  expect(await page.evaluate(() => '__publicHostProbe' in window)).toBe(false);
-
-  await page.getByRole('link', { name: 'Security checkup' }).click();
-  await expect(page).toHaveURL(/\/#\/checkup$/);
-  await page.reload();
-  await page.getByLabel('App passphrase', { exact: true }).fill(passphrase);
-  await page.getByRole('button', { name: 'Unlock workspace' }).click();
-  await expect(page.getByRole('heading', { name: 'Security Checkup' })).toBeVisible();
+test('project URLs resume and all guide data stays local and encrypted', async ({ page, context, baseURL }) => {
+  const site = new URL(baseURL!); const unexpected: string[] = [];
+  context.on('request', request => { const u = new URL(request.url()); if (u.origin !== site.origin || !u.pathname.startsWith(site.pathname) || request.method() !== 'GET') unexpected.push(request.url()); });
+  await createWorkspace(page); await chooseApple(page); await advance(page);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('自分の名前を選ぶ');
+  await expect(page).toHaveURL(/\/#\/guide$/); await page.reload();
+  await page.getByLabel('アプリの保存用パスフレーズ', { exact: true }).fill(passphrase); await advance(page, '開いて再開する');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('自分の名前を選ぶ');
   const stored = await page.evaluate(async () => new Promise<unknown>((resolve, reject) => {
-    const open = indexedDB.open('personal-cyber-os', 1);
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
-      const request = open.result.transaction('encrypted-vault', 'readonly').objectStore('encrypted-vault').get('primary');
-      request.onsuccess = () => { open.result.close(); resolve(request.result); };
-      request.onerror = () => { open.result.close(); reject(request.error); };
-    };
+    const open = indexedDB.open('personal-cyber-os', 1); open.onerror = () => reject(open.error);
+    open.onsuccess = () => { const request = open.result.transaction('encrypted-vault', 'readonly').objectStore('encrypted-vault').get('primary'); request.onsuccess = () => { open.result.close(); resolve(request.result); }; };
   }));
-  expect(stored).toMatchObject({ algorithm: 'AES-256-GCM', iterations: 600_000 });
-  expect(JSON.stringify(stored)).not.toContain('__publicHostProbe');
-  expect(unexpected).toEqual([]);
+  expect(stored).toMatchObject({ algorithm: 'AES-256-GCM', iterations: 600000 }); expect(JSON.stringify(stored)).not.toContain('Apple'); expect(unexpected).toEqual([]);
 });
 
 test('the scoped PWA works offline and preserves other applications caches', async ({ page, context, baseURL }) => {
@@ -72,23 +37,29 @@ test('the scoped PWA works offline and preserves other applications caches', asy
   expect(registration).toEqual({ scope: site.href, script: new URL('sw.js', site).href });
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   const cached = await page.evaluate(async ({ prefix }) => {
-    const cache = await caches.open(`${prefix}v6`);
+    const cache = await caches.open(`${prefix}v8`);
     return { names: await caches.keys(), urls: (await cache.keys()).map((request) => request.url) };
   }, { prefix });
   expect(cached.names).toContain('unrelated-project-cache');
   expect(cached.names).not.toContain(`${prefix}v0`);
   expect(cached.urls.every((url) => url.startsWith(site.href))).toBe(true);
   expect(cached.urls.some((url) => /Workspace-[^/]+\.js$/.test(url))).toBe(true);
-  expect(cached.urls.some((url) => /Checkup-[^/]+\.js$/.test(url))).toBe(true);
   expect(cached.urls.some((url) => /encrypted-vault|assessment/.test(url))).toBe(false);
   const manifest = await (await page.request.get(new URL('manifest.webmanifest', site).href)).json();
   expect(new URL(manifest.start_url, new URL('manifest.webmanifest', site)).href).toBe(site.href);
   expect(new URL(manifest.scope, new URL('manifest.webmanifest', site)).href).toBe(site.href);
   await context.setOffline(true);
   await page.reload();
-  await page.getByRole('button', { name: 'Explore a fictional sample' }).click();
-  await page.getByRole('link', { name: 'Security checkup' }).click();
-  await expect(page.getByRole('heading', { name: 'Security Checkup' })).toBeVisible();
+  const wordlist = await page.evaluate(async () => {
+    const response = await fetch(new URL('wordlists/eff-large-wordlist.txt', location.href.split('#')[0]));
+    const bytes = await response.arrayBuffer();
+    return { ok: response.ok, rows: new TextDecoder().decode(bytes).trim().split('\n').length, hash: Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map(b => b.toString(16).padStart(2, '0')).join('') };
+  });
+  expect(wordlist).toEqual({ ok: true, rows: 7776, hash: 'addd35536511597a02fa0a9ff1e5284677b8883b83e986e43f15a3db996b903e' });
+  await page.locator('.language-picker select').selectOption('en');
+  await createWorkspace(page, 'en');
+  await page.getByRole('link', { name: 'Security Map', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Security Map', exact: true })).toBeVisible();
 });
 
 test('the public artifact has no repository files or server-side history fallback', async ({ request, baseURL }) => {
