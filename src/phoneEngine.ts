@@ -1,3 +1,4 @@
+import {enteMoveReady} from './enteEngine';
 import {twofasMoveReady} from './twofasSchemas';
 import {recordProtectionDisposal,undoProtectionDisposal} from './deviceProtection';
 import { makeAsset, upgradeDataset, type CurrentDataset, type Dataset, type Language } from './models';
@@ -103,7 +104,7 @@ export function phoneStepBlockers(data: Dataset, workflow: PhoneWorkflow, step: 
 export function phoneBlockingSteps(data: Dataset, workflow: PhoneWorkflow, beforeId = 'handoff-gate'): PhoneStep[] {
   const steps = phoneSteps(data, workflow), index = steps.findIndex(s => s.id === beforeId);
   if (index < 0) return [];
-  return steps.slice(0, index).filter(s => (s.twofasSourceRef&&!twofasMoveReady(data,workflow.id,s.twofasSourceRef,workflow.newDeviceRef??'')) || s.kind === 'blocked' || ((s.kind === 'action' || s.kind === 'gate') && phoneRecord(workflow, s)?.status !== 'confirmed'));
+  return steps.slice(0, index).filter(s => (s.enteSourceRef&&!enteMoveReady(data,workflow.id,s.enteSourceRef,workflow.newDeviceRef??'')) || (s.twofasSourceRef&&!twofasMoveReady(data,workflow.id,s.twofasSourceRef,workflow.newDeviceRef??'')) || s.kind === 'blocked' || ((s.kind === 'action' || s.kind === 'gate') && phoneRecord(workflow, s)?.status !== 'confirmed'));
 }
 export function confirmPhoneStep(data: Dataset, workflowId: string, now = new Date().toISOString()): Dataset {
   if (data.version !== 2) return data;
@@ -111,6 +112,7 @@ export function confirmPhoneStep(data: Dataset, workflowId: string, now = new Da
   if (!workflow) return data;
   const step = currentPhoneStep(data, workflow);
   if (!['action', 'gate'].includes(step.kind)) return data;
+  if(step.enteSourceRef&&!enteMoveReady(data,workflow.id,step.enteSourceRef,workflow.newDeviceRef??''))return data;
   if(step.twofasSourceRef&&!twofasMoveReady(data,workflow.id,step.twofasSourceRef,workflow.newDeviceRef??''))return data;
   if (phoneStepBlockers(data, workflow, step).length) return data;
   if ((step.kind === 'gate' || step.physicalEffect) && phoneBlockingSteps(data, workflow, step.id).length) return data;

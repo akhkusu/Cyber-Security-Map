@@ -8,6 +8,8 @@ import { answerPhoneQuestion, jumpPhoneStep, startPhoneWorkflow } from '../src/p
 import {startKeyGuide,answerKeyGuide,currentKeyStep} from '../src/hardwareKeys';
 import {keyTasks} from '../src/hardwareKeySchemas';
 import {driveTwofasUI} from './twofas-driver';
+import {driveEnteUI} from './ente-driver';
+import {enteStore} from '../src/enteSchemas';
 import {chooseAuthenticator,authenticatorSetupRoute} from '../src/authenticatorGuide';
 import {twofasStore} from '../src/twofasSchemas';
 import {driveNestedKey} from './nested-key-driver';
@@ -168,13 +170,13 @@ for (const language of ['ja', 'en'] as const) test(`${language}: mobile keyboard
   await mkdir('test-results/nord-sso', { recursive: true }); await page.screenshot({ path: `test-results/nord-sso/nord-sso-${language}.png`, fullPage: true });
 });
 
-test('2FAS setup returns to the same Nord provider detour while keeping the main guide and phone task',async({page})=>{
+for(const product of ['2fas-auth','ente-auth'] as const)test(`${product} setup returns to the same Nord provider detour while keeping the main guide and phone task`,async({page})=>{
   const f=nestedKeyFixture('google'),path=`/nord-connection/${f.session.id}`;
-  let child=chooseAuthenticator({...f.data,guide:{...f.child.guide,cursor:'do/provider/email-mfa/scan'}},'provider','2fas-auth','device','do/provider/email-mfa/scan',true,path);
-  const id=twofasStore(child)!.tasks.at(-1)!.id;child={...child,guide:{...child.guide,cursor:authenticatorSetupRoute(child,'provider')}};
+  let child=chooseAuthenticator({...f.data,guide:{...f.child.guide,cursor:'do/provider/email-mfa/scan'}},'provider',product,'device','do/provider/email-mfa/scan',true,path);
+  const store=product==='ente-auth'?enteStore:twofasStore,id=store(child)!.tasks.at(-1)!.id;child={...child,guide:{...child.guide,cursor:authenticatorSetupRoute(child,'provider')}};
   const data=saveNordSsoSession(f.data,child,f.session.id) as CurrentDataset;
-  await openNestedKeySession(page,data,f.session.id);await driveTwofasUI(page,id);
+  await openNestedKeySession(page,data,f.session.id);if(product==='ente-auth')await driveEnteUI(page,id);else await driveTwofasUI(page,id);
   await expect(page.getByRole('heading',{level:1})).toHaveText('登録用のQRコードは、どの画面にありますか？');
   const savedData=await saved(page);expect(savedData.guide).toEqual(f.main);expect(savedData.deviceWorkflows).toEqual(f.phone);expect(guideSchema.parse(nordSsoStore(savedData)!.sessions.find(s=>s.id===f.session.id)!.guide).cursor).toBe('authenticator-input/provider');
-  expect(twofasStore(savedData)!.tasks.find(t=>t.id===id)!.scopePath).toBe(path);expect(savedData.assets.find(a=>a.id==='provider')!.controls.mfa).toBe('unknown');
+  expect(store(savedData)!.tasks.find(t=>t.id===id)!.scopePath).toBe(path);expect(savedData.assets.find(a=>a.id==='provider')!.controls.mfa).toBe('unknown');
 });

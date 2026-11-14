@@ -184,11 +184,11 @@ export function confirmEnteExternalFile(data:CurrentDataset,r:EnteReceipt,fileRe
   return putEnteStore(data,{...s,files:s.files.map(f=>f.entityRef===fileRef?{...f,role:'permanent',receiptRef:r.id}:f)});
 }
 export type EnteProofInput={kind:EnteStore['proofs'][number]['kind'];appRef?:string;configRef?:string;rootRef?:string;rootEpoch?:string};
-export function recordEnteProof(data:CurrentDataset,r:EnteReceipt,proof:EnteProofInput,observation:{label:string;targetRef:string;requiredRefs:string[];purpose:'sign-in'|'second-step'|'decrypt'|'restore';context:'normal'|'new-device'|'no-existing-session'},sources:string[]=[]):CurrentDataset{
+export function recordEnteProof(data:CurrentDataset,r:EnteReceipt,proof:EnteProofInput,observation:{label:string;targetRef:string;requiredRefs:string[];purpose:'sign-in'|'second-step'|'decrypt'|'restore';context:'normal'|'new-device'|'no-existing-session';withoutRefs?:string[]},sources:string[]=[]):CurrentDataset{
   const s=enteStoreFor(data),id=crypto.randomUUID(),config=s.configurations.find(c=>c.id===proof.configRef),app=data.securityModel.entities.find(e=>e.id===proof.appRef);
   if(proof.appRef&&(app?.kind!=='installation'||!observation.requiredRefs.includes(app.id)||!observation.requiredRefs.includes(app.deviceRef)||!r.refs.includes(app.id)||!r.refs.includes(app.deviceRef)))throw new Error('invalid-ente-use-scope');
   const requiredRefs=[...new Set([...observation.requiredRefs,...(config?.rootRef?[config.rootRef]:[]),...(proof.rootRef?[proof.rootRef]:[])])];
-  const fact={id,label:observation.label,state:'available' as const,evidence:'user-confirmed' as const,checkedAt:r.at,requiredRefs,contexts:[observation.context],dependencyCompleteness:'partial' as const,sourceIds:sources};
+  const fact={id,label:observation.label,state:'available' as const,evidence:'user-confirmed' as const,checkedAt:r.at,requiredRefs,contexts:[observation.context],dependencyCompleteness:'partial' as const,sourceIds:sources,...(observation.withoutRefs?.length?{observedWithoutRefs:observation.withoutRefs}:{})};
   const route={id:crypto.randomUUID(),label:observation.label,targetRef:observation.targetRef,purpose:observation.purpose,contexts:[observation.context],requirements:{kind:'fact' as const,factId:id},sourceIds:sources};
   return putEnteStore({...data,securityModel:{...data.securityModel,facts:[...data.securityModel.facts,fact],routes:[...data.securityModel.routes,route]}},{...s,proofs:[...s.proofs,{...proof,factRef:id,directReceiptRef:r.id,receiptRefs:enteReceiptClosure(s,[r.id])}]});
 }

@@ -42,9 +42,10 @@ export function typedMapStatus(data: Dataset, node: MapItem, language: Language)
   }
   if(enteProfile(data,node.id)&&entity?.kind==='installation'&&data.version===2){
     if(!entePrepared(data,node.id))return {tone:'needs-work',label:yes?'アプリ・ロックの確認が必要':'App or lock check needed',reason:yes?'現在の端末・保存方法・ロックの確認':'Current device, storage and lock checks'};
-    const used=ente?.proofs.some(p=>p.appRef===node.id&&p.kind==='totp-code'&&data.securityModel.routes.some(r=>r.requirements.kind==='fact'&&r.requirements.factId===p.factRef&&evaluateAccess(data.securityModel,r.id,{context:'new-device',now:new Date().toISOString()}).state==='available'));
+    const usedProofs=ente?.proofs.filter(p=>p.appRef===node.id&&p.kind==='totp-code'&&data.securityModel.routes.some(r=>r.requirements.kind==='fact'&&r.requirements.factId===p.factRef&&evaluateAccess(data.securityModel,r.id,{context:r.contexts.includes('new-device')?'new-device':'normal',now:new Date().toISOString()}).state==='available'))??[];
+    const used=usedProofs.length>0,newPhone=usedProofs.some(p=>data.securityModel.facts.some(f=>f.id===p.factRef&&f.contexts.includes('new-device')));
     const enrolled=entity.controls?.codeAccepted==='verified'&&entity.controlEvidence?.codeAccepted==='user-confirmed';
-    return {tone:used||enrolled?'recorded':'unknown',label:yes?used?'新端末でコード利用の記録あり':enrolled?'コード登録の記録あり':'コードの確認待ち':used?'Code used on new phone':enrolled?'Code registration recorded':'Code check needed',reason:yes?'アプリの準備と、正規サービス側のコード確認を区別':'App preparation and official service acceptance are separate checks'};
+    return {tone:used||enrolled?'recorded':'unknown',label:yes?used?newPhone?'新端末でコード利用の記録あり':'コード利用の記録あり':enrolled?'コード登録の記録あり':'コードの確認待ち':used?newPhone?'Code used on new phone':'Code use recorded':enrolled?'Code registration recorded':'Code check needed',reason:yes?'アプリの準備と、正規サービス側のコード確認を区別':'App preparation and official service acceptance are separate checks'};
   }
   const file=data.version===2?twofasStore(data)?.files.find(f=>f.entityRef===node.id):undefined;
   if(file&&!file.permanent)return {tone:'unknown',label:yes?'転送用の一時コピー':'Temporary transfer copy',reason:yes?'恒久的なバックアップと別の物理コピー':'A physical copy separate from the permanent backup'};

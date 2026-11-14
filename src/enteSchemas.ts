@@ -39,7 +39,7 @@ export const enteStoreSchema=z.object({
     role:z.enum(['source','permanent','transfer']),origin:z.enum(['export','automatic']),groupRef:ref,createdAt:time,
   }).passthrough()).default([]),
   proofs:z.array(z.object({factRef:ref,directReceiptRef:ref,receiptRefs:z.array(ref).min(1),
-    kind:z.enum(['totp-code','restore','account-auth','account-read','account-passkey','root-mail-access']),
+    kind:z.enum(['totp-code','service-signin','restore','account-auth','account-read','account-passkey','root-mail-access']),
     appRef:ref.optional(),configRef:ref.optional(),rootRef:ref.optional(),rootEpoch:ref.optional(),
   }).passthrough()).default([]),
   links:z.array(z.object({relationRef:ref,historical:z.boolean().default(false),receiptRefs:z.array(ref).min(1)}).passthrough()).default([]),
@@ -122,16 +122,26 @@ export function entePrepared(data:Dataset,appRef:string):boolean{
   return s.receipts.some(r=>r.lockRef===lock.id&&current(r))&&s.receipts.some(r=>r.configRef===config.id&&current(r));
 }
 export function enteBackupCurrent(data:Dataset,appRef:string):boolean{
-  return data.version===2&&!!enteStore(data)?.files.some(f=>f.appRef===appRef&&enteFileCurrent(data.securityModel,f.entityRef));
+  if(data.version!==2)return false;const store=enteStore(data);if(!store)return false;
+  if(store.files.some(f=>f.appRef===appRef&&enteFileCurrent(data.securityModel,f.entityRef)))return true;
+  return store.receipts.some(r=>{const raw=r.enteBackupCoverageV1;if(!raw||typeof raw!=='object')return false;const v=raw as Record<string,unknown>;return v.appRef===appRef&&typeof v.fileRef==='string'&&v.snapshot===enteSnapshot(data.securityModel,appRef)&&r.refs.includes(appRef)&&r.refs.includes(v.fileRef)&&enteReceiptCurrent(store,r.id)&&enteFileCurrent(data.securityModel,v.fileRef);});
 }
 export function enteWithoutEvidence(model:SecurityModel,fact:AccessFact):string[]{
   const s=enteStore({securityModel:model}),proof=s?.proofs.find(p=>p.factRef===fact.id),receipt=s?.receipts.find(r=>r.id===proof?.directReceiptRef);
   if(!s||!proof||!receipt||!enteReceiptCurrent(s,receipt.id))return [];
+  if(proof.rootRef&&['account-auth','account-passkey','account-read'].includes(proof.kind)){
+    const task=s.tasks.find(t=>t.id===receipt.taskRef),raw=task?.enteReturnV1,v=raw&&typeof raw==='object'?raw as Record<string,unknown>:undefined,parent=v?s.tasks.find(t=>t.id===v.taskRef):undefined;
+    const source=parent?model.entities.find(e=>e.id===parent.appRef):undefined,destination=task?model.entities.find(e=>e.id===task.appRef):undefined;
+    const without=parent&&parent.createdAt===v?.createdAt&&parent.appRef===v.appRef&&parent.destinationRef===v.destinationRef&&parent.newDeviceRef===v.newDeviceRef&&parent.destinationRef===task?.appRef&&source?.kind==='installation'&&destination?.kind==='installation'&&parent.newDeviceRef===destination.deviceRef&&source.deviceRef!==destination.deviceRef&&Array.isArray(fact.observedWithoutRefs)&&fact.observedWithoutRefs.includes(source.deviceRef)?[source.deviceRef]:[];
+    const unused=model.entities.filter(e=>e.kind==='credential'&&e.subjectRef===proof.rootRef&&!fact.requiredRefs.includes(e.id)).map(e=>e.id);
+    const fileInputs=s.files.map(f=>f.entityRef),fileSecrets=s.secrets.filter(c=>['export','automatic'].includes(c.purpose)).flatMap(c=>[c.entityRef,...c.copies.map(p=>p.storageRef)]),locks=s.locks.flatMap(l=>l.credentialRef?[l.credentialRef]:[]);
+    return [...new Set([...unused,...fileInputs,...fileSecrets,...locks,...without])].filter(ref=>!fact.requiredRefs.includes(ref));
+  }
   const task=s.tasks.find(t=>t.id===receipt.taskRef),source=model.entities.find(e=>e.id===task?.appRef),target=model.entities.find(e=>e.id===proof.appRef);
   if(!task||!['move','restore'].includes(task.kind)||source?.kind!=='installation'||target?.kind!=='installation')return [];
   const former=[source.id,...(source.deviceRef!==target.deviceRef?[source.deviceRef]:[])];
   if(proof.kind==='restore')return former;
-  if(proof.kind!=='totp-code')return [];
+  if(proof.kind!=='totp-code'&&proof.kind!=='service-signin')return [];
   // This is the local code operation, not a complete Account sign-in or a
   // claim about recovery with every device lost. Required live resources are
   // checked before these known former/backup inputs can be excluded.
@@ -140,5 +150,10 @@ export function enteWithoutEvidence(model:SecurityModel,fact:AccessFact):string[
   const secrets=s.secrets.filter(c=>apps.has(c.ownerRef)||roots.includes(c.ownerRef)),files=s.files.filter(f=>apps.has(f.appRef));
   const copies=model.entities.filter(e=>e.kind==='credential'&&e.credentialType==='totp'&&(e.storageRef===source.id&&model.lifecycle[e.id]?.state!=='revoked'||e.replicaGroupId&&fact.requiredRefs.some(ref=>model.entities.some(c=>c.id===ref&&c.kind==='credential'&&c.replicaGroupId===e.replicaGroupId))));
   const currentLock=s.profiles.find(p=>p.appRef===target.id)?.lockRef,oldLocks=s.locks.filter(l=>apps.has(l.appRef)&&l.id!==currentLock).flatMap(l=>l.credentialRef?[l.credentialRef]:[]);
+  if(proof.kind==='service-signin')return [...new Set([source.id,...copies.map(c=>c.id),...oldLocks,...files.map(f=>f.entityRef),...s.secrets.filter(c=>apps.has(c.ownerRef)).map(c=>c.entityRef)])];
   return [...new Set([...former,...copies.map(c=>c.id),...oldLocks,...files.flatMap(f=>[f.entityRef,f.storageRef]),...secrets.flatMap(c=>[c.entityRef,...c.copies.map(copy=>copy.storageRef)]),...roots.filter(id=>id!==targetConfig?.rootRef),...s.configurations.filter(c=>c.appRef===source.id&&c.datasetRef!==targetConfig?.datasetRef).map(c=>c.datasetRef)])];
+}
+export function enteParentTask(data:Dataset,id:string):EnteTask|undefined{
+ const store=enteStore(data),task=store?.tasks.find(t=>t.id===id),raw=task?.enteReturnV1;if(!raw||typeof raw!=='object')return;const v=raw as Record<string,unknown>,parent=store?.tasks.find(t=>t.id===v.taskRef);
+ return parent&&parent.id!==id&&parent.createdAt===v.createdAt&&parent.appRef===v.appRef&&parent.destinationRef===v.destinationRef&&parent.newDeviceRef===v.newDeviceRef&&parent.status!=='cancelled'?parent:undefined;
 }

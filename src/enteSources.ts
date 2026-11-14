@@ -1,5 +1,7 @@
 const source=(title:string,url:string,scope:string)=>({title,url,scope,checked:'2026-11-14',reviewMethod:'official-documentation' as const});
 export const ENTE_SOURCES={
+  enteVersionSource:source('Ente Auth · 設定画面の版表示','https://github.com/ente/ente/blob/9684542adf1881515c49a60685cbf53423223e63/mobile/packages/ui/lib/components/settings/app_version_widget.dart','Settings footer reads the installed PackageInfo version'),
+  enteInstall:source('Ente Auth · 正規の配布とWebの入口','https://ente.com/help/auth/faq/installing','Official stores, native desktop versus iOS build, auth.ente.com migration'),
   enteAuth:source('Ente Auth · 正規配布とコード登録','https://ente.com/auth/','Official iOS / Android apps; Auth 4.4.26'),
   enteFaq:source('Ente Auth · 登録・秘密・復旧の区別','https://ente.com/help/auth/faq/','QR / manual setup / current access / recovery'),
   enteOffline:source('Ente Auth · 端末内利用とOSの鍵','https://ente.com/help/auth/features/offline-mode','Offline mode / secure storage / device changes'),

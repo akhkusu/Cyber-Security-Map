@@ -12,6 +12,8 @@
 | Microsoft Authenticator・コード | iPhone→iPhone、Android→Android | 同じOS。既存の新端末データを残し、対応するバックアップから復元後にコードを試す |
 | 同・iOSの新規復元 | 旧アプリ6.8.33以降 | iCloud Drive・キーチェーン・Authenticatorの対象指定・バックアップ。新端末でのリセットや再インストールへ誘導しない |
 | 同・Androidの新規復元 | 個人Microsoft Accountを使うCloud Backupの現行表示 | Google One方式・別の表示は版別の未完了分岐。2027年1月の予定だけで新版と判定しない |
+| Ente Auth・暗号化JSON | 4方向、確認済みの直接転送または本人が保護して転送済みのファイル | 既存コード・Accountを保持。恒久コピー・一時ファイル・解除用語句を区別し、各Accountで新しいコードを使う。[専用契約](ENTE-AUTH-GUIDE.md) |
+| Ente Auth・同期／復元 | 同じ実際のAccountの同期、またはMapから旧端末の操作を要しない暗号化ファイル復元 | 同期・既存端末の全組み合わせの試験、機種変更全体の紛失後の経路は追加対象。保管だけを利用確認にしない |
 | 2FAS Auth・暗号化ファイル | iPhone同士、Android同士、対応するiPhone・PixelのOS間、または本人が保護して転送済みの.2fas | パスワード付き書き出し、別の恒久コピー、取込み、対象ごとのコード利用、一時コピーの整理 |
 | 2FAS Auth・クラウド同期 | iPhone同士／Android同士 | 同じ実際のApple／Google Account、設定済みなら現在の同期用パスワード。新端末の既存コードを維持 |
 | すでに新端末へ移っているコード | Microsoft・Bitwarden・2FAS | 元のアプリと照合してサービスで試す。復元・書き出しを繰り返さず、復元元を確認したとも推測しない |
