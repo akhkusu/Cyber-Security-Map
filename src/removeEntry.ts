@@ -1,3 +1,4 @@
+import {mailPlan} from './mailAccounts';
 import {lineStore} from './lineSchemas';
 import {lineAccessStore} from './lineAccessSchemas';
 import {enteStore} from './enteSchemas';
@@ -13,6 +14,7 @@ import { securityModelIssues } from './securityModel';
 // Refuse a local deletion that would silently remove or strand typed access
 // records or another task. Ordinary v1 entries retain their existing behavior.
 export function removeEntry(data: Dataset, id: string): Dataset | undefined {
+  if(mailPlan(data)?.accountRefs.includes(id))return undefined;
   if (mapRecordStore(data)?.manualRefs.includes(id) || mapRecordStore(data)?.drafts.some(d => d.editRef === id) || mapRecordStore(data)?.archivedRefs.includes(id)) return undefined;
   if (keyTasks(data).some(t => [t.accountRef,t.deviceRef,t.browserRef,t.vaultRef,...t.keyRefs,...t.registrationRefs,...Object.values(t.records).flatMap(r=>r.refs)].includes(id))) return undefined;
   const protection=protectionStore(data);

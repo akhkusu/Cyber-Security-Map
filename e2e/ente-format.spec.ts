@@ -54,9 +54,11 @@ test('a shared mail and manager account remains reusable while an Ente identity 
   await openTwofasData(page,data);
   await expect(page.locator('.guide-card').getByRole('button',{name:/共有するApple Account/})).toBeVisible();
   await expect(page.locator('.guide-card').getByRole('button',{name:new RegExp(ente.name)})).toHaveCount(0);
-  await advance(page,'別のメールを選ぶ');await page.getByRole('button',{name:/iCloud \/ Apple Account/}).click();
+  await page.locator('.mail-add>summary').click();await page.getByRole('button',{name:'iCloud / Apple Account',exact:true}).click();
+  await page.locator('.mail-add>summary').filter({hasText:'記録済みのメールと同じログインで使う'}).click();
   await expect(page.locator('.guide-card').getByRole('button',{name:/共有するApple Account/})).toBeVisible();
   await page.locator('.guide-card').getByRole('button',{name:/共有するApple Account/}).click();
+  await advance(page,'個人用');await advance(page,'メインのメールから対策する');
   await advance(page,'Webの設定画面で進める');
   await expect(page.locator('.guide-card h1')).toHaveText('アカウントの設定を開く');
   const selected=await readTwofasData(page);

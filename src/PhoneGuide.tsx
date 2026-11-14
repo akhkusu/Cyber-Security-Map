@@ -29,7 +29,7 @@ export function PhoneLauncher({ data, language, save, returnTo, oldDeviceRef, al
     }
   };
   if (!allowStart && workflows.length === 0) return null;
-  return <div className="phone-launcher"><h3><Smartphone size={18} />{tx(language, 'When you change phones', 'スマホを買い替えるときに')}</h3><p className="subtle">{tx(language, 'An optional guide for the new phone and what to do with the old one.', '新端末の準備と、旧端末の扱いを進める任意のガイドです。')}</p>
+  return <div className="phone-launcher">{allowStart && <><h3><Smartphone size={18} />{tx(language, 'When you change phones', 'スマホを買い替えるときに')}</h3><p className="subtle">{tx(language, 'An optional guide for the new phone and what to do with the old one.', '新端末の準備と、旧端末の扱いを進める任意のガイドです。')}</p></>}
     {workflows.map(w => <Link className="record-link" to={`/phone/${w.id}`} key={w.id}>{tx(language, w.cursor === 'finished' ? 'Review phone-change task' : 'Resume phone-change task', w.cursor === 'finished' ? '機種変更の記録を見直す' : '機種変更を再開する')}<small>{data.assets.find(a => a.id === w.oldDeviceRef)?.name ?? tx(language, 'Phone not selected yet', '端末は未選択')}{w.newDeviceRef ? ` → ${data.assets.find(a => a.id === w.newDeviceRef)?.name ?? ''}` : ''}</small><ArrowRight size={16} /></Link>)}
     {allowStart && <button className="button secondary" onClick={() => void start()}>{tx(language, workflows.length ? 'Start another phone change' : 'Move to a new phone', workflows.length ? '別の機種変更を始める' : 'スマホの買い替えを進める')}<ArrowRight size={16} /></button>}{error && <p className="error" role="alert">{error}</p>}
   </div>;

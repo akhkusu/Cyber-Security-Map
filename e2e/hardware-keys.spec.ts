@@ -74,7 +74,7 @@ test('a manually recorded Bitwarden second-step passkey is explicitly reused rat
   await open(page,input);await startMap(page);const {data,task}=await drive(page,'bitwarden-second-step',undefined,{'registration-1':'ref:manual'});expect(task.registrationRefs).toEqual(['manual']);expect(data.securityModel.entities.filter(e=>e.kind==='credential')).toHaveLength(1);expect(data.securityModel.entities.find(e=>e.id==='manual')?.opaque).toBe('keep');expect(task.records['start-registration']).toBeUndefined();await expect(page.locator('.key-records')).toContainText('新しいログインで利用を確認');
 });
 for(const mode of ['google-second-step','apple-keys'] as const)test(`${mode}: main MFA records and advances once, then uses the appropriate recovery recipe`,async({page})=>{
-  const input=fixture(mode);input.guide.cursor='do/account/email-mfa/open';await open(page,input);await page.locator('.key-launcher summary').click();await page.locator('.key-launcher .button.secondary').click();await drive(page,mode);await expect(page).toHaveURL(/\/guide$/);
+  const input=fixture(mode);input.guide.cursor='do/account/email-mfa/state';await open(page,input);await page.locator('.key-launcher summary').click();await page.locator('.key-launcher .button.secondary').click();await drive(page,mode);await expect(page).toHaveURL(/\/guide$/);
   await expect(page.getByRole('heading',{level:1})).toHaveText(mode==='apple-keys'?'登録済みのキーと信頼できる端末を確認する':'予備の認証手段の設定を開く');expect((await saved(page)).assets[0].controls.mfa).toBe('verified');await expect(page.getByText('どの端末でログインを承認しますか？',{exact:true})).toHaveCount(0);
   if(mode==='apple-keys'){await advance(page,'使えるキーを確認しました');await advance(page,'予備を別の場所へ保管しました');await expect(page.getByRole('heading',{level:1})).toHaveText('どのパスワードマネージャーを使いますか？');}
 });

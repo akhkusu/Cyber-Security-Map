@@ -102,7 +102,7 @@ export function appendProtectionIdentity(b:ProtectionBuilder,data:Dataset,task:P
     if(a['android-profile']!=='owner'){b.blocked('other-profile',c('Use the actual owner profile','所有者のプロフィールを確認してください'),c('Keep the current user and its data. Do not remove profiles or switch account ownership to force this recipe.','現在のユーザーとデータは残します。この手順に合わせるためにプロフィールを削除したり、所有者を変更したりしません。'));return false;}
   }
   const provider=protectionProvider(task),accounts=data.assets.filter(x=>x.kind==='account'&&x.provider===provider);
-  if(!b.question('account',c('Which actual account is on this device?','この端末で使う、実際のアカウントは？'),[...accounts.map(x=>({value:protectionRefValue(x.id),label:c(x.name,x.name)})),q('new','Record another actual personal account','別の実際の個人用アカウントを記録する')],c('Choose the account you will check in the official device settings. Selection alone does not confirm a binding or complete any setting.','端末の正規設定でこれから確認するアカウントを選びます。選択だけでは、つながりや設定作業を確認済みにしません。')))return false;
+  if(!b.question('account',c('Which actual account is on this device?','この端末で使う、実際のアカウントは？'),[...accounts.map(x=>({value:protectionRefValue(x.id),label:c(x.name,x.name)})),q('new','Record another actual personal account','別の実際の個人用アカウントを記録する')],c('Choose the account shown in this device’s settings.','この端末の設定に表示されているアカウントを選んでください。')))return false;
   if(a.account==='new'&&!b.text('account-label',c('Give this account a nickname','このアカウントの呼び名を付ける')))return false;
   const account=data.assets.find(x=>x.id===task.accountRef);
   if(account&&!account.purpose&&!b.question('account-purpose',c('Is this a personal account you manage?','このアカウントは、自分で管理する個人用ですか？'),[q('personal','Yes, my personal account','本人が管理する個人用です'),q('managed','Work, school or managed child account','仕事・学校・管理対象の子供用です')] ))return false;

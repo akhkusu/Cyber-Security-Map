@@ -3,17 +3,16 @@ import { webcrypto } from 'node:crypto';
 export const passphrase = 'test-only encrypted storage phrase';
 export async function createWorkspace(page: Page, language = 'ja') {
   await page.goto('./'); await page.locator('.language-picker select').selectOption(language);
-  await page.getByRole('button', { name: language === 'ja' ? '対策を始める' : 'Start the guide', exact: true }).click();
   await page.getByLabel(language === 'ja' ? 'アプリの保存用パスフレーズ' : 'App passphrase', { exact: true }).fill(passphrase);
   await page.getByLabel(language === 'ja' ? '同じフレーズをもう一度' : 'Confirm passphrase', { exact: true }).fill(passphrase);
   await page.getByRole('button', { name: language === 'ja' ? '保存して始める' : 'Save and start', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toContainText(language === 'ja' ? 'よく使うメール' : 'Which email account');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(language === 'ja' ? '一番重要なメール' : 'Which email is most important');
 }
 export async function chooseApple(page: Page, platform: 'ios' | 'macos' | 'web' = 'ios') {
-  await page.getByRole('button', { name: 'メールサービスを選ぶ', exact: true }).click();
   await page.getByRole('button', { name: /iCloud \/ Apple Account/ }).click();
-  await page.getByRole('button', { name: '別のアカウントとして追加する', exact: true }).click();
+  await page.getByRole('button', { name: '次へ', exact: true }).click();
   await page.getByRole('button', { name: '個人用', exact: true }).click();
+  await page.getByRole('button', { name: 'メインのメールから対策する', exact: true }).click();
   await page.getByRole('button', { name: platform === 'ios' ? 'iPhone / iPad を追加' : platform === 'macos' ? 'Mac を追加' : /^Webの設定画面で進める/, exact: platform !== 'web' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('アカウントの設定を開く');
 }
@@ -79,4 +78,15 @@ export async function prepareAuthenticator(page: Page, product = 'Bitwarden Auth
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('登録用のQRコードは、どの画面にありますか？');
   await advance(page, manual ? '同じスマホにあり、手入力用の設定キーも表示されている' : '別の画面にあり、このスマホで読み取れる');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('選んだアプリへ今回のアカウントを追加する');
+}
+
+// Start an optional security-key detour at the authentication-method choice.
+export async function reachMfaMethodChoice(page: Page, language: 'ja'|'en' = 'ja') {
+  const title=language==='ja'?'すでに認証は有効になっていますか？':'Is two-step verification already on?';
+  for(let n=0;n<8;n++){
+    if(await page.getByRole('heading',{level:1,name:title,exact:true}).isVisible())return;
+    await page.locator('.guide-card .primary-actions .button').first().click();
+    await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy','false');
+  }
+  await expect(page.getByRole('heading',{level:1})).toHaveText(title);
 }

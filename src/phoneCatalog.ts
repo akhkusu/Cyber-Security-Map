@@ -79,7 +79,7 @@ function basePhoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] {
   ]));
   if (!old) return steps;
   if (!['ios', 'android'].includes(old.operatingSystem ?? '') || answers['old-os']) {
-    steps.push(question('old-os', c('What kind of phone is the previous device?', 'これまでのスマホの種類は？'), [choice('ios', 'iPhone', 'iPhone'), choice('android', 'Android', 'Android'), choice('other', 'Another device / not sure', '別の端末・分からない')], c('Reuse the saved device entry. This does not complete any setting.', '登録済みの端末をそのまま使います。種類を選ぶだけで、設定は完了になりません。')));
+    steps.push(question('old-os', c('What kind of phone is the previous device?', 'これまでのスマホの種類は？'), [choice('ios', 'iPhone', 'iPhone'), choice('android', 'Android', 'Android'), choice('other', 'Another device / not sure', '別の端末・分からない')], c('Choose the type of your previous phone.', 'これまで使っていたスマホの種類を選んでください。')));
     if (!answers['old-os'] || !['ios', 'android'].includes(old.operatingSystem ?? '')) {
       if (answers['old-os'] === 'other') steps.push(blocked('old-os-unsupported', c('Keep this device unchanged', 'この端末の登録を残す'), c('This phone-change route covers iPhone and Android. Keep the existing entry and use its device guide when supported.', 'この機種変更の経路はiPhoneとAndroid向けです。既存の登録は残し、対応する端末ガイドで進めます。'), [old.id]));
       return steps;

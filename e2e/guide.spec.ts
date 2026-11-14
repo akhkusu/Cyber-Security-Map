@@ -139,8 +139,8 @@ for (const format of ['newer-payload', 'newer-model', 'unsupported-envelope']) t
 });
 
 for (const provider of ['Gmail / Google', 'Outlook / Microsoft', 'Proton Mail', 'Fastmail', 'Tuta / Tutanota', 'Zoho Mail', 'Yahoo.com', 'StartMail', 'mail.com', 'GMX.com']) test(`${provider}: service-specific MFA, recovery, and map records`, async ({ page }) => {
-  await createWorkspace(page); await advance(page, 'メールサービスを選ぶ');
-  await page.getByRole('button', { name: provider, exact: true }).click(); await advance(page, '別のアカウントとして追加する'); await advance(page, '個人用');
+  await createWorkspace(page);
+  await page.getByRole('button', { name: provider, exact: true }).click(); await advance(page); await advance(page, '個人用'); await advance(page, 'メインのメールから対策する');
   let count = 0;
   while (true) {
     if (++count > 30) throw new Error('MFA route did not finish');

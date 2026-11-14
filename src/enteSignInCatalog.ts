@@ -148,8 +148,8 @@ export function enteSignInSteps(data: Dataset, task: EnteTask, ctx: Context): En
     { url: 'https://auth.ente.com/', button: c('The login screen is open', 'ログイン画面を開きました') });
   }
   act(prefix + 'email', c('Enter this existing Account’s email in Ente', 'この既存AccountのメールをEnteへ入力する'),
-    c('Use the exact existing Account’s email in Ente’s login form and select Login. Keep its identity; do not choose Sign up or enter the address here.',
-      '今回の正しい既存AccountのメールをEnteのログイン欄だけへ入れ、「Login / ログイン」を選びます。同じAccountで続け、「Sign up」で新設したり、このアプリへアドレスを入れたりしません。'),
+    c('Enter the email address for this Ente account in Ente’s login form and select Login.',
+      '今回使うEnteアカウントのメールアドレスをEnteのログイン画面に入力し、「Login / ログイン」を選んでください。'),
     c('Ente shows its next check for the intended existing Account.', '今回の正しい既存Accountについて、次の確認が表示されること。'), { button: c('I entered the email in Ente', 'Enteへメールを入力しました') });
   let next = screen('entry', c('What is Ente asking for after the email?', 'メールを入れた後、Enteで何を求められていますか？'), ['password', 'email', 'other', 'expired']);
   if (!next) return steps;

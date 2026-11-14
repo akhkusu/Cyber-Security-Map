@@ -57,7 +57,7 @@ test('the scoped PWA works offline and preserves other applications caches', asy
   });
   expect(wordlist).toEqual({ ok: true, rows: 7776, hash: 'addd35536511597a02fa0a9ff1e5284677b8883b83e986e43f15a3db996b903e' });
   await page.locator('.language-picker select').selectOption('en');
-  await page.getByRole('button', { name: 'Try a sample', exact: true }).click();
+  await createWorkspace(page, 'en');
   await page.getByRole('link', { name: 'Security Map', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Security Map', exact: true })).toBeVisible();
 });
