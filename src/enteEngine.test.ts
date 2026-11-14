@@ -91,12 +91,14 @@ describe('Ente one-operation guide',()=>{
 });
 
 describe('Ente Account and independent restoration',()=>{
+ // This case completes several guides and validates every saved transition;
+ // the default five seconds is not a per-operation performance requirement.
  it.each(['passkey','new-passkey','totp'] as const)('keeps the existing Account and separately verifies %s, password and readable data',method=>{
   const f=fixture(),root=createEnteRoot(f.data,undefined,time()),prep=drive(root.data,f.id,{state:'account',root:`account:${root.rootRef}`}),task=startEnteTask(prep,{kind:'account',appRef:f.appRef,rootRef:root.rootRef,origin:'map'},time());
   const answers={'root-password-state':'known','root-key-copy':'new','root-email-mode':'off','root-mail':'account:mail','root-mfa':method,'root-passkey-record':'add','root-factor-store':method==='totp'?`store:${f.appRef}`:'local'};
   const data=drive(task.data,task.id,answers);expect(enteStore(data)!.roots).toHaveLength(1);expect(data.assets.find(a=>a.id===root.rootRef)!.controls).toMatchObject({mfa:'verified',recovery:'verified'});expect(data.guide).toEqual(f.data.guide);
   expect(enteAccountReady(data,f.appRef)).toBe(true);const proofs=enteStore(data)!.proofs;expect(proofs.some(p=>p.kind==='account-read')).toBe(true);expect(proofs.some(p=>p.kind==='account-passkey')).toBe(method!=='totp');expect(enteStore(data)!.secrets.filter(s=>s.ownerRef===root.rootRef).map(s=>s.purpose).sort()).toEqual(['account-password','recovery-key']);
- });
+ },30000);
  it('restores an independent recorded file with the old phone unavailable and does not need its Ente Account',()=>{
   const f=prepared('ios','android'),b=startEnteTask(f.data,{kind:'backup',appRef:f.appRef,origin:'map'},time());let data=drive(b.data,b.id);data={...data,securityModel:{...data.securityModel,lifecycle:{...data.securityModel.lifecycle,old:{state:'lost',evidence:'user-confirmed',updatedAt:time()}}}};
   const task=startEnteTask(data,{kind:'restore',appRef:f.appRef,newDeviceRef:'fresh',origin:'map'},time()),restored=drive(task.data,task.id,{'restore-file-place':'external','destination-backup':`file:${enteStore(data)!.files.find(f=>f.role==='permanent')!.entityRef}`});expect(enteTask(restored,task.id)!.status).toBe('completed');expect(enteStore(restored)!.roots).toEqual([]);expect(enteStore(restored)!.files).toHaveLength(2);

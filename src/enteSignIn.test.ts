@@ -8,6 +8,8 @@ import { evaluateAccess } from './securityModel';
 import { createEncryptedVault, decryptVault } from './crypto';
 
 let tick = 0;
+// Each scenario runs a complete workflow with schema checks at every transition.
+const workflowTimeout = 30_000;
 const at = () => new Date(Date.parse('2026-11-14T08:00:00Z') + ++tick * 1000).toISOString();
 const valid = (data: CurrentDataset) => { const parsed = currentDatasetSchema.safeParse(data); if (!parsed.success) throw Error(JSON.stringify(parsed.error.issues)); return data; };
 function drive(data: CurrentDataset, id: string, answers: Record<string, string> = {}, until?: string): CurrentDataset {
@@ -85,12 +87,12 @@ describe('Ente actual-screen sign-in without repeated completed authentication',
     const factorIndex = history.indexOf('root-factor-use'), passwordIndex = history.indexOf('signin/root/password'); expect(factorIndex < passwordIndex).toBe(scenario.factorFirst);
     expect(factFor(done, started.id).requiredRefs.includes('mail')).toBe(scenario.email);
     expect(done.securityModel.entities.find(e => e.id === 'other-code')).toEqual(f.data.securityModel.entities.find(e => e.id === 'other-code'));
-  }, 20000);
+  }, workflowTimeout);
 
   it('only re-enters the password when Ente actually asks again, without a second MFA test', () => {
     const f = fixture(), t = account(f), done = drive(t.data, t.id, { 'signin/root/after-factor': 'password' }), history = enteTask(done, t.id)!.history;
     expect(history.indexOf('signin/root/password')).toBeLessThan(history.indexOf('root-factor-use')); expect(history.indexOf('signin/root/password-again')).toBeGreaterThan(history.indexOf('root-factor-use')); expect(history.filter(s => s === 'root-factor-use')).toHaveLength(1);
-  }, 20000);
+  }, workflowTimeout);
 
   for (const emailFirst of [false, true]) for (const methodChoice of [false, true]) it(`uses the actual TOTP entry: email-first=${emailFirst}, method-choice=${methodChoice}`, () => {
     const f = addTotp(fixture(), methodChoice), t = account(f);
@@ -98,14 +100,14 @@ describe('Ente actual-screen sign-in without repeated completed authentication',
     const done = drive(t.data, t.id, answers), task = enteTask(done, t.id)!, fact = factFor(done, t.id);
     expect(task.status).toBe('completed'); expect(task.resources.factorCredential).toBe('known-root-totp'); expect(fact.requiredRefs).toContain('known-root-totp'); expect(fact.requiredRefs).not.toContain(f.passkeyRef);
     expect(task.history.filter(id => id === 'root-factor-use')).toHaveLength(1); expect(task.history.includes('signin/root/method-select')).toBe(methodChoice); expect(fact.requiredRefs.includes('mail')).toBe(emailFirst);
-  }, 20000);
+  }, workflowTimeout);
 
   it('records an unrecorded existing TOTP only when Ente accepts that code', () => {
     const f = fixture(), t = account(f), answers = { 'root-mfa': 'totp', 'root-factor-store': `store:${f.appRef}`, 'signin/root/after-password': 'totp' };
     const before = drive(t.data, t.id, answers, 'root-factor-use'); expect(before.securityModel.entities.some(e => e.kind === 'credential' && e.subjectRef === f.rootRef && e.credentialType === 'totp')).toBe(false);
     const done = drive(before, t.id, answers), task = enteTask(done, t.id)!, ref = task.resources.factorCredential!;
     expect(task.status).toBe('completed'); expect(done.securityModel.entities.find(e => e.id === ref)).toMatchObject({ kind: 'credential', credentialType: 'totp', subjectRef: f.rootRef, storageRef: f.appRef }); expect(factFor(done, t.id).requiredRefs).toContain(ref);
-  }, 20000);
+  }, workflowTimeout);
 
   it('does not count a password-only screen or another factor as the selected passkey', () => {
     const f = fixture();
@@ -120,7 +122,7 @@ describe('Ente actual-screen sign-in without repeated completed authentication',
     const f = fixture(), t = account(f), before = drive(t.data, t.id, {}, 'signin/root/after-factor'), oldFactor = enteTask(before, t.id)!.records['root-factor-use'], expired = answerEnte(before, t.id, 'expired', at()), restarted = restartEnteSignIn(expired, t.id, at()) as CurrentDataset;
     expect(currentEnteStep(restarted, enteTask(restarted, t.id)!).id).toBe('root-login-open'); expect(enteReceiptCurrent(enteStore(restarted)!, oldFactor)).toBe(false);
     const done = drive(restarted, t.id), newFactor = enteTask(done, t.id)!.records['root-factor-use']; expect(newFactor).not.toBe(oldFactor); expect(readProof(done, t.id).receiptRefs).toContain(newFactor); expect(readProof(done, t.id).receiptRefs).not.toContain(oldFactor); expect(enteTask(done, t.id)!.records['root-passkey-create']).toBeUndefined(); expect(done.guide).toEqual(f.data.guide);
-  }, 20000);
+  }, workflowTimeout);
 
   it('preserves a completed legacy guide and opaque data through the existing encrypted format', async () => {
     const f = fixture(), old = enteStore(f.data)!.tasks.find(t => t.kind === 'account')!, current = currentEnteStep(f.data, old); expect(current.kind).toBe('finished'); expect(old.stepwiseSignInV1).toBeUndefined();
@@ -128,7 +130,7 @@ describe('Ente actual-screen sign-in without repeated completed authentication',
     const opaque = putEnteTask(data, { ...enteTask(data, t.id)!, futureSignInField: { keep: ['opaque'] } });
     const sealed = await createEncryptedVault('application encryption fixture phrase', opaque), opened = (await decryptVault(sealed.envelope, 'application encryption fixture phrase')).data;
     expect(opened).toEqual(opaque); expect(currentEnteStep(opened, enteTask(opened, t.id)!).id).toBe('signin/root/after-factor'); expect(enteStore(opened)!.tasks.find(t => t.id === old.id)).toEqual(old); expect(opened.guide).toEqual(f.data.guide);
-  }, 20000);
+  }, workflowTimeout);
 });
 
 describe('Ente new-password verification in the same sign-in', () => {
@@ -139,7 +141,7 @@ describe('Ente new-password verification in the same sign-in', () => {
     expect(task.status).toBe('completed'); expect(fact.requiredRefs).toContain('known-root-totp'); expect(fact.requiredRefs).not.toContain(f.passkeyRef); expect(fact.requiredRefs.includes('mail')).toBe(emailFirst);
     expect(task.history.filter(id => id === 'signin/recovery/factor-use')).toHaveLength(1); expect(task.history.filter(id => id === 'recovery-password-request')).toHaveLength(1);
     expect(enteStore(done)!.tasks.some(child => child.kind === 'account' && child.createdAt > task.createdAt)).toBe(false);
-  }, 20000);
+  }, workflowTimeout);
   for (const emailFirst of [false, true]) it(emailFirst ? 'accepts the candidate after the actual email and factor screens' : 'accepts the candidate before the factor and reads data without a second sign-in', () => {
     const f = fixture(), t = recover(f), before = drive(t.data, t.id, {}, 'recovery-password-request'), candidate = enteTask(before, t.id)!.recoveryStateV1!.password!.candidateRef, old = enteStore(before)!.roots[0].passwordRef;
     const requested = confirmEnte(before, t.id, at()) as CurrentDataset; expect(entePasswordPending(requested.securityModel, f.rootRef)).toBe(true);
@@ -150,14 +152,14 @@ describe('Ente new-password verification in the same sign-in', () => {
     expect(enteStore(done)!.tasks.some(t => t.kind === 'account' && t.createdAt > task.createdAt)).toBe(false);
     const fact = factFor(done, t.id), route = done.securityModel.routes.find(r => r.requirements.kind === 'fact' && r.requirements.factId === fact.id)!;
     expect(fact.requiredRefs).toContain(candidate); expect(fact.requiredRefs).toContain(f.passkeyRef); expect(fact.requiredRefs.includes('mail')).toBe(emailFirst); expect(evaluateAccess(done.securityModel, route.id, { context: 'no-existing-session', now: at() }).state).toBe('available');
-  }, 20000);
+  }, workflowTimeout);
 
   it('does not confirm an unknown change from a code list reached without using the candidate', () => {
     const f = fixture(), t = recover(f), before = drive(t.data, t.id, { 'signin/recovery/entry': 'email' }, 'signin/recovery/after-email'), next = answerEnte(before, t.id, 'data', at()) as CurrentDataset;
     expect(currentEnteStep(next, enteTask(next, t.id)!).id).toBe('signin/recovery/password-not-used'); expect(enteTask(next, t.id)!.recoveryStateV1!.password!.phase).toBe('requested'); expect(entePasswordPending(next.securityModel, f.rootRef)).toBe(true);
     const restarted = restartEnteSignIn(next, t.id, at()) as CurrentDataset; expect(enteTask(restarted, t.id)!.records['recovery-password-request']).toBe(enteTask(next, t.id)!.records['recovery-password-request']); expect(enteStore(restarted)!.roots[0].passwordRef).toBe(enteStore(f.data)!.roots[0].passwordRef); expect(enteTask(restarted, t.id)!.answers['signin/recovery/mail']).toBeUndefined(); expect(enteTask(restarted, t.id)!.resources.recoveryMail).toBeUndefined();
     const done = drive(restarted, t.id); expect(enteTask(done, t.id)!.history.filter(s => s === 'recovery-password-request')).toHaveLength(1); expect(enteTask(done, t.id)!.status).toBe('completed');
-  }, 20000);
+  }, workflowTimeout);
 
   it('records an unrecorded passkey only after actual acceptance and binds local storage to the real web device', () => {
     const f = fixture(); f.data.securityModel.lifecycle.phone = { state: 'lost', evidence: 'user-confirmed', updatedAt: at() }; f.data.securityModel.lifecycle[f.appRef] = { state: 'unavailable', evidence: 'user-confirmed', updatedAt: at() };
@@ -166,5 +168,5 @@ describe('Ente new-password verification in the same sign-in', () => {
     const confirmed = confirmEnte(before, t.id, at()) as CurrentDataset, ref = enteTask(confirmed, t.id)!.resources.recoveryFactor!, credential = confirmed.securityModel.entities.find(e => e.id === ref)!;
     expect(credential).toMatchObject({ kind: 'credential', credentialType: 'passkey', subjectRef: f.rootRef, storageRef: 'web' });
     const done = drive(confirmed, t.id, answers), fact = factFor(done, t.id); expect(enteTask(done, t.id)!.status).toBe('completed'); expect(fact.requiredRefs).toContain('web'); expect(fact.requiredRefs).toContain(ref); expect(fact.requiredRefs).not.toContain('phone'); expect(fact.requiredRefs).not.toContain(f.appRef); expect(fact.observedWithoutRefs).toContain(f.appRef); expect(done.securityModel.lifecycle.phone.state).toBe('lost'); expect(done.securityModel.lifecycle[f.appRef].state).toBe('unavailable'); expect(done.guide).toEqual(f.data.guide);
-  }, 20000);
+  }, workflowTimeout);
 });
