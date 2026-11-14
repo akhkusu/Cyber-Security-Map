@@ -46,7 +46,7 @@ describe('guided assessment catalog and prioritization', () => {
     data.assets = [email];
     data.dependencies = [{ id: 'edge', assetId: 'other', recoveryAssetId: email.id, relation: 'recovery', createdAt: new Date().toISOString() }];
     const finding = buildGuidedFindings(data, 'en').find((item) => item.id === controlKey('identity.primary-email-mfa', email.id));
-    expect(finding?.priorityRationale).toContain('1 recovery-dependent asset');
+    expect(finding?.priorityRationale).toContain('1 recovery-dependent item');
   });
 
   it('preserves legacy inventory without treating it as new assessment answers', () => {
