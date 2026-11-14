@@ -16,7 +16,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The full encrypted-state and static Pages suite needs more than20min including setup.
+    timeout-minutes: 30
     env:
       APP_BASE_PATH: /${{ github.event.repository.name }}/
     steps:
