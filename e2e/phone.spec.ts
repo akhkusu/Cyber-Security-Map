@@ -33,6 +33,8 @@ async function savedData(page: Page) { return (await decryptVault(await readSave
 test('optional phone change: inline checks, resume, keep as spare, shared map and unchanged main guide', async ({ page, context }) => {
   const external: string[] = []; context.on('request', r => { if (!r.url().startsWith('http://127.0.0.1:4174')) external.push(r.url()); });
   const original = dataFixture(); await openSaved(page, original);
+  await expect(page.getByRole('button',{name:'スマホの買い替えを進める',exact:true})).toHaveCount(0);
+  await page.getByRole('link',{name:'Security Map',exact:true}).click();await page.locator('.map-node').filter({has:page.getByText('旧iPhone',{exact:true})}).click();
   await advance(page, 'スマホの買い替えを進める'); await advance(page, 'すでに新しいスマホを使っている');
   await advance(page, '旧iPhone'); await advance(page, '手元にあり、ロックを解除して使える'); await advance(page, 'はい、個人用の端末です');
   await confirmUntil(page, 'これから使うスマホは？'); await advance(page, '新しいiPhoneを追加する');
@@ -100,7 +102,8 @@ test('phone guide supports keyboard and 390px English layout without additional 
 test('legacy payload starts the optional workflow without re-registering accounts or resetting progress', async ({ page }) => {
   const current = dataFixture(), raw = JSON.parse(JSON.stringify(current)); raw.version = 1; delete raw.securityModel; delete raw.deviceWorkflows;
   delete raw.assets[0].operatingSystem; raw.legacyInventory = { retained: ['opaque'] }; raw.guide.steps = { 'do/apple/email-mfa/check': { status: 'done', updatedAt: '2026-11-13T12:00:00Z' } };
-  await openSaved(page, raw); await advance(page, 'スマホの買い替えを進める');
+  await openSaved(page, raw);await expect(page.getByRole('button',{name:'スマホの買い替えを進める',exact:true})).toHaveCount(0);
+  await page.getByRole('link',{name:'Security Map',exact:true}).click();await page.locator('.map-node').filter({has:page.getByText('旧iPhone',{exact:true})}).click();await advance(page, 'スマホの買い替えを進める');
   const after = currentDatasetSchema.parse(await savedData(page)); expect(after.version).toBe(2); expect(after.guide).toEqual(raw.guide);
   expect(after.assets).toEqual(raw.assets); expect(after.legacyInventory).toEqual(raw.legacyInventory);
   expect(phoneSteps(after, after.deviceWorkflows[0])[0].id).toBe('stage');
