@@ -40,7 +40,8 @@ function finishPhase(data: CurrentDataset) {
   for (let count = 0; count < 30 && next.guide.cursor.startsWith('do/'); count++) {
     const task = currentTask(next); expect(task, next.guide.cursor).toBeDefined();
     expect(task!.redirectTo, next.guide.cursor).toBeUndefined(); expect(task!.needsPrerequisites).not.toBe(true);
-    next = completeStep(next) as CurrentDataset;
+    const answer = task!.step.control === 'uniquePassword' || task!.step.id === 'cleanup' ? task!.step.choices?.find(c=>c.record!==false)?.next : undefined;
+    next = completeStep(next,answer) as CurrentDataset;
   }
   expect(next.guide.cursor.startsWith('do/')).toBe(false); return next;
 }
@@ -231,4 +232,10 @@ describe('cloud password managers', () => {
     expect(selectedCloudInstallation(corrected, f.vaultId)?.id).toBe(f.appId);
     expect(cloudRecipeFor(corrected, { ...data.assets[0], id: f.appId }, 'cloud-onboard')?.steps.find(s => s.id === 'master-set')?.title.ja).toBe('設定済みの保管庫用マスターを維持する');
   });
+});
+
+for(const product of ['proton-pass','nordpass'] as const)it(`${product}: a passkey or existing session does not confirm a saved password, and a mistaken confirmation is withdrawn`,()=>{
+ const f=fixture(product);let d=prepare(f);d=setCloudAnswer(d,'mail',`password:${f.appId}`,'keep') as CurrentDataset;const recipe=`cloud-password:${f.appId}`,key=`do/mail/${recipe}/test`;d=beginRecipe(d,'mail',recipe) as CurrentDataset;d=completeStep(d) as CurrentDataset;expect(d.guide.cursor).toBe(key);expect(completeStep(d)).toBe(d);const before=d;d=completeStep(d,'password-unconfirmed') as CurrentDataset;expect(d.actions).toEqual(before.actions);expect(d.assets.find(a=>a.id==='mail')?.controls.uniquePassword??'unknown').toBe('unknown');expect(cloudInstallation(d,f.appId)?.controls?.loginUse).not.toBe('verified');
+ d=completeStep(d,'test') as CurrentDataset;d=completeStep(d,'$complete') as CurrentDataset;expect(d.assets.find(a=>a.id==='mail')?.controls.uniquePassword).toBe('verified');expect(cloudInstallation(d,f.appId)?.controls?.loginUse).toBe('verified');const observed=d.securityModel.facts.filter(f=>f.observationActionId===key);expect(observed.length).toBeGreaterThan(0);
+ d=completeStep(move(d,key),'password-unconfirmed') as CurrentDataset;expect(d.assets.find(a=>a.id==='mail')?.controls.uniquePassword).toBe('unknown');expect(cloudInstallation(d,f.appId)?.controls?.loginUse).toBe('unknown');expect(d.securityModel.facts.filter(f=>f.observationActionId===key).every(f=>f.state==='unknown')).toBe(true);expect(d.guide.accountId).toBe(f.data.guide.accountId);expect(securityModelIssues(d.securityModel,d.assets)).toEqual([]);
 });

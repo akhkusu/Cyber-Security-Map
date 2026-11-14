@@ -8,6 +8,7 @@ import type { Asset, Dataset } from './models';
 import type { PhoneWorkflow } from './phoneSchemas';
 import { builtinManagerRecipe } from './nativeManagerCatalog';
 import { nativeInstallation, nativeVault, NATIVE_NAMES, type NativeProduct } from './nativeManagers';
+import { nativeRootCopyState } from './nativeRootCopy';
 import { c, deviceRecipe, emailRecipe, SOURCES, type Copy, type Source, type GuideStep } from './guideCatalog';
 import { authenticatorInventory, authenticatorMigrationSteps, hasRecordedAuthenticators, needsGoogleTransfer, recordedAuthenticators } from './phoneAuthenticators';
 import { retainedPhoneSteps } from './phoneRetention';
@@ -169,8 +170,21 @@ function basePhoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] {
     const key = `native-use:${vault.id}`;
     steps.push(question(key, c(`Will you use ${vault.label} on the new phone?`, `${vault.label}を新しいスマホで使いますか？`), [choice('yes', 'Yes, check the store and a saved login', 'はい・保管庫と保存情報を確認する'), choice('elsewhere', 'I will use this store on another device', '別の端末で、この保管庫を使う')]));
     if (!answers[key]) return steps;
+    if (vault.storageMode === 'account' && nativeRootCopyState(data, vault.authenticationAccountRef) === 'unsupported') {
+      steps.push(blocked(`native-copy-version:${vault.id}`, c('Update the app to read this confirmation', 'この確認記録に対応したアプリが必要です'), c('Keep the original encrypted backup and update the app. This version cannot read the saved account-copy confirmation.', '元の暗号化バックアップを残し、アプリを更新してください。このバージョンでは、保存されているアカウントの控えの確認記録を読み取れません。'), [vault.id]));
+      continue;
+    }
     if (answers[key] === 'elsewhere') {
+      let copyId: string | undefined;
+      if (vault.storageMode === 'account') {
+        const oldApp = data.securityModel.entities.find(e => e.kind === 'installation' && !e.mergedIntoRef && e.vaultRef === vault.id && e.deviceRef === old.id);
+        const copy = oldApp && builtinManagerRecipe(data, oldApp.id)?.steps.find(s => s.id === 'independent-root');
+        if (!copy || !vault.authenticationAccountRef) { steps.push(blocked(`native-elsewhere-copy-missing:${vault.id}`, c('Identify the account used by this store', '保管庫で使うアカウントの確認が必要です'), c('Keep the old phone. Identify this store’s exact synchronization account in its setup guide before handing over the device.', '旧端末を残し、この保管庫の設定ガイドで同期に使うアカウントを確認してください。確認前に端末を手放しません。'), [vault.id, old.id])); continue; }
+        copyId = `native-elsewhere-copy:${vault.id}`;
+        steps.push(action(copyId, copy.title, copy.place, copy.action, copy.expected, [vault.id, vault.authenticationAccountRef], copy.sources, { control: { targetRef: oldApp.id, id: 'independentRoot' }, nativeContext: { installationRef: oldApp.id, subjectRef: oldApp.id, recipeId: 'builtin-manager', step: copy }, button: copy.button }));
+      }
       steps.push(action(`native-elsewhere:${vault.id}`, c('Check this password store outside the old phone', 'この保管庫を、旧端末以外で使えるか確認する'), c('Your other device · selected password store', '別の端末 · 選んだパスワード保管庫'), c('On the device you will keep, open the exact existing store and use an important saved login. Keep its independent account recovery or encrypted local backup accessible without the old phone.', '今後使う別の端末で、元の正しい保管庫を開き、重要な保存済みログインを一つ実際に使ってください。独立したアカウントの復旧手段、またはローカル保管庫の暗号化バックアップも、旧端末なしで使える状態にします。'), c('The store, saved login and recovery remain usable without the old phone.', '旧端末がなくても、保管庫・保存ログイン・復旧手段を利用できること。'), [vault.id, old.id], [vault.productId === 'apple-passwords' ? 'appleKeychain' : 'googleManager']));
+      if (copyId) steps[steps.length - 1] = { ...steps[steps.length - 1], requires: [copyId] };
       continue;
     }
     if (vault.productId === 'apple-passwords' && fresh.operatingSystem !== 'ios') { steps.push(blocked(`native-cross:${vault.id}`, c('Apple Passwords needs a separate move to Android', 'Apple「パスワード」からAndroidへの別の移行が必要です'), c('Apple Passwords is not a native Android provider. The cross-product export/import recipe is not ready here; do not assume passwords or passkeys moved with the phone copy. Keep the old store accessible.', 'Apple「パスワード」はAndroidの組込み入力元ではありません。製品をまたぐ書き出し・取り込みの手順は追加中です。端末のコピーでパスワードやパスキーも移ったとは扱わず、元の保管庫を使える状態で残します。'), [vault.id, old.id, fresh.id], ['applePasswords'])); continue; }

@@ -7,7 +7,8 @@ import { recordControl, undoControl } from './controlRecords';
 import { phoneWorkflowSchema, type PhoneWorkflow } from './phoneSchemas';
 import { PHONE_SOURCES, phoneAssets, phoneName, phoneSteps, type PhoneStep } from './phoneCatalog';
 import { recordNativeObservation, undoNativeObservation } from './nativeObservations';
-import { chooseNativeDevice, nativeVault, NATIVE_NAMES, setNativeVariant, type NativeProduct } from './nativeManagers';
+import { chooseNativeDevice, nativeInstallation, nativeVault, NATIVE_NAMES, setNativeVariant, type NativeProduct } from './nativeManagers';
+import { manageNativeRootCopy, nativeRootCopyProof, nativeRootCopyReady } from './nativeRootCopy';
 import { PROVIDERS } from './guideCatalog';
 import { answerAuthenticatorQuestion, recordPhoneAuthenticator, undoPhoneAuthenticator } from './phoneAuthenticatorRecords';
 import { answerCloudPhoneQuestion } from './phoneCloudManagers';
@@ -29,7 +30,18 @@ function updateWorkflow(data: CurrentDataset, workflow: PhoneWorkflow): CurrentD
 }
 export function currentPhoneStep(data: Dataset, workflow: PhoneWorkflow): PhoneStep {
   const steps = phoneSteps(data, workflow);
-  return steps.find(s => s.id === workflow.cursor) ?? steps[steps.length - 1];
+  let index = steps.findIndex(s => s.id === workflow.cursor);
+  if (index < 0) return steps[steps.length - 1];
+  while (index < steps.length - 1 && phoneNativeRootCopy(data, steps[index]) === true) index++;
+  return steps[index];
+}
+function phoneNativeRootCopy(data: Dataset, step: PhoneStep): boolean | undefined {
+  if (step.nativeContext?.recipeId !== 'builtin-manager' || step.nativeContext.step.id !== 'independent-root') return;
+  const app = nativeInstallation(data, step.nativeContext.installationRef);
+  return nativeRootCopyReady(data, nativeVault(data, app?.vaultRef)?.authenticationAccountRef);
+}
+export function phoneActionConfirmed(data: Dataset, workflow: PhoneWorkflow, step: PhoneStep): boolean {
+  return phoneNativeRootCopy(data, step) ?? (phoneRecord(workflow, step)?.status === 'confirmed');
 }
 function advance(data: CurrentDataset, workflow: PhoneWorkflow, previousId: string): CurrentDataset {
   const steps = phoneSteps(data, workflow), index = steps.findIndex(s => s.id === previousId);
@@ -100,12 +112,12 @@ function phonePrerequisites(data: Dataset, workflow: PhoneWorkflow, step: PhoneS
   return result;
 }
 export function phoneStepBlockers(data: Dataset, workflow: PhoneWorkflow, step: PhoneStep): PhoneStep[] {
-  return phonePrerequisites(data, workflow, step).filter(s => s.kind === 'blocked' || phoneRecord(workflow, s)?.status !== 'confirmed');
+  return phonePrerequisites(data, workflow, step).filter(s => s.kind === 'blocked' || !phoneActionConfirmed(data, workflow, s));
 }
 export function phoneBlockingSteps(data: Dataset, workflow: PhoneWorkflow, beforeId = 'handoff-gate'): PhoneStep[] {
   const steps = phoneSteps(data, workflow), index = steps.findIndex(s => s.id === beforeId);
   if (index < 0) return [];
-  return steps.slice(0, index).filter(s => (s.productPhoneRef&&!phoneProductsReady(data,s.productPhoneRef)) || (s.enteSourceRef&&!enteMoveReady(data,workflow.id,s.enteSourceRef,workflow.newDeviceRef??'')) || (s.twofasSourceRef&&!twofasMoveReady(data,workflow.id,s.twofasSourceRef,workflow.newDeviceRef??'')) || s.kind === 'blocked' || ((s.kind === 'action' || s.kind === 'gate') && phoneRecord(workflow, s)?.status !== 'confirmed'));
+  return steps.slice(0, index).filter(s => (s.productPhoneRef&&!phoneProductsReady(data,s.productPhoneRef)) || (s.enteSourceRef&&!enteMoveReady(data,workflow.id,s.enteSourceRef,workflow.newDeviceRef??'')) || (s.twofasSourceRef&&!twofasMoveReady(data,workflow.id,s.twofasSourceRef,workflow.newDeviceRef??'')) || s.kind === 'blocked' || ((s.kind === 'action' || s.kind === 'gate') && !phoneActionConfirmed(data, workflow, s)));
 }
 export function confirmPhoneStep(data: Dataset, workflowId: string, now = new Date().toISOString()): Dataset {
   if (data.version !== 2) return data;
@@ -143,7 +155,11 @@ export function confirmPhoneStep(data: Dataset, workflowId: string, now = new Da
     roleEffect = { targetRef: ref, state: workflow.answers['old-fate'] === 'spare' ? 'backup' : 'in-use', baseline: original ? original.baseline : previous };
     next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [ref]: { ...previous, state: roleEffect.state, evidence: 'user-confirmed', updatedAt: now, phoneRoleRecordId: key } } } };
   }
-  const records = { ...workflow.records, [key]: { ...workflow.records[key], stepId: step.id, titleEn: step.title.en, titleJa: step.title.ja, status: 'confirmed' as const, updatedAt: now, extraControls: step.extraControls, targetRef: step.control?.targetRef ?? (step.physicalEffect ? workflow.oldDeviceRef : undefined), controlId: step.control?.id, factIds, sourceIds: step.sources, physicalEffect: !!step.physicalEffect, roleEffect, requiredPhoneRecords } };
+  const context = step.nativeContext, app = context && nativeInstallation(next, context.installationRef);
+  const vault = nativeVault(next, app?.vaultRef);
+  const proof = context?.recipeId === 'builtin-manager' && context.step.id === 'independent-root' && vault?.authenticationAccountRef ? nativeRootCopyProof(next, vault.authenticationAccountRef, context.installationRef, vault.id, workflow.records[key]?.nativeRootCopyV1) : undefined;
+  if (proof) next = manageNativeRootCopy(next, proof.rootRef) as CurrentDataset;
+  const records = { ...workflow.records, [key]: { ...workflow.records[key], ...(proof ? { nativeRootCopyV1: proof } : {}), stepId: step.id, titleEn: step.title.en, titleJa: step.title.ja, status: 'confirmed' as const, updatedAt: now, extraControls: step.extraControls, targetRef: step.control?.targetRef ?? (step.physicalEffect ? workflow.oldDeviceRef : undefined), controlId: step.control?.id, factIds, sourceIds: step.sources, physicalEffect: !!step.physicalEffect, roleEffect, requiredPhoneRecords } };
   return advance(next, { ...workflow, records }, step.id);
 }
 export function deferPhoneStep(data: Dataset, workflowId: string, now = new Date().toISOString()): Dataset {

@@ -1,12 +1,21 @@
-import type { Dataset } from './models';
+import type { CurrentDataset, Dataset } from './models';
 import type { GuideStep } from './guideCatalog';
 import { nativeInstallation, nativeVault } from './nativeManagers';
 import type { SecurityRelation } from './securityModel';
+import { manageNativeRootCopy, nativeRootCopyProof } from './nativeRootCopy';
 
 export function recordNativeObservation(data: Dataset, key: string, subjectId: string, recipeId: string, step: GuideStep, now: string): Dataset {
   if (data.version !== 2) return data;
   const install = nativeInstallation(data, recipeId.startsWith('native-password:') ? recipeId.slice('native-password:'.length) : subjectId);
   const vault = nativeVault(data, install?.vaultRef); if (!install || !vault) return data;
+  if (vault.storageMode === 'account' && vault.authenticationAccountRef && ((recipeId === 'builtin-manager' && step.id === 'independent-root') || (recipeId.startsWith('native-password:') && step.id === 'update-independent-root' && subjectId === vault.authenticationAccountRef))) {
+    const record = data.guide.steps[key];
+    // Phone workflows own separate receipts and must not alter the main guide.
+    if (record?.status === 'done') {
+      const proof = nativeRootCopyProof(data, vault.authenticationAccountRef, install.id, vault.id, record.nativeRootCopyV1);
+      if (proof) data = { ...manageNativeRootCopy(data, vault.authenticationAccountRef), guide: { ...data.guide, steps: { ...data.guide.steps, [key]: { ...record, nativeRootCopyV1: proof } } } } as CurrentDataset;
+    }
+  }
   const model = data.securityModel, relations = [...model.relations];
   const edge = (suffix: string, fromRef: string, toRef: string, kind: SecurityRelation['kind']) => {
     const id = `${key}:native:${suffix}`;

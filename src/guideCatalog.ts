@@ -22,15 +22,17 @@ export const SOURCES = {
   appleSaved: source('Apple · 保存済みのパスワード', 'https://support.apple.com/ja-jp/104955', 'iOS 18+ / older Settings path'),
   appleMacSaved: source('Apple · Macの保存済みパスワード', 'https://support.apple.com/ja-jp/105115', 'macOS Sequoia+ / Passwords app'),
   appleCreatePassword: { ...source('Apple · iPhoneでパスワードを作成', 'https://support.apple.com/ja-jp/guide/iphone/iph4ebb320ea/27/ios/27', 'Passwords / manual item / official indexed text'), reviewMethod: 'official-search-excerpt' as const },
+  applePasswordNotesIos: { ...source('Apple · iPhoneの保存項目とメモ', 'https://support.apple.com/guide/iphone/view-your-passwords-and-related-information-iph3ee1dd6e7/27/ios/27', 'Passwords / encrypted item notes / official indexed text'), checked: '2026-11-14', reviewMethod: 'official-search-excerpt' as const },
+  applePasswordNotesMac: { ...source('Apple · Macの保存項目とメモ', 'https://support.apple.com/ja-jp/guide/passwords/mchl37e45d7c/3.0/mac/27', 'Passwords / notes / official indexed text'), checked: '2026-11-14', reviewMethod: 'official-search-excerpt' as const },
   appleMacCreatePassword: { ...source('Apple · Macでパスワードを作成', 'https://support.apple.com/guide/passwords/create-a-password-mchla6acb8cb/mac', 'Passwords / manual item / official indexed text'), reviewMethod: 'official-search-excerpt' as const },
   appleDeviceSignin: source('Apple · 端末のAccountへサインイン', 'https://support.apple.com/ja-jp/111001', 'iPhone / iPad / Mac / existing Account'),
   chromeSigninAndroid: source('Google · Android Chromeのログイン', 'https://support.google.com/chrome/answer/185277?co=GENIE.Platform%3DAndroid&hl=ja', 'Existing Google Account / Android'),
   chromeSigninIos: source('Google · iOS Chromeのログイン', 'https://support.google.com/chrome/answer/185277?co=GENIE.Platform%3DiOS&hl=ja', 'Existing Google Account / iOS'),
   chromeSignin: source('Google · PCのChromeログイン', 'https://support.google.com/chrome/answer/16737508?hl=ja', 'Existing Google Account / desktop'),
   googleManager: source('Google · パスワードマネージャー', 'https://support.google.com/accounts/answer/6208650?hl=ja', 'Google Account / local / recovery'),
-  chromePasswords: source('Google · Chromeのパスワード管理', 'https://support.google.com/chrome/answer/95606?hl=ja', 'Desktop Chrome / account and local storage'),
-  chromePasswordsAndroid: source('Google · Android Chromeのパスワード', 'https://support.google.com/chrome/answer/95606?co=GENIE.Platform%3DAndroid&hl=ja', 'Android Chrome'),
-  chromePasswordsIos: source('Google · iOS Chromeのパスワード', 'https://support.google.com/chrome/answer/95606?co=GENIE.Platform%3DiOS&hl=ja', 'iPhone / iPad Chrome'),
+  chromePasswords: { ...source('Google · Chromeのパスワード管理', 'https://support.google.com/chrome/answer/95606?hl=ja', 'Desktop Chrome / account and local storage'), checked: '2026-11-14' },
+  chromePasswordsAndroid: { ...source('Google · Android Chromeのパスワード', 'https://support.google.com/chrome/answer/95606?co=GENIE.Platform%3DAndroid&hl=ja', 'Android Chrome'), checked: '2026-11-14' },
+  chromePasswordsIos: { ...source('Google · iOS Chromeのパスワード', 'https://support.google.com/chrome/answer/95606?co=GENIE.Platform%3DiOS&hl=ja', 'iPhone / iPad Chrome'), checked: '2026-11-14' },
   chromeInstall: source('Google · Chromeのインストール', 'https://support.google.com/chrome/answer/95346?co=GENIE.Platform%3DDesktop&hl=ja', 'Desktop Chrome / installer'),
   chromeInstallAndroid: source('Google · AndroidにChromeを入れる', 'https://support.google.com/chrome/answer/95346?co=GENIE.Platform%3DAndroid&hl=ja', 'Android 10+ / Google Play'),
   chromeInstallIos: source('Google · iPhoneにChromeを入れる', 'https://support.google.com/chrome/answer/95346?co=GENIE.Platform%3DiOS&hl=ja', 'iOS / iPadOS 18+ / App Store'),
@@ -114,6 +116,9 @@ export type GuideStep = {
   explanation?: Copy;
   privateScreen?: true;
   recoveryEmailLink?: true;
+  rememberChoice?: true;
+  question?: true;
+  allowBack?: false;
   technical?: 'mfa' | 'password' | 'backup' | 'updates';
   download?: { path: string; filename: string; label: Copy; attribution: Copy };
   requires?: string[];
@@ -252,7 +257,7 @@ export function passwordRecipe(product: Asset['provider'], email: Asset, platfor
       c('The current login is saved inside the manager. Enter no credentials in this app.', '現在のログイン情報がマネージャー内に保存されたこと。このアプリには入力しません。'), [bw ? 'bwUse' : opSource]),
     step('password-choice', c('Does this password need replacing?', 'このパスワードを変更しますか？'), place,
       c('Keep a strong random password generated only for this account if it has not been exposed. Replace it if it is reused, weak or exposed. If you are unsure, you can generate a new one.', 'このアカウント専用にランダム生成した十分に強いパスワードで、漏えいの心配がなければ、そのまま使えます。使い回し・弱いもの・漏えいしたものは変更してください。分からない場合も、新しく生成して進められます。'),
-      c('Choose whether to keep the saved password or change it.', '保存済みのパスワードを使うか、変更するか選ぶこと。'), [bw ? 'bwGenerator' : 'opGenerate'], { choices: [{ label: c('Keep my current password', '今のパスワードを使う'), next: 'test' }, { label: c('Generate a new password', '新しく生成して変更する'), next: 'change-open' }] }),
+      c('Choose whether to keep the saved password or change it.', '保存済みのパスワードを使うか、変更するか選ぶこと。'), [bw ? 'bwGenerator' : 'opGenerate'], { question:true, choices: [{ label: c('Keep my current password', '今のパスワードを使う'), next: 'test' }, { label: c('Generate a new password', '新しく生成して変更する'), next: 'change-open' }] }),
     step('change-open', c('Open the account’s password settings', 'メール側のパスワード設定を開く'), accountPlace,
       custom?.action ?? c(apple ? platform === 'ios' ? 'In Settings select your name → Sign-In & Security → Change Password.' : platform === 'macos' ? 'In System Settings select your name → Sign-In & Security → Change Password.' : 'On account.apple.com, select Sign-In and Security → Password.' : google ? 'Open Google Account → Security & sign-in → How you sign in to Google → Password.' : 'Open Microsoft account → Security → Change password.', apple ? platform === 'ios' ? '「設定」→自分の名前→「サインインとセキュリティ」→「パスワードの変更」を開いてください。' : platform === 'macos' ? '「システム設定」→自分の名前→「サインインとセキュリティ」→「パスワードの変更」を開いてください。' : 'account.apple.comの「サインインとセキュリティ」→「パスワード」を開いてください。' : google ? 'Google アカウントの「セキュリティとログイン」→「Google にログインする方法」→「パスワード」を開いてください。' : 'Microsoft アカウントの「セキュリティ」→「パスワードの変更」を開いてください。'),
       c('The official password-change form is open. Keep your existing session and recovery methods.', '公式のパスワード変更画面が開いていること。既存のログインと復旧手段を残します。'), [s], { url: extra?.url ?? (apple ? 'https://account.apple.com/' : google ? 'https://myaccount.google.com/' : 'https://account.microsoft.com/security') }),

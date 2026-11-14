@@ -1,4 +1,5 @@
 import { recordedUnavailable } from './recordAvailability';
+import { nativeRootCopyReady } from './nativeRootCopy';
 import type { Asset, CurrentDataset, Dataset, Language } from './models';
 import type { SecurityEntity } from './securityModel';
 import { addPasswordRoot, choosePasswordDevice, configurePasswordRoot, makePasswordVault, passwordInstallation, passwordVault, type StoreProduct } from './passwordStoreIdentity';
@@ -21,7 +22,7 @@ export const makeNativeVault = (data: Dataset, product: NativeProduct, language:
 export const chooseNativeDevice = (data: Dataset, vaultId: string, deviceId: string): Dataset => choosePasswordDevice(data, vaultId, deviceId, STORE_PRODUCTS);
 export const configureNativeStorage = (data: Dataset, vaultId: string, mode: 'account' | 'local', rootId?: string): Dataset => configurePasswordRoot(data, vaultId, mode, rootId, STORE_PRODUCTS);
 export const addNativeRoot = (data: Dataset, vaultId: string, purpose: 'personal' | 'work'): Dataset => addPasswordRoot(data, vaultId, purpose, STORE_PRODUCTS);
-export function managerReady(data: Dataset, vaultId = data.guide.managerId, installationId?: string): boolean {
+export function managerReady(data: Dataset, vaultId = data.guide.managerId, installationId?: string, options: { allowPendingRootCopy?: boolean } = {}): boolean {
   if(recordedUnavailable(data,[vaultId]))return false;
   if (cloudVault(data, vaultId)) return cloudManagerReady(data, vaultId!, installationId);
   const vault = nativeVault(data, vaultId);
@@ -32,7 +33,7 @@ export function managerReady(data: Dataset, vaultId = data.guide.managerId, inst
   if (!installation || installation.vaultRef !== vault.id || !['opened', 'autofill', 'storageChecked'].every(c => installation.controls?.[c] === 'verified') || !['implemented', 'verified'].includes(device?.controls.screenLock ?? 'unknown')) return false;
   if (vault.storageMode === 'local') return installation.controls?.localBackup === 'verified';
   const root = data.assets.find(a => a.id === vault.authenticationAccountRef);
-  return !!root && root.purpose !== 'work' && ['mfa', 'recovery'].every(c => ['implemented', 'verified'].includes(root.controls[c])) && installation.controls?.independentRoot === 'verified';
+  return !!root && root.purpose !== 'work' && ['mfa', 'recovery'].every(c => ['implemented', 'verified'].includes(root.controls[c])) && (nativeRootCopyReady(data, root.id) || !!options.allowPendingRootCopy);
 }
 export function nativeSetupRoute(data: Dataset, vaultId: string, installationId?: string): string {
   const vault = nativeVault(data, vaultId); if (!vault) return 'manager-select';
@@ -48,6 +49,7 @@ export function nativeSetupRoute(data: Dataset, vaultId: string, installationId?
   if (root && !root.purpose) return `native-root-purpose/${vaultId}`;
   if (root?.purpose === 'work') return `native-managed/${vaultId}`;
   if (root && !['mfa', 'recovery'].every(c => ['implemented', 'verified'].includes(root.controls[c]))) return `native-prerequisites/${vaultId}`;
+  if (root && !nativeRootCopyReady(data, root.id) && managerReady(data, vaultId, installation.id, { allowPendingRootCopy: true })) return `do/${installation.id}/builtin-manager/independent-root`;
   return `do/${installation.id}/builtin-manager/open`;
 }
 export function nativeSubject(data: Dataset, id: string): Asset | undefined {

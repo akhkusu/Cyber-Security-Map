@@ -30,7 +30,7 @@ function finishSetup(data: CurrentDataset, installId: string): CurrentDataset {
   for (let i = 0; i < 20 && currentTask(next)?.recipe.id === 'builtin-manager'; i++) next = completeStep(next) as CurrentDataset;
   return next;
 }
-function confirmAt(data: CurrentDataset, id: string, recipe: string, step: string): CurrentDataset { return completeStep(move(data, `do/${id}/${recipe}/${step}`)) as CurrentDataset; }
+function confirmAt(data: CurrentDataset, id: string, recipe: string, step: string): CurrentDataset { const at=move(data, `do/${id}/${recipe}/${step}`); return completeStep(at,currentTask(at)?.step.choices?.find(c=>c.record!==false)?.next) as CurrentDataset; }
 
 describe('built-in password stores', () => {
   it('keeps one canonical account and device, with separate vault and installation records', async () => {

@@ -1,3 +1,4 @@
+import { SaveStateContext } from './SaveStateContext';
 import {LineGuide,PhoneProductsGuide} from './LineGuide';
 import {EnteGuide} from './EnteGuide';
 import {TwofasGuide} from './TwofasGuide';
@@ -33,7 +34,7 @@ export function Workspace(props: WorkspaceProps) {
   return <div className={`app-shell ${data.settings.theme === 'dark' ? 'theme-dark' : ''}`}><a className="skip-link" href="#main">{tx(language, 'Skip to content', '本文へ移動')}</a>
     <header className="app-header"><Brand /><nav aria-label={tx(language, 'Main menu', 'メインメニュー')}>{nav.map(({ path, icon: Icon, label }) => <NavLink key={path} to={path} className={({ isActive }) => isActive || (path === '/guide' && (location.pathname.startsWith('/protect/') || location.pathname.startsWith('/ente/') || location.pathname.startsWith('/twofas/') || location.pathname.startsWith('/keys/') || location.pathname.startsWith('/phone/') || location.pathname.startsWith('/line/') || location.pathname.startsWith('/phone-products/') || location.pathname.startsWith('/recover/') || location.pathname.startsWith('/nord-connection/'))) ? 'active' : undefined}><Icon size={18} /><span>{label}</span></NavLink>)}</nav><div className="header-actions"><LanguagePicker language={language} onChange={props.onLanguage} /><button className="icon-button" disabled={saving} onClick={props.lock} aria-label={tx(language, 'Lock app', 'アプリをロック')}><LockKeyhole size={18} /></button></div></header>
     {notice && <div role={notice.kind === 'error' ? 'alert' : 'status'} className={`notice ${notice.kind}`}>{notice.text}<button aria-label={tx(language, 'Dismiss message', 'メッセージを閉じる')} onClick={() => setNotice(null)}>×</button></div>}
-    <main id="main" className="workspace-main"><fieldset disabled={saving} className="workspace-body" aria-busy={saving}><Routes>
+    <main id="main" className="workspace-main"><fieldset disabled={saving} className="workspace-body" aria-busy={saving}><SaveStateContext.Provider value={saving}><Routes>
       <Route path="/line/:taskId" element={<LineGuide data={data} language={language} save={save}/>} />
       <Route path="/phone-products/:phoneId" element={<PhoneProductsGuide data={data} language={language} save={save}/>} />
       <Route path="/ente/:taskId" element={<EnteGuide data={data} language={language} save={save}/>} />
@@ -54,7 +55,7 @@ export function Workspace(props: WorkspaceProps) {
       <Route path="/map" element={<SecurityMap data={data} language={language} save={save} />} />
       <Route path="/settings" element={<SettingsPage {...props} save={save} />} />
       <Route path="*" element={<Navigate to="/guide" replace />} />
-    </Routes></fieldset><div className="save-state" role="status">{saving ? tx(language, 'Saving…', '保存中…') : ''}</div></main>
+    </Routes></SaveStateContext.Provider></fieldset><div className="save-state" role="status">{saving ? tx(language, 'Saving…', '保存中…') : ''}</div></main>
   </div>;
 }
 function SettingsPage({ data, language, onLanguage, onPassphrase, onRestore, envelope, lock, onReset, save, setNotice }: WorkspaceProps & { save: (d: Dataset) => Promise<boolean> }) {

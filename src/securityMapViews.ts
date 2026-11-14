@@ -3,6 +3,8 @@ import {lineMapStatus} from './lineViews';
 import {enteStore,enteProfile,entePrepared,enteFileCurrent,enteLinkCurrent,enteDependencyCurrent} from './enteSchemas';
 import {twofasStore,twofasFileCurrent,twofasPrepared,twofasLinkCurrent,twofasDependencyCurrent} from './twofasSchemas';
 import {protectionBindingCurrent} from './deviceProtectionEvidence';
+import { managerReady, nativeInstallation, nativeVault } from './nativeManagers';
+import { nativeRootCopyState } from './nativeRootCopy';
 import { accessPlanStore } from './accessPlanSchemas';
 import { planMapItems, planMapConnections, planReferences } from './accessPlanViews';
 import type { Asset, Dataset, Language, RecoveryDependency } from './models';
@@ -92,6 +94,15 @@ export function typedMapStatus(data: Dataset, node: MapItem, language: Language)
       const ready = apps.some(app => !!app && cloudManagerReady(data, cloud.id, app.id));
       const used = apps.some(app => !!app && cloudManagerReady(data, cloud.id, app.id) && data.securityModel.routes.some(r => r.purpose === 'sign-in' && (r.contexts.includes('normal') || r.contexts.includes('new-device')) && data.securityModel.facts.some(f => f.id === (r.requirements.kind === 'fact' ? r.requirements.factId : '') && f.requiredRefs.includes(app.id) && f.requiredRefs.includes(cloud.id) && f.id === `${f.observationActionId}:cloud:password-use` && data.securityModel.entities.some(e => e.kind === 'credential' && e.cloudObservationOwner === f.observationActionId && f.requiredRefs.includes(e.id))) && evaluateAccess(data.securityModel, r.id, { context: r.contexts.includes('new-device') ? 'new-device' : 'normal', now: new Date().toISOString() }).state === 'available'));
       return { tone: used ? 'recorded' : 'unknown', label: yes ? used ? '保存パスワードの利用記録あり' : ready ? '保存パスワードの利用待ち' : '設定と復旧の確認待ち' : used ? 'Saved-password use recorded' : ready ? 'Saved-password use needed' : 'Setup and recovery checks needed', reason: yes ? 'この端末・プロファイルと基盤アカウントの記録を確認' : 'Checks for this app/profile and its backing account' };
+    }
+    const native = nativeVault(data, entity.kind === 'installation' ? entity.vaultRef : entity.id);
+    if (native && data.version === 2) {
+      const copy = native.storageMode === 'account' ? nativeRootCopyState(data, native.authenticationAccountRef) : undefined;
+      if (copy && !['current', 'legacy'].includes(copy)) return { tone: copy === 'changed' ? 'needs-work' : 'unknown', label: yes ? copy === 'changed' ? 'パスワード変更後の控えを確認する' : copy === 'unsupported' ? '確認記録を読み取れない' : 'アカウントの控えは未確認' : copy === 'changed' ? 'Check copy after password change' : copy === 'unsupported' ? 'Confirmation format unsupported' : 'Account copy unconfirmed', reason: yes ? copy === 'changed' ? '変更前の控えを、現在のパスワードの控えには数えません' : copy === 'unsupported' ? '元のバックアップを残し、対応するアプリで確認してください' : '同期に使うアカウントへログインせずに読める控えの確認が必要です' : copy === 'changed' ? 'A copy from before the known password change is not current' : copy === 'unsupported' ? 'Keep the original backup and use a compatible app version' : 'Check a copy readable without signing in to the synchronization account' };
+      const apps = entity.kind === 'installation' ? [nativeInstallation(data, entity.id)] : data.securityModel.entities.filter(e => e.kind === 'installation' && !e.mergedIntoRef && e.vaultRef === native.id).map(e => nativeInstallation(data, e.id));
+      const ready = apps.some(app => app && managerReady(data, native.id, app.id));
+      const used = apps.some(app => app && managerReady(data, native.id, app.id) && app.controls?.loginUse === 'verified' && data.securityModel.routes.some(r => r.purpose === 'sign-in' && data.securityModel.facts.some(f => f.id === (r.requirements.kind === 'fact' ? r.requirements.factId : '') && f.id === `${f.observationActionId}:native:use` && f.requiredRefs.includes(app.id)) && evaluateAccess(data.securityModel, r.id, { context: r.contexts.includes('new-device') ? 'new-device' : 'normal', now: new Date().toISOString() }).state === 'available'));
+      return { tone: used ? 'recorded' : 'unknown', label: yes ? used ? '保存パスワードの利用記録あり' : ready ? '保存パスワードの利用待ち' : '端末での設定を確認する' : used ? 'Saved-password use recorded' : ready ? 'Saved-password use needed' : 'Device setup needs checking', reason: yes ? entity.kind === 'vault' ? used ? '少なくとも1台で利用を確認した記録' : ready ? 'アカウントの控えは確認済み。保存パスワードの利用は未確認です' : 'この保管庫を使う端末の設定が未確認です' : used ? 'この端末で保存情報を利用した記録' : 'この端末での設定・ログインを確認する' : 'Account-copy checks and each device’s setup and sign-in are separate records' };
     }
     const required = ['opened', 'storageChecked', 'autofill', 'loginUse'];
     const completeOnOneDevice = entity.kind === 'vault' && data.version === 2 ? data.securityModel.entities.some(e => e.kind === 'installation' && e.vaultRef === entity.id && required.every(c => e.controls?.[c] === 'verified')) : required.every(c => node.controls[c] === 'verified');
