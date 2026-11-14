@@ -1,7 +1,7 @@
 import { makeAsset, type CurrentDataset, type Dataset, type Language } from './models';
 import { enteSteps, enteTargets, enteApp, type EnteStep } from './enteCatalog';
 import { enteStore, enteParentTask, entePrepared, enteBackupCurrent, enteConfiguration, enteLock, enteReceiptCurrent, enteSnapshot, enteFactCurrent, entePasswordPending, type EnteTask, type EnteReceipt } from './enteSchemas';
-import { prepareEntePassword, requestEntePassword, applyEntePassword, requestEnteFactorRecovery, confirmEnteFactorRecovery, recordEnteRecoveryRead, enteRecoveryRoot } from './enteRecoveryData';
+import { prepareEntePassword, requestEntePassword, applyEntePassword, requestEnteFactorRecovery, confirmEnteFactorRecovery, recordEnteRecoveryRead, enteRecoveryRoot, recordEnteSignInFactor, enteRootReadProtected } from './enteRecoveryData';
 import { enteTask, startEnteTask, putEnteTask, putEnteStore, putEnteEntity, createEnteApp, createEnteRoot, appendEnteReceipt, withdrawEnteReceipt, recordEnteControl, recordEnteLink, recordEnteStorage, recordEnteLock, makeEnteSecret, recordEnteRootSecret, saveEnteFile, copyEnteFile, confirmEnteExternalFile, recordEnteProof } from './enteData';
 import { securityEntitySchema, evaluateAccess } from './securityModel';
 import { PHONE_SOURCES } from './phoneCatalog';
@@ -68,6 +68,16 @@ export function answerEnte(data:Dataset,id:string,value:string,at=nowString()):D
   if(step.question==='recovery-mail'){
     if(value.startsWith('account:'))resources.recoveryMail=value.slice(8);else delete resources.recoveryMail;
   }
+  if(step.question==='signin-recovery-credential'){
+    delete resources.recoveryFactor;delete resources.recoveryFactorStore;
+    if(value.startsWith('credential:')){const credential=next.securityModel.entities.find(e=>e.id===value.slice(11));if(credential?.kind==='credential'){resources.recoveryFactor=credential.id;if(credential.storageRef)resources.recoveryFactorStore=credential.storageRef;}}
+  }
+  if(step.question==='signin-recovery-store'){
+    if(value.startsWith('store:'))resources.recoveryFactorStore=value.slice(6);
+    else if(value==='local'){const app=enteApp(next,t.appRef),deviceRef=step.webDeviceRef??(app?.kind==='installation'?app.deviceRef:undefined);if(deviceRef)resources.recoveryFactorStore=deviceRef;}
+    else delete resources.recoveryFactorStore;
+  }
+  if(step.question==='signin-root-credential'&&value.startsWith('credential:'))resources.factorCredential=value.slice(11);
   if(step.question==='recovery-used-factor'){
     delete resources.recoveryFactor;delete resources.recoveryFactorStore;
     if(value.startsWith('credential:')){const entity=next.securityModel.entities.find(e=>e.id===value.slice(11)&&e.kind==='credential');if(entity?.kind==='credential'){resources.recoveryFactor=entity.id;if(entity.storageRef)resources.recoveryFactorStore=entity.storageRef;}}
@@ -116,6 +126,7 @@ function applyEffect(data:CurrentDataset,t:EnteTask,s:EnteStep,r:EnteReceipt):Cu
     if(s.effect==='recovery-factor-request')return requestEnteFactorRecovery(data,t,r);
     if(s.effect==='recovery-factor-confirmed')return confirmEnteFactorRecovery(data,t,r);
     if(s.effect==='recovery-data-read')return recordEnteRecoveryRead(data,t,r);
+    if(s.effect==='signin-recovery-factor'&&s.signInFactorType)return recordEnteSignInFactor(data,t,r,s.signInFactorType);
     const root=enteRecoveryRoot(data,t);
     if(root&&s.effect==='recovery-key-keep'){const stored=enteStore(data)!.secrets.find(v=>v.entityRef===root.recoveryRef)?.copies.find(v=>available(data,v.storageRef)&&enteReceiptCurrent(enteStore(data)!,v.receiptRef)),made=makeEnteSecret(data,r,root.rootRef,'recovery-key',stored?{ref:stored.storageRef}:'paper',root.recoveryRef,s.sources);return recordEnteRootSecret(made.data,r,root.rootRef,made.secretRef,false,s.sources);}
     if(root&&s.effect==='recovery-current-password'){const made=makeEnteSecret(data,r,root.rootRef,'account-password','paper',root.passwordRef,s.sources);return recordEnteRootSecret(made.data,r,root.rootRef,made.secretRef,false,s.sources);}
@@ -189,15 +200,18 @@ function applyEffect(data:CurrentDataset,t:EnteTask,s:EnteStep,r:EnteReceipt):Cu
   const factorHost=next.securityModel.entities.find(e=>e.id===resources.factorStore),factorHostRefs=factorHost?.kind==='installation'?[factorHost.deviceRef]:factorHost?.kind==='vault'&&factorHost.storageMode==='local'&&factorHost.primaryDeviceRef?[factorHost.primaryDeviceRef]:[];
   if(s.effect==='account-factor-use'&&accountRoot&&resources.factorStore){
     if(t.answers['root-mfa']==='totp'){
-      const known=next.securityModel.entities.filter(v=>v.kind==='credential'&&v.credentialType==='totp'&&v.subjectRef===accountRoot.rootRef&&v.storageRef===resources.factorStore&&available(next,v.id));if(known.length>1)throw Error('ambiguous-root-totp');
+      const all=next.securityModel.entities.filter(v=>v.kind==='credential'&&v.credentialType==='totp'&&v.subjectRef===accountRoot.rootRef&&v.storageRef===resources.factorStore&&available(next,v.id)),selected=all.find(v=>v.id===resources.factorCredential),known=selected?[selected]:all;if(known.length>1)throw Error('ambiguous-root-totp');
       if(known.length)resources.factorCredential=known[0].id;else{const id=crypto.randomUUID();next=putEnteEntity(next,securityEntitySchema.parse({id,kind:'credential',credentialType:'totp',subjectRef:accountRoot.rootRef,storageRef:resources.factorStore,roles:['second-step'],label:next.settings.language==='ja'?'Ente Accountの既存TOTP':'Existing Ente Account TOTP',createdAt:r.at}));resources.factorCredential=id;}
       next=recordEnteLink(next,r,resources.factorCredential,resources.factorStore,'stored-in',s.sources);next=recordEnteLink(next,r,resources.factorCredential,accountRoot.rootRef,'authenticates-to',s.sources);next=recordEnteControl(next,r,accountRoot.rootRef,'mfa');
     }
     if(!resources.factorCredential)throw Error('missing-ente-root-factor');
+    // An unrecorded TOTP becomes an identified registration only after Ente
+    // accepts it. Bind that actual registration to this same confirmation.
+    if(!r.refs.includes(resources.factorCredential)){const store=enteStore(next)!;next=putEnteStore(next,{...store,receipts:store.receipts.map(receipt=>receipt.id===r.id?{...receipt,refs:[...receipt.refs,resources.factorCredential!]}:receipt)});}
     next=recordEnteProof(next,r,{kind:t.answers['root-mfa']==='totp'?'account-auth':'account-passkey',rootRef:accountRoot.rootRef,rootEpoch:accountRoot.epoch},{label:next.settings.language==='ja'?'Ente Accountの追加認証を使えた記録':'Ente Account additional authentication used',targetRef:accountRoot.rootRef,purpose:'second-step',context:'no-existing-session',requiredRefs:[accountRoot.rootRef,app.deviceRef,resources.factorCredential,resources.factorStore,...factorHostRefs],withoutRefs:without},s.sources);
   }
   if(s.effect==='account-data-read'&&accountRoot&&resources.factorCredential&&accountRoot.passwordRef){
-    const requiredRefs=[accountRoot.rootRef,app.deviceRef,accountRoot.passwordRef,resources.factorCredential,resources.factorStore,...factorHostRefs,...(t.answers['root-email-mode']==='on'?[t.answers['root-mail'].slice(8)]:[])];
+    const requiredRefs=[accountRoot.rootRef,app.deviceRef,accountRoot.passwordRef,resources.factorCredential,resources.factorStore,...factorHostRefs,...((t.stepwiseSignInV1===1?t.answers['signin/root/entry']==='email':t.answers['root-email-mode']==='on')?[t.answers['root-mail'].slice(8)]:[])];
     for(const purpose of ['sign-in','decrypt'] as const)next=recordEnteProof(next,r,{kind:purpose==='sign-in'?'account-auth':'account-read',rootRef:accountRoot.rootRef,rootEpoch:accountRoot.epoch},{label:next.settings.language==='ja'?purpose==='sign-in'?'新しいEnte Accountログイン':'Ente Accountのデータを読めた確認':purpose==='sign-in'?'Fresh Ente Account sign-in':'Ente Account data read',targetRef:accountRoot.rootRef,purpose,context:'no-existing-session',requiredRefs,withoutRefs:without},s.sources);
   }
   if(s.effect==='cleanup'&&resources.transferFileRef){const ref=resources.transferFileRef;next={...next,securityModel:{...next.securityModel,lifecycle:{...next.securityModel.lifecycle,[ref]:{state:'deleted',evidence:'user-confirmed',updatedAt:r.at,accessResetAt:r.at}}}};}
@@ -224,6 +238,16 @@ export function navigateEnte(data:Dataset,id:string,direction:'back'|'defer'|'ca
   const history=[...t.history],steps=enteSteps(data,t);let cursor=direction==='back'?history.pop():direction;while(direction==='back'&&cursor&&!steps.some(s=>s.id===cursor))cursor=history.pop();if(!cursor||!steps.some(s=>s.id===cursor))return data;
   return putEnteTask(data,{...t,cursor,history,status:'active',updatedAt:at});
 }
+export function restartEnteSignIn(data:Dataset,id:string,at=nowString()):Dataset{
+  if(data.version!==2)return data;const task=enteTask(data,id),step=task&&currentEnteStep(data,task);
+  if(!task||task.stepwiseSignInV1!==1||!step?.restartSignIn)return data;
+  const kind=step.restartSignIn,prefix=`signin/${kind}/`,special=kind==='root'?['root-login-open','root-factor-use','root-data-read']:['recovery-password-test','recovery-data-read'];
+  const belongs=(key:string)=>key.startsWith(prefix)||special.includes(key);let next=data;
+  for(const key of Object.keys(task.records).filter(belongs))next=withdrawEnteReceipt(next,id,key,at) as CurrentDataset;
+  const current=enteTask(next,id)!,resources={...current.resources};
+  if(kind==='recovery'){delete resources.recoveryFactor;delete resources.recoveryFactorStore;if(Object.hasOwn(current.answers,prefix+'mail'))delete resources.recoveryMail;}
+  return putEnteTask(next,{...current,answers:Object.fromEntries(Object.entries(current.answers).filter(([key])=>!key.startsWith(prefix))),resources,cursor:kind==='root'?'root-login-open':prefix+'open',status:'active',history:current.history.filter(key=>!belongs(key)),updatedAt:at});
+}
 export function enteMoveReady(data:Dataset,phoneRef:string,appRef:string,newDeviceRef:string):boolean{
   if(data.version!==2)return false;const store=enteStore(data),w=data.deviceWorkflows.find(w=>w.id===phoneRef),app=enteApp(data,appRef);
   if(!store||!w||app?.kind!=='installation'||w.oldDeviceRef!==app.deviceRef||w.newDeviceRef!==newDeviceRef)return false;
@@ -245,9 +269,7 @@ export function enteHelpPrompt(data:Dataset,t:EnteTask,problem:number,language:L
 }
 
 export function enteAccountReady(data:Dataset,appRef:string,withoutRefs:string[]=[]):boolean{
- if(data.version!==2)return false;const store=enteStore(data),root=store?.roots.find(v=>v.rootRef===enteConfiguration(data,appRef)?.rootRef);if(!store||!root||entePasswordPending(data.securityModel,root.rootRef))return false;
- const copied=(ref?:string)=>{const secret=store.secrets.find(v=>v.entityRef===ref);return !!secret&&available(data,secret.entityRef)&&secret.copies.some(v=>available(data,v.storageRef)&&enteReceiptCurrent(store,v.receiptRef));};
- return copied(root.passwordRef)&&copied(root.recoveryRef)&&store.proofs.some(p=>p.kind==='account-read'&&p.rootRef===root.rootRef&&data.securityModel.facts.some(f=>f.id===p.factRef&&f.requiredRefs.some(ref=>data.securityModel.entities.some(e=>e.id===ref&&e.kind==='credential'&&e.subjectRef===root.rootRef&&['totp','passkey'].includes(e.credentialType)&&e.roles.includes('second-step')))&&f.requiredRefs.includes(enteApp(data,appRef)?.kind==='installation'?enteApp(data,appRef)!.deviceRef as string:''))&&data.securityModel.routes.some(r=>r.requirements.kind==='fact'&&r.requirements.factId===p.factRef&&evaluateAccess(data.securityModel,r.id,{context:'no-existing-session',now:nowString(),unavailableRefs:withoutRefs}).state==='available'));
+ if(data.version!==2)return false;const rootRef=enteConfiguration(data,appRef)?.rootRef,app=enteApp(data,appRef);return !!rootRef&&app?.kind==='installation'&&!entePasswordPending(data.securityModel,rootRef)&&enteRootReadProtected(data,rootRef,app.deviceRef,withoutRefs);
 }
 export const enteParent=enteParentTask;
 export function reconcileEnteTask(data:Dataset,id:string,at=nowString()):Dataset{
@@ -263,5 +285,5 @@ export function beginEnteChild(data:Dataset,id:string):{data:CurrentDataset;id:s
  const known=enteStore(data)?.tasks.find(t=>enteParent(data,t.id)?.id===parent.id&&t.kind===step.child!.kind&&t.appRef===step.child!.appRef&&t.rootRef===step.child!.rootRef&&['active','deferred'].includes(t.status));
  if(known)return {data:putEnteTask(data,{...known,status:'active'}),id:known.id};
  const created=startEnteTask(data,{...step.child,origin:'map'},undefined,true);
- return {data:putEnteTask(created.data,{...enteTask(created.data,created.id)!,...(step.child.kind==='recovery'&&parent.answers['root-password-state']==='forgot'?{answers:{'recovery-purpose':'forgot'}}:{}),enteReturnV1:{taskRef:parent.id,createdAt:parent.createdAt,appRef:parent.appRef,destinationRef:parent.destinationRef,newDeviceRef:parent.newDeviceRef}}),id:created.id};
+ return {data:putEnteTask(created.data,{...enteTask(created.data,created.id)!,...(step.child.kind==='recovery'&&parent.answers['root-password-state']==='forgot'?{answers:{'recovery-purpose':'forgot'}}:{}),...(['account','recovery'].includes(parent.kind)&&parent.stepwiseSignInV1!==1?{stepwiseSignInV1:undefined}:{}),enteReturnV1:{taskRef:parent.id,createdAt:parent.createdAt,appRef:parent.appRef,destinationRef:parent.destinationRef,newDeviceRef:parent.newDeviceRef}}),id:created.id};
 }

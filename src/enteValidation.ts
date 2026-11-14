@@ -33,6 +33,7 @@ export function enteIssues(data:Pick<CurrentDataset,'assets'|'securityModel'|'de
     if(task.recoveryStateV1&&(task.kind!=='recovery'||!task.rootRef||task.recoveryStateV1.password&&!secret(task.recoveryStateV1.password.candidateRef,task.rootRef,'account-password')))return ['invalid-ente-recovery-state'];
     if(task.recoveryStateV1?.factor&&(task.recoveryStateV1.factor.type!==task.answers['recovery-screen']||task.answers['recovery-extra-state']!=='lost'))return ['invalid-ente-factor-recovery-scope'];
     if(task.kind==='recovery'&&task.resources.protectionDevice&&assets.get(task.resources.protectionDevice)?.kind!=='device')return ['invalid-ente-recovery-device'];
+    if(task.stepwiseSignInV1&&!['account','recovery'].includes(task.kind))return ['invalid-ente-signin-flow'];
   }
   for(const r of s.receipts){
     if(!s.tasks.some(t=>t.id===r.taskRef)||r.refs.some(id=>!ids.has(id))||r.requires.some(id=>!receipt(id))||r.configRef&&!s.configurations.some(c=>c.id===r.configRef&&r.refs.includes(c.appRef))||r.lockRef&&!s.locks.some(l=>l.id===r.lockRef&&r.refs.includes(l.appRef)))return ['invalid-ente-receipt'];

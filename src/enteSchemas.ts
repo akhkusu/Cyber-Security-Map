@@ -26,6 +26,7 @@ export const enteTaskSchema=z.object({
   answers:z.record(z.string(),z.string()).default({}), records:z.record(z.string(),ref).default({}),
   resources:z.record(z.string(),ref).default({}), sourceSnapshot:z.string().optional(),
   recoveryStateV1:enteRecoveryStateSchema.optional(),
+  stepwiseSignInV1:z.literal(1).optional(),
   createdAt:time, updatedAt:time,
 }).passthrough();
 export type EnteTask=z.infer<typeof enteTaskSchema>;
@@ -149,9 +150,12 @@ export function enteWithoutEvidence(model:SecurityModel,fact:AccessFact):string[
     const without=parent&&parent.createdAt===v?.createdAt&&parent.appRef===v.appRef&&parent.destinationRef===v.destinationRef&&parent.newDeviceRef===v.newDeviceRef&&parent.destinationRef===task?.appRef&&source?.kind==='installation'&&destination?.kind==='installation'&&(parent.kind==='recovery'?parent.resources.protectionDevice??parent.newDeviceRef:parent.newDeviceRef)===destination.deviceRef&&source.deviceRef!==destination.deviceRef&&Array.isArray(fact.observedWithoutRefs)&&fact.observedWithoutRefs.includes(source.deviceRef)?[source.deviceRef]:[];
     const recoverySource=task?model.entities.find(e=>e.id===task.appRef):undefined,currentConfig=s.configurations.find(c=>c.id===s.profiles.find(p=>p.appRef===task?.appRef)?.configRef);
     const recoveryWithout=task?.kind==='recovery'&&receipt.stepId==='recovery-data-read'&&task.rootRef===proof.rootRef&&currentConfig?.rootRef===proof.rootRef&&task.answers['recovery-place']==='web'&&task.newDeviceRef&&recoverySource?.kind==='installation'&&recoverySource.deviceRef!==task.newDeviceRef&&fact.requiredRefs.includes(task.newDeviceRef)&&!fact.requiredRefs.includes(recoverySource.deviceRef)&&Array.isArray(fact.observedWithoutRefs)&&fact.observedWithoutRefs.includes(recoverySource.deviceRef)?[recoverySource.deviceRef]:[];
+    // The stepwise web check explicitly runs without the old app as well as
+    // its phone. Never omit an app actually used to supply this check's factor.
+    const recoveryAppWithout=task?.stepwiseSignInV1===1&&recoveryWithout.length&&recoverySource?.kind==='installation'&&!fact.requiredRefs.includes(recoverySource.id)&&Array.isArray(fact.observedWithoutRefs)&&fact.observedWithoutRefs.includes(recoverySource.id)?[recoverySource.id]:[];
     const unused=model.entities.filter(e=>e.kind==='credential'&&e.subjectRef===proof.rootRef&&!fact.requiredRefs.includes(e.id)).map(e=>e.id);
     const fileInputs=s.files.flatMap(f=>[f.entityRef,f.storageRef]),fileSecrets=s.secrets.filter(c=>['export','automatic'].includes(c.purpose)).flatMap(c=>[c.entityRef,...c.copies.map(p=>p.storageRef)]),locks=s.locks.flatMap(l=>l.credentialRef?[l.credentialRef]:[]);
-    return [...new Set([...unused,...fileInputs,...fileSecrets,...locks,...without,...recoveryWithout])].filter(ref=>!fact.requiredRefs.includes(ref));
+    return [...new Set([...unused,...fileInputs,...fileSecrets,...locks,...without,...recoveryWithout,...recoveryAppWithout])].filter(ref=>!fact.requiredRefs.includes(ref));
   }
   const task=s.tasks.find(t=>t.id===receipt.taskRef),source=model.entities.find(e=>e.id===task?.appRef),target=model.entities.find(e=>e.id===proof.appRef);
   if(!task||!['move','restore'].includes(task.kind)||source?.kind!=='installation'||target?.kind!=='installation')return [];

@@ -1,8 +1,9 @@
+import { enteSignInSteps } from './enteSignInCatalog';
 import { c, type Copy } from './guideCatalog';
 import type { Dataset } from './models';
 import { canBeMailAccount } from './accountRoles';
 import { enteStore, entePrepared, enteConfiguration, enteBackupCurrent, type EnteTask } from './enteSchemas';
-import { enteRecoveryRoot, enteRecoveryPasswordCurrent, enteRecoveryFactorInputs } from './enteRecoveryData';
+import { enteRecoveryRoot, enteRecoveryPasswordCurrent, enteRecoveryFactorInputs, enteRootReadProtected } from './enteRecoveryData';
 import type { EnteChoice, EnteStep } from './enteCatalog';
 
 const choice=(value:string,en:string,ja=en):EnteChoice=>({value,label:c(en,ja)});
@@ -62,6 +63,7 @@ export function enteRecoverySteps(data:Dataset,t:EnteTask):EnteStep[]{
   }
   const addAccountCheck=()=>steps.push({id:'recovery-account-check',kind:'blocked',title:c('Check this Account’s current protection','このAccountの現在の保護を確認する'),action:c('Keep restored access. Use the actual connected mobile app to verify an independent current additional method and readable data. Do not remove the old registration before a replacement works.','復旧した利用手段を残し、実際につながるモバイルアプリから、独立した現在の追加認証とデータ読取りを確認します。代替手段が使える前に、古い登録は削除しません。'),refs,sources,requires:[],child:{kind:'account',appRef:t.destinationRef??t.appRef,rootRef:root.rootRef}});
   if(a['recovery-purpose']==='factor'&&a['recovery-place']==='app'){addAccountCheck();return steps;}
+  let stepwisePasswordCheck=false;
   if(passwordNeeded&&!state?.password?.requestedAt){
     if(a['recovery-place']==='app'){
       act('recovery-change-open',c('Open Change password on the current mobile app','現在のモバイルアプリでパスワード変更を開く'),c('In Ente Auth choose Settings → Account → Change password. Complete the requested device authentication. This mobile path can change the password from the open session even if the old value is forgotten.','Ente Authの「Settings / 設定」→「Account / アカウント」→「Change password / パスワードを変更」を開き、端末の本人確認を行います。このモバイルの経路では、古い値を忘れていても開いているログインから変更できます。'),c('The new-password and Confirm password fields are shown for this Account.','今回のAccountの、新しいパスワードと確認用の2欄が表示されること。'));
@@ -79,17 +81,27 @@ export function enteRecoverySteps(data:Dataset,t:EnteTask):EnteStep[]{
     if(state?.password?.phase==='requested'){
       ask('recovery-result',c('What did Ente show after submission?','送信後に、Enteで何が表示されましたか？'),[choice('changed','Password changed successfully / returned to my data','変更成功・自分のデータへ戻った'),choice('uncertain','An error / no clear result; do not repeat','エラー・結果が不明。繰り返さず確認する')]);if(!a['recovery-result'])return steps;
     }else if(!enteRecoveryPasswordCurrent(data,t)){stop('recovery-password-changed-later',c('A later Account password change is recorded','後から別のパスワード変更が記録されています'),c('Keep the current value and later work. This old task must not put its previous candidate back into use. Start a current Account check instead.','現在の値と後の作業を保ち、この古い作業の候補を現在の値へ戻しません。現在のAccountの確認を始めてください。'));return steps;}
+    if(t.stepwiseSignInV1===1){
+      const browser=c(`${deviceName} · Private browser · official Ente Auth`,`${deviceName} · プライベート画面 · 正規のEnte Auth Web`);
+      const flow=enteSignInSteps(data,t,{kind:'recovery',rootRef:root.rootRef,deviceRef,place:browser,refs,withoutRefs:source.deviceRef!==deviceRef?[source.deviceRef]:[],prerequisites:steps.filter(s=>s.kind==='action').map(s=>s.id)});
+      const read=flow.findIndex(s=>s.id==='recovery-data-read');
+      if(read>=0&&t.resources.recoveryFactorStore===t.appRef&&!enteBackupCurrent(data,t.appRef))flow.splice(read,0,{id:'signin/recovery/backup',kind:'blocked',title:c('Keep a current encrypted backup of the identified codes','確認したコードを含む、現在の暗号化バックアップを残す'),action:c('Keep this fresh sign-in. Prepare the backup for the actual Auth app, then continue this same sign-in.','今回の新しいログインを残し、実際のAuthアプリのバックアップを備えてから、同じログインを続けます。'),refs:[...refs,t.appRef,source.deviceRef],sources:['enteExport'],requires:[],child:{kind:'backup',appRef:t.appRef},restartSignIn:'recovery'});
+      steps.push(...flow);if(read<0)return steps;stepwisePasswordCheck=true;
+    }else{
     act('recovery-password-test',c('Try the exact new value in a fresh sign-in','新しい値そのもので、新しくログインを試す'),c('Keep working sessions. In a separate private browser window open the official Auth app and sign in to this same Account using the exact new phrase from your reminder. Do not accept an autofilled old value or an existing session. '+(a['recovery-place']==='app'?'If an additional-authentication screen appears, leave it open without completing it; the next Account check guides that operation.':'Complete the existing additional check without removing a method to force this test.')+'','使えるログインを保ち、別のプライベート画面で正規のAuth Webを開きます。控えの新しい語句そのもので同じAccountへログインします。自動入力の古い値・既存ログインで代用せず、'+(a['recovery-place']==='app'?'追加認証の画面が出たら、まだ認証せずに開いたまま残します。次のAccountの確認で、その操作を案内します。':'追加認証も現在の使える方法で行います。この確認のために認証方式を削除しません。')+''),c('The exact new password is accepted in this fresh sign-in. If it fails, keep the task unfinished and use help.','この新しいログインで、新しいパスワードそのものが受け付けられること。失敗したら未完了で残し、ヘルプを使います。'),{url:'https://auth.ente.com/',effect:'recovery-new-password',button:c('The new password was accepted','新しいパスワードが受け付けられました')});
+    }
   }else{
     steps.push(...externalAuthentication(t,refs,place,false));if(!a['recovery-screen'])return steps;
     if(a['recovery-screen']==='other'||(['passkey','totp'].includes(a['recovery-screen'])&&!t.records['recovery-extra-accepted']))return steps;
   }
-  if(a['recovery-place']==='app'){addAccountCheck();return steps;}
+  if(a['recovery-place']==='app'&&!stepwisePasswordCheck){addAccountCheck();return steps;}
+  if(!stepwisePasswordCheck){
   ask('recovery-used-factor',c('What actually completed this new sign-in?','今回の新しいログインでは、何を使いましたか？'),[...data.securityModel.entities.filter(e=>!!enteRecoveryFactorInputs(data,root.rootRef,e.id)).map(e=>choice(`credential:${e.id}`,e.label)),choice('recovery','This Account’s Recovery key','このAccountの復旧キー'),choice('other','Another method not yet recorded','まだ記録していない別の方法'),choice('none','No additional factor was requested','追加認証を求められなかった')],{question:'recovery-used-factor'});if(!a['recovery-used-factor'])return steps;
   const factorInputs=t.resources.recoveryFactor?enteRecoveryFactorInputs(data,root.rootRef,t.resources.recoveryFactor):[];
   if(!factorInputs){stop('recovery-factor-unavailable',c('Use an actually available method','実際に使える方法を確認する'),c('The recorded method or its host is unavailable. Go Back and identify what actually completed this sign-in; do not count a key stored only on the lost phone.','記録した認証手段か保存端末が使えません。「戻る」で今回実際に使った方法を確認し、紛失したスマホの中だけにある鍵で代用しません。'));return steps;}
   act('recovery-data-read',c('Confirm this Account’s existing data opens','このAccountの既存データを開けるか確認する'),c('In that new Auth web session use the current Account password for decryption if asked. Check the correct existing code list, preserving all original entries and sessions. Do not count a login alert email or a recovery success message alone as readable data.','その新しいAuth Webのログインで、復号を求められたら現在のAccountパスワードを使い、正しい既存コード一覧を確認します。元の項目とログインを残し、ログイン通知メール・復旧成功の表示だけでデータを読めたとは扱いません。'),c('The intended Account’s existing code list is readable in this fresh session.','この新しいログインで、今回の正しいAccountの既存コード一覧を読めること。'),{effect:'recovery-data-read',refs:[...refs,...factorInputs,...(root.passwordRef?[root.passwordRef]:[])],button:c('I opened the existing code list','既存のコード一覧を開けました')});
-  if(a['recovery-purpose']==='factor'||state?.factor){
+  }
+  if(stepwisePasswordCheck?!enteRootReadProtected(data,root.rootRef,deviceRef):a['recovery-purpose']==='factor'||state?.factor){
     const appRef=t.destinationRef??t.appRef,config=enteConfiguration(data,appRef);
     if(config?.rootRef===root.rootRef&&entePrepared(data,appRef))addAccountCheck();
     else{

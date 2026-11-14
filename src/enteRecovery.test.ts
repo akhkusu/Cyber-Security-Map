@@ -23,7 +23,8 @@ function drive(data:CurrentDataset,id:string,answers:Record<string,string>={},un
   if(s.child){const child=beginEnteChild(data,id);next=finishEnte(drive(child.data,child.id,answers),child.id);}
   else if(s.kind==='question'){
    const defaults:Record<string,string>={version:'supported',state:'account',root:`account:${t.rootRef??enteStore(data)!.roots[0].rootRef}`,'lock-mode':'device','file-choice':'new','backup-kind':'manual','file-secret-mode':'new','save-place':'external','file-location':'add','root-password-state':'known','root-email-mode':'off','root-mail':'account:mail','root-mfa':'passkey','root-factor-store':'local','recovery-purpose':'forgot','recovery-place':'app','recovery-photos':'yes','recovery-locker':'yes','recovery-key-state':'available','recovery-mail':'account:mail','recovery-paper':'new','recovery-result':'changed','recovery-used-factor':'none','recovery-device':'device:fresh','recovery-entry':'password','recovery-screen':'key','recovery-extra-state':'usable'};
-   const value=answers[s.id]??(['root-key-copy','root-passkey-record'].includes(s.id)?s.choices![0].value:defaults[s.id]);if(!value)throw Error('Missing recovery choice '+s.id);
+   const signIn=s.id.endsWith('/entry')?'password':s.id.endsWith('/after-password')?(t.answers['root-mfa']==='totp'?'totp':'passkey'):s.id.endsWith('/after-factor')?'data':s.id.endsWith('/credential')?s.choices![0]?.value:undefined;
+   const value=answers[s.id]??signIn??(['root-key-copy','root-passkey-record'].includes(s.id)?s.choices![0].value:defaults[s.id]);if(!value)throw Error('Missing recovery choice '+s.id);
    next=answerEnte(data,id,value,at());
   }else if(s.kind==='action')next=confirmEnte(data,id,at());else throw Error('Blocked recovery '+s.id);
   if(next===data)throw Error('No recovery progress at '+s.id);if(s.kind==='action'&&currentEnteStep(next,enteTask(next,id)!).id===s.id){const d=next as CurrentDataset,receipt=enteTask(d,id)!.records[s.id],facts=enteStore(d)!.proofs.filter(p=>p.directReceiptRef===receipt).map(p=>p.factRef),routes=d.securityModel.routes.filter(r=>r.requirements.kind==='fact'&&facts.includes(r.requirements.factId));throw Error('The recorded action is still unconfirmed: '+s.id+' '+JSON.stringify(routes.map(r=>evaluateAccess(d.securityModel,r.id,{context:'no-existing-session',now:at()}))));}data=valid(next as CurrentDataset);
@@ -38,7 +39,7 @@ beforeAll(()=>{
  const account=startEnteTask(data,{kind:'account',appRef:app.appRef,rootRef:root.rootRef,origin:'map'},at());data=drive(account.data,account.id);expect(enteAccountReady(data,app.appRef)).toBe(true);base={data,appRef:app.appRef,rootRef:root.rootRef};
 },20000);
 const fixture=()=>structuredClone(base);
-const start=(f:Fixture)=>startEnteTask(f.data,{kind:'recovery',appRef:f.appRef,rootRef:f.rootRef,origin:'map'},at());
+const start=(f:Fixture)=>{const t=startEnteTask(f.data,{kind:'recovery',appRef:f.appRef,rootRef:f.rootRef,origin:'map'},at());return {...t,data:putEnteTask(t.data,{...enteTask(t.data,t.id)!,stepwiseSignInV1:undefined})};};
 describe('Ente Account password recovery',()=>{
  it('prepares a candidate without changing the current password, then treats an uncertain request as pending',()=>{
   const f=fixture(),oldRoot=structuredClone(enteStore(f.data)!.roots[0]),t=start(f),before=drive(t.data,t.id,{},'recovery-password-request');
@@ -81,6 +82,9 @@ describe('Ente factor recovery distinguishes a bypass from a removal',()=>{
  });
  it('re-protects the same Account on a new phone after web recovery without reusing the lost phone',()=>{
   const f=fixture();f.data.securityModel.lifecycle.old={state:'lost',evidence:'user-confirmed',updatedAt:at()};f.data.assets.push({...makeAsset({kind:'device',type:'Computer',name:'Usable Mac',importance:'critical',operatingSystem:'macos'}),id:'web'});
+  // This is a TOTP-only Account before the phone is lost. A one-login passkey
+  // bypass would not make an unavailable registered passkey usable on the new phone.
+  for(const key of f.data.securityModel.entities.filter(e=>e.kind==='credential'&&e.subjectRef===f.rootRef&&e.credentialType==='passkey'))f.data.securityModel.lifecycle[key.id]={state:'revoked',evidence:'user-confirmed',updatedAt:at()};
   f.data=putEnteEntity(f.data,{id:'root-totp',kind:'credential',credentialType:'totp',subjectRef:f.rootRef,storageRef:f.appRef,roles:['second-step'],label:'Lost Ente Account TOTP',createdAt:at()});
   const originalRoot=structuredClone(enteStore(f.data)!.roots[0]),t=start(f),done=drive(t.data,t.id,{'recovery-purpose':'factor','recovery-place':'web','recovery-device':'device:web','recovery-screen':'totp','recovery-extra-state':'lost','recovery-used-factor':'none','recovery-protection-device':'device:fresh','recovery-protection-app':'new',state:'fresh','root-mfa':'new-passkey'}),task=enteTask(done,t.id)!;
   expect(task.status).toBe('completed');expect(task.newDeviceRef).toBe('web');expect(task.resources.protectionDevice).toBe('fresh');expect(entePrepared(done,task.destinationRef!)).toBe(true);expect(enteConfiguration(done,task.destinationRef!)!.rootRef).toBe(f.rootRef);expect(enteAccountReady(done,task.destinationRef!,['old'])).toBe(true);expect(enteStore(done)!.roots[0]).toMatchObject({passwordRef:originalRoot.passwordRef,epoch:originalRoot.epoch,recoveryRef:originalRoot.recoveryRef});expect(done.securityModel.lifecycle.old.state).toBe('lost');expect(done.securityModel.lifecycle['mail-code']).toBeUndefined();expect(done.guide).toEqual(f.data.guide);
@@ -121,7 +125,7 @@ describe('Ente factor recovery distinguishes a bypass from a removal',()=>{
   if(scope==='nord'){
    data=makeCloudVault(data,'nordpass','ja');const vault=data.guide.managerId!;data=addCloudRoot(data,vault,'personal',true) as CurrentDataset;const root=data.securityModel.entities.find(e=>e.id===vault)!.authenticationAccountRef as string;data=selectNordSsoAccount(selectNordSsoProvider(data,root,'google'),root,'mail') as CurrentDataset;data=chooseCloudDevice(data,vault,'old') as CurrentDataset;const session=startNordSsoSession({...data,guide:main},selectedCloudInstallation(data,vault)!.id,'/phone/move');data=session.data;scopeId=session.id!;path=`/nord-connection/${scopeId}`;
   }else{const task=startProtectionGuide(data,'old');data=task.data;scopeId=task.id;path=`/protect/account/${scopeId}`;}
-  const started=startEnteTask(data,{kind:'recovery',appRef:f.appRef,rootRef:f.rootRef,origin:'guide',accountRef:'mail',scopePath:path,returnCursor:'manager-select'},at());data=started.data;
+  const started=startEnteTask(data,{kind:'recovery',appRef:f.appRef,rootRef:f.rootRef,origin:'guide',accountRef:'mail',scopePath:path,returnCursor:'manager-select'},at());data=putEnteTask(started.data,{...enteTask(started.data,started.id)!,stepwiseSignInV1:undefined});
   const childGuide=guideSchema.parse({...main,cursor:`ente/${started.id}`,answers:{...main.answers,'auth:mail:app':f.appRef,'auth:mail:scope':path}});
   if(scope==='nord')data=saveNordSsoSession(data,{...data,guide:{...childGuide,nordSsoSessionV1:scopeId}},scopeId) as CurrentDataset;
   else{const store=protectionStore(data)!;data={...data,securityModel:{...data.securityModel,deviceProtectionV1:{...store,tasks:store.tasks.map(t=>t.id===scopeId?{...t,accountRef:'mail',childRecipe:'recovery',childGuide}:t)}}};}
