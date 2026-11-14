@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { newDataset, makeAsset, currentDatasetSchema, type CurrentDataset } from './models';
 import { createEnteApp, createEnteRoot, startEnteTask, putEnteTask, putEnteEntity, enteTask } from './enteData';
 import { enteStore, entePrepared, enteReceiptCurrent, entePasswordPending } from './enteSchemas';
-import { answerEnte, confirmEnte, currentEnteStep, beginEnteChild, restartEnteSignIn, enteAccountReady } from './enteEngine';
+import { answerEnte, confirmEnte, currentEnteStep, beginEnteChild, restartEnteSignIn, enteAccountReady, navigateEnte, enteHelpPrompt } from './enteEngine';
 import { finishEnte } from './enteIntegration';
 import { evaluateAccess } from './securityModel';
 import { createEncryptedVault, decryptVault } from './crypto';
@@ -24,8 +24,8 @@ function drive(data: CurrentDataset, id: string, answers: Record<string, string>
         'file-choice': 'new', 'backup-kind': 'manual', 'file-secret-mode': 'new', 'save-place': 'external', 'file-location': 'add',
         'root-password-state': 'known', 'root-key-copy': 'new', 'root-email-mode': 'off', 'root-mail': 'account:mail', 'root-mfa': 'passkey', 'root-passkey-record': 'add', 'root-factor-store': 'local',
         'recovery-purpose': 'forgot', 'recovery-place': 'app', 'recovery-photos': 'no', 'recovery-locker': 'no', 'recovery-key-state': 'available', 'recovery-paper': 'new', 'recovery-result': 'uncertain', 'recovery-mail': 'account:mail', 'recovery-device': 'device:web',
-        'signin/root/entry': 'password', 'signin/root/after-password': 'passkey', 'signin/root/after-factor': 'data',
-        'signin/recovery/entry': 'password', 'signin/recovery/after-password': 'passkey', 'signin/recovery/after-factor': 'data', 'signin/recovery/mail': 'account:mail',
+        'signin/root/browser': 'chrome', 'signin/root/session': 'login', 'signin/root/entry': 'password', 'signin/root/after-password': 'passkey', 'signin/root/after-factor': 'data',
+        'signin/recovery/browser': 'chrome', 'signin/recovery/session': 'login', 'signin/recovery/entry': 'password', 'signin/recovery/after-password': 'passkey', 'signin/recovery/after-factor': 'data', 'signin/recovery/mail': 'account:mail',
       };
       const value = answers[step.id] ?? (step.id.endsWith('/credential') ? step.choices![0].value : defaults[step.id]);
       if (!value) throw Error('Missing sign-in choice ' + step.id);
@@ -54,7 +54,7 @@ beforeAll(() => {
   data = putEnteEntity(data, { id: 'other-code', kind: 'credential', credentialType: 'totp', subjectRef: 'mail', storageRef: app.appRef, roles: ['second-step'], label: 'Other service code', createdAt: at() });
   // A previously completed guide is a real compatibility fixture, not a newly upgraded task.
   const old = startEnteTask(data, { kind: 'account', appRef: app.appRef, rootRef: root.rootRef, origin: 'map' }, at());
-  data = putEnteTask(old.data, { ...enteTask(old.data, old.id)!, stepwiseSignInV1: undefined }); data = drive(data, old.id);
+  data = putEnteTask(old.data, { ...enteTask(old.data, old.id)!, stepwiseSignInV1: undefined, browserOpeningV1: undefined }); data = drive(data, old.id);
   const passkey = data.securityModel.entities.find(e => e.kind === 'credential' && e.subjectRef === root.rootRef && e.credentialType === 'passkey')!;
   baseline = { data, appRef: app.appRef, rootRef: root.rootRef, passkeyRef: passkey.id };
 }, 20000);
@@ -120,7 +120,7 @@ describe('Ente actual-screen sign-in without repeated completed authentication',
 
   it('restarts an expired attempt without repeating registration or mixing the old factor receipt into a new read proof', () => {
     const f = fixture(), t = account(f), before = drive(t.data, t.id, {}, 'signin/root/after-factor'), oldFactor = enteTask(before, t.id)!.records['root-factor-use'], expired = answerEnte(before, t.id, 'expired', at()), restarted = restartEnteSignIn(expired, t.id, at()) as CurrentDataset;
-    expect(currentEnteStep(restarted, enteTask(restarted, t.id)!).id).toBe('root-login-open'); expect(enteReceiptCurrent(enteStore(restarted)!, oldFactor)).toBe(false);
+    expect(currentEnteStep(restarted, enteTask(restarted, t.id)!).id).toBe('signin/root/browser'); expect(enteReceiptCurrent(enteStore(restarted)!, oldFactor)).toBe(false);
     const done = drive(restarted, t.id), newFactor = enteTask(done, t.id)!.records['root-factor-use']; expect(newFactor).not.toBe(oldFactor); expect(readProof(done, t.id).receiptRefs).toContain(newFactor); expect(readProof(done, t.id).receiptRefs).not.toContain(oldFactor); expect(enteTask(done, t.id)!.records['root-passkey-create']).toBeUndefined(); expect(done.guide).toEqual(f.data.guide);
   }, workflowTimeout);
 
@@ -168,5 +168,60 @@ describe('Ente new-password verification in the same sign-in', () => {
     const confirmed = confirmEnte(before, t.id, at()) as CurrentDataset, ref = enteTask(confirmed, t.id)!.resources.recoveryFactor!, credential = confirmed.securityModel.entities.find(e => e.id === ref)!;
     expect(credential).toMatchObject({ kind: 'credential', credentialType: 'passkey', subjectRef: f.rootRef, storageRef: 'web' });
     const done = drive(confirmed, t.id, answers), fact = factFor(done, t.id); expect(enteTask(done, t.id)!.status).toBe('completed'); expect(fact.requiredRefs).toContain('web'); expect(fact.requiredRefs).toContain(ref); expect(fact.requiredRefs).not.toContain('phone'); expect(fact.requiredRefs).not.toContain(f.appRef); expect(fact.observedWithoutRefs).toContain(f.appRef); expect(done.securityModel.lifecycle.phone.state).toBe('lost'); expect(done.securityModel.lifecycle[f.appRef].state).toBe('unavailable'); expect(done.guide).toEqual(f.data.guide);
+  }, workflowTimeout);
+});
+
+describe('Ente separate browser opening without discarding working access', () => {
+  it('includes only an allowed browser name in help, excluding private labels and arbitrary answers', () => {
+    const f = fixture(); f.data.assets.find(d => d.id === 'phone')!.name = 'PRIVATE DEVICE LABEL'; const t = account(f), data = drive(t.data, t.id, {}, 'root-login-open'), task = enteTask(data, t.id)!; task.answers.private = 'PRIVATE ANSWER';
+    const prompt = enteHelpPrompt(data, task, 0, 'en'); expect(prompt).toContain('Browser: Chrome'); expect(prompt).toContain('OS: ios'); expect(prompt).toContain('support.google.com/chrome/answer/95464'); expect(prompt).not.toMatch(/PRIVATE DEVICE LABEL|PRIVATE ANSWER/);
+    for (const value of ['PRIVATE BROWSER VALUE', '__proto__', 'constructor']) { const untrusted = { ...task, answers: { ...task.answers, 'signin/root/browser': value } }; const prompt = enteHelpPrompt(data, untrusted, 0, 'en'); expect(prompt).not.toContain(value); expect(prompt).not.toContain('\nBrowser:'); }
+  }, workflowTimeout);
+
+  for (const variant of ['more', 'tabs', 'ipad'] as const) it(`uses the actual Safari ${variant} controls before opening the official address`, () => {
+    const f = fixture(), t = account(f), answers = { 'signin/root/browser': 'safari', 'signin/root/safari-device': variant === 'ipad' ? 'ipad' : 'iphone', 'signin/root/safari-layout': variant };
+    const target = variant === 'tabs' ? 'signin/root/browser-tabs' : 'signin/root/browser-menu';
+    const before = drive(t.data, t.id, answers, target), step = currentEnteStep(before, enteTask(before, t.id)!);
+    expect(step.action!.ja).toContain(variant === 'ipad' ? '長押し' : variant === 'more' ? '「詳細」' : 'タブ');
+    const opened = drive(before, t.id, answers, 'root-login-open'), address = currentEnteStep(opened, enteTask(opened, t.id)!);
+    expect(address.copyUrl).toBe('https://auth.ente.com/'); expect(address.url).toBeUndefined(); expect(enteTask(opened, t.id)!.records['root-factor-use']).toBeUndefined();
+    const done = drive(opened, t.id, answers), task = enteTask(done, t.id)!;
+    expect(task.status).toBe('completed'); expect(task.history.indexOf('signin/root/browser-new')).toBeLessThan(task.history.indexOf('root-login-open')); expect(task.history.filter(id => id === 'root-factor-use')).toHaveLength(1); expect(done.guide).toEqual(f.data.guide);
+  }, workflowTimeout);
+
+  it('does not count an existing private code list and restarts only the attempt', () => {
+    const f = fixture(), t = account(f), before = drive(t.data, t.id, {}, 'signin/root/session'), record = enteTask(before, t.id)!.records['root-passkey-list'];
+    const blocked = answerEnte(before, t.id, 'signed-in', at()) as CurrentDataset; expect(currentEnteStep(blocked, enteTask(blocked, t.id)!).id).toBe('signin/root/session-not-fresh'); expect(enteTask(blocked, t.id)!.records['root-factor-use']).toBeUndefined(); expect(enteTask(blocked, t.id)!.records['root-data-read']).toBeUndefined();
+    const restarted = restartEnteSignIn(blocked, t.id, at()) as CurrentDataset; expect(currentEnteStep(restarted, enteTask(restarted, t.id)!).id).toBe('signin/root/browser'); expect(enteReceiptCurrent(enteStore(restarted)!, record)).toBe(true); expect(restarted.guide).toEqual(f.data.guide);
+  }, workflowTimeout);
+
+  it('uses an already prepared unsigned-in profile without making the user open private tabs', () => {
+    const f = fixture(), t = account(f), done = drive(t.data, t.id, { 'signin/root/browser': 'ready' }), task = enteTask(done, t.id)!;
+    expect(task.status).toBe('completed'); expect(task.history.some(id => id.startsWith('signin/root/browser-'))).toBe(false); expect(task.history).toContain('signin/root/session'); expect(task.history.filter(id => id === 'root-factor-use')).toHaveLength(1);
+  }, workflowTimeout);
+
+  it('withdraws a previous browser attempt when its browser choice is corrected', () => {
+    const f = fixture(), t = account(f), before = drive(t.data, t.id, {}, 'signin/root/session'), old = enteTask(before, t.id)!.records['root-login-open'];
+    const back = navigateEnte(before, t.id, 'signin/root/browser', at()), changed = answerEnte(back, t.id, 'firefox', at()) as CurrentDataset;
+    expect(enteReceiptCurrent(enteStore(changed)!, old)).toBe(false);
+    const answers = { 'signin/root/browser': 'firefox', 'signin/root/firefox-close-tabs': 'off' }, next = drive(changed, t.id, answers, 'signin/root/session');
+    expect(enteTask(next, t.id)!.records['root-login-open']).not.toBe(old); expect(enteTask(next, t.id)!.records['signin/root/firefox-keep-tabs']).toBeUndefined(); expect(next.securityModel.entities.find(e => e.id === f.passkeyRef)).toEqual(f.data.securityModel.entities.find(e => e.id === f.passkeyRef)); expect(next.guide).toEqual(f.data.guide);
+  }, workflowTimeout);
+
+  it('keeps the previous actual-screen recipe and partial position when browser opening was not part of the stored task', async () => {
+    const f = fixture(), t = account(f), legacy = putEnteTask(t.data, { ...enteTask(t.data, t.id)!, browserOpeningV1: undefined });
+    const before = drive(legacy, t.id, {}, 'signin/root/after-factor'), sealed = await createEncryptedVault('stored browser recipe fixture phrase', before), opened = (await decryptVault(sealed.envelope, 'stored browser recipe fixture phrase')).data;
+    expect(currentEnteStep(opened, enteTask(opened, t.id)!).id).toBe('signin/root/after-factor'); expect(enteTask(opened, t.id)!.answers['signin/root/browser']).toBeUndefined(); expect(enteTask(opened, t.id)!.browserOpeningV1).toBeUndefined(); const done = drive(opened as CurrentDataset, t.id); expect(enteTask(done, t.id)!.status).toBe('completed'); expect(done.guide).toEqual(f.data.guide);
+  }, workflowTimeout);
+
+  it('adds browser instructions to a previous recipe only when its sign-in is explicitly restarted', () => {
+    const f = fixture(), t = account(f), legacy = putEnteTask(t.data, { ...enteTask(t.data, t.id)!, browserOpeningV1: undefined });
+    const before = drive(legacy, t.id, {}, 'signin/root/after-factor'), old = enteTask(before, t.id)!, expired = answerEnte(before, t.id, 'expired', at()), restarted = restartEnteSignIn(expired, t.id, at()) as CurrentDataset;
+    expect(enteTask(restarted, t.id)!.browserOpeningV1).toBe(1); expect(currentEnteStep(restarted, enteTask(restarted, t.id)!).id).toBe('signin/root/browser'); expect(enteReceiptCurrent(enteStore(restarted)!, old.records['root-passkey-list'])).toBe(true); expect(enteReceiptCurrent(enteStore(restarted)!, old.records['root-factor-use'])).toBe(false); expect(restarted.securityModel.entities.find(e => e.id === f.passkeyRef)).toEqual(f.data.securityModel.entities.find(e => e.id === f.passkeyRef)); expect(restarted.guide).toEqual(f.data.guide);
+  }, workflowTimeout);
+
+  it('offers retaining Firefox’s existing privacy setting instead of forcing a change', () => {
+    const f = fixture(), t = account(f), before = drive(t.data, t.id, { 'signin/root/browser': 'firefox' }, 'signin/root/firefox-close-tabs'), blocked = answerEnte(before, t.id, 'keep', at()) as CurrentDataset;
+    expect(currentEnteStep(blocked, enteTask(blocked, t.id)!).id).toBe('signin/root/firefox-tabs-unavailable'); expect(enteTask(blocked, t.id)!.records['signin/root/firefox-keep-tabs']).toBeUndefined(); expect(enteTask(blocked, t.id)!.records['root-login-open']).toBeUndefined(); expect(blocked.guide).toEqual(f.data.guide);
   }, workflowTimeout);
 });

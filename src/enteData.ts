@@ -50,7 +50,7 @@ export function startEnteTask(data:Dataset,options:StartOptions,at=nowString(),f
   }
   const pending=force?undefined:s.tasks.find(t=>t.kind===options.kind&&t.appRef===options.appRef&&t.origin===options.origin&&t.accountRef===options.accountRef&&t.rootRef===options.rootRef&&t.returnCursor===options.returnCursor&&t.scopePath===options.scopePath&&t.phoneRef===options.phoneRef&&t.newDeviceRef===options.newDeviceRef&&['active','deferred'].includes(t.status));
   if(pending)return {data:putEnteTask(next,{...pending,status:'active',updatedAt:at}),id:pending.id};
-  const task=enteTaskSchema.parse({id:crypto.randomUUID(),...options,...(['account','recovery'].includes(options.kind)?{stepwiseSignInV1:1}:{}),createdAt:at,updatedAt:at,sourceSnapshot:enteSnapshot(next.securityModel,options.appRef)});
+  const task=enteTaskSchema.parse({id:crypto.randomUUID(),...options,...(['account','recovery'].includes(options.kind)?{stepwiseSignInV1:1,browserOpeningV1:1}:{}),createdAt:at,updatedAt:at,sourceSnapshot:enteSnapshot(next.securityModel,options.appRef)});
   return {data:putEnteStore(next,{...s,tasks:[...s.tasks,task]}),id:task.id};
 }
 export function withdrawEnteReceipt(data:Dataset,taskId:string,stepId:string,at=nowString()):Dataset{

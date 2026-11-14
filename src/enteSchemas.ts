@@ -27,6 +27,7 @@ export const enteTaskSchema=z.object({
   resources:z.record(z.string(),ref).default({}), sourceSnapshot:z.string().optional(),
   recoveryStateV1:enteRecoveryStateSchema.optional(),
   stepwiseSignInV1:z.literal(1).optional(),
+  browserOpeningV1:z.literal(1).optional(),
   createdAt:time, updatedAt:time,
 }).passthrough();
 export type EnteTask=z.infer<typeof enteTaskSchema>;

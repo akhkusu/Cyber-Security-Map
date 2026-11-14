@@ -19,7 +19,7 @@ function drive(data:CurrentDataset,id:string,answers:Record<string,string>={},un
   let next;
   if(step.kind==='question'){
    const defaults:Record<string,string>={version:'supported','source-version':'supported','source-code-types':'totp',state:'offline','lock-mode':'device','file-choice':'new','backup-kind':'manual','file-secret-mode':'new','save-place':'phone','file-location':'add',destination:'add','new-version':'supported','new-state':'offline','new-lock-mode':'device','codes-state':'missing',method:'file','cross-share':'prepared','present-origin':'copy','destination-backup':'new'};
-   const signIn=step.id.endsWith('/entry')?'password':step.id.endsWith('/after-password')?(t.answers['root-mfa']==='totp'?'totp':'passkey'):step.id.endsWith('/after-factor')?'data':step.id.endsWith('/credential')?step.choices![0]?.value:undefined;
+   const signIn=step.id.endsWith('/browser')?'chrome':step.id.endsWith('/session')?'login':step.id.endsWith('/entry')?'password':step.id.endsWith('/after-password')?(t.answers['root-mfa']==='totp'?'totp':'passkey'):step.id.endsWith('/after-factor')?'data':step.id.endsWith('/credential')?step.choices![0]?.value:undefined;
    const value=(answers[step.id]==='current-app'?`store:${t.appRef}`:answers[step.id])??signIn??(step.id.startsWith('target-more:')?'done':step.id==='move-file'?step.choices![0]?.value:defaults[step.id]);if(!value)throw Error('Missing choice '+step.id);
    next=answerEnte(data,id,value,time());
   }else if(step.kind==='action'){expect(step.expected?.ja).toBeTruthy();expect(step.expected?.en).toBeTruthy();next=confirmEnte(data,id,time());}else if(step.child){const child=beginEnteChild(data,id);data=drive(child.data,child.id,answers);continue;}else throw Error('Blocked '+step.id);

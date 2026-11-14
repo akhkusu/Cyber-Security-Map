@@ -1,4 +1,5 @@
 import { ENTE_SOURCES } from './enteSources';
+import { PRIVATE_BROWSER_SOURCES } from './privateBrowserSources';
 import {TWOFAS_SOURCES} from './twofasSources';
 import type { Asset, Language } from './models';
 import { CLOUD_SOURCES } from './cloudSources';
@@ -10,6 +11,7 @@ export const say = (copy: Copy, language: Language) => copy[language];
 export type Source = { title: string; url: string; checked: string; scope: string; reviewMethod: 'official-documentation' | 'official-search-excerpt' };
 const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-13', reviewMethod: 'official-documentation' });
 export const SOURCES = {
+  ...PRIVATE_BROWSER_SOURCES,
   ...ENTE_SOURCES,
   ...TWOFAS_SOURCES,
   ...CLOUD_SOURCES,

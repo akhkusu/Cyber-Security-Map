@@ -4,6 +4,7 @@ import { canBeMailAccount } from './accountRoles';
 import type { EnteTask } from './enteSchemas';
 import { enteRecoveryFactorInputs } from './enteRecoveryData';
 import type { EnteChoice, EnteStep } from './enteCatalog';
+import { privateBrowserChoices, privateBrowserOperations, type PrivateBrowser, type SafariLayout } from './privateBrowserCatalog';
 
 export type EnteSignInKind = 'root' | 'recovery';
 type Screen = 'password' | 'email' | 'choice' | 'passkey' | 'totp' | 'data' | 'expired' | 'other';
@@ -33,18 +34,19 @@ const labels: Record<Screen, Copy> = {
 export function enteSignInSteps(data: Dataset, task: EnteTask, ctx: Context): EnteStep[] {
   if (data.version !== 2) return [];
   const prefix = `signin/${ctx.kind}/`, a = task.answers, steps: EnteStep[] = [];
-  const sources = ['enteSignInSource', 'entePasskey'];
+  let sources = ['enteSignInSource', 'entePasskey'];
   const actions = [...(ctx.prerequisites ?? [])];
+  let signInPlace = ctx.place;
   const extra = task.kind === 'recovery' && a['recovery-place'] === 'web'
     ? { webDeviceRef: ctx.deviceRef } : { appRef: task.appRef };
   const without = ctx.withoutRefs?.length
-    ? c('Do not use the previous phone. Use the chosen sign-in device and the available methods identified here. ', '旧端末は使いません。選んだログイン用の端末と、ここで確認する使える認証手段で進めます。')
+    ? c('Without using the previous phone: ', '旧端末を使わずに、')
     : c('', '');
   const ask = (key: string, title: Copy, choices: EnteChoice[], more: Partial<EnteStep> = {}) => {
     steps.push({ id: prefix + key, kind: 'question', title, choices, refs: ctx.refs, sources, requires: [], restartSignIn: ctx.kind, ...more });
   };
   const act = (id: string, title: Copy, action: Copy, expected: Copy, more: Partial<EnteStep> = {}) => {
-    steps.push({ id, kind: 'action', title, place: ctx.place,
+    steps.push({ id, kind: 'action', title, place: signInPlace,
       action: c(without.en + action.en, without.ja + action.ja), expected,
       button: c('I checked this', '確認しました'), refs: ctx.refs, sources,
       requires: [...actions], restartSignIn: ctx.kind, ...extra, ...more });
@@ -76,15 +78,79 @@ export function enteSignInSteps(data: Dataset, task: EnteTask, ctx: Context): En
       { ...(candidate ? { effect: 'recovery-new-password' } : {}), button: c('The password was accepted', 'パスワードが受け付けられました') });
   };
 
+  if (task.browserOpeningV1 === 1) {
+    const os = data.assets.find(d => d.id === ctx.deviceRef)?.operatingSystem;
+    ask('browser', c('Which browser will you use on this device?', 'この端末では、どのブラウザーを使いますか？'), [
+      ...privateBrowserChoices(os).map(value => ch(value, value === 'safari' ? 'Safari' : value === 'chrome' ? 'Chrome' : value === 'firefox' ? 'Firefox' : 'Microsoft Edge')),
+      ch('ready', 'I already have a separate window that is not signed in', 'すでに別の未ログイン画面を用意している'), ch('other', 'Another browser / I cannot open a private screen', '別のブラウザー・プライベート画面を開けない'),
+    ]);
+    const browser = a[prefix + 'browser'];
+    if (!browser) return steps;
+    if (browser !== 'ready') {
+      if (!privateBrowserChoices(os).includes(browser as PrivateBrowser)) {
+        stop('browser-unavailable', c('Keep your working access and choose another available window', '使えるログインを残し、別の利用できる画面を選ぶ'), c('Keep the guide and working sessions. Do not disable device management, close every private tab or remove authentication to force this check. Use Back to select an available browser, or a separate profile that you have already confirmed is not signed in.', 'このガイドと使えるログインを残します。確認のために管理設定を解除したり、すべてのプライベートタブを閉じたり、認証を削除したりしません。「戻る」で実際に使えるブラウザーか、未ログインだと確認した別プロフィールを選んでください。'));
+        return steps;
+      }
+      const label = browser === 'safari' ? 'Safari' : browser === 'chrome' ? 'Chrome' : browser === 'firefox' ? 'Firefox' : 'Microsoft Edge';
+      const device = data.assets.find(d => d.id === ctx.deviceRef)?.name ?? '';
+      signInPlace = c(`${device} · ${label}`, `${device} · ${label}`);
+      act(prefix + 'browser-app', c(`Open ${label} on the chosen device`, `選んだ端末で${label}を開く`), c(`Open ${label} on the device shown here. Keep this guide and existing working sessions.`, `ここに表示した端末で${label}を開きます。このガイドと、現在使えるログインは残してください。`), c('The chosen browser is open on the intended device.', '今回使う端末で、選んだブラウザーが開くこと。'), { button: c('The browser is open', 'ブラウザーを開きました') });
+      if (browser === 'firefox' && os === 'ios') {
+        const firefoxSources = ['privateFirefoxIOS', 'privateFirefoxKeepTabs'];
+        act(prefix + 'firefox-menu', c('Open Firefox’s menu before starting the private check', 'プライベートの確認を始める前に、Firefoxのメニューを開く'), c('Tap Firefox’s menu button at the bottom of the iPhone screen, or at the top right on an iPad.', 'Firefoxのメニューボタンをタップします。iPhoneでは画面下部、iPadでは右上にあります。'), c('Firefox’s menu is visible.', 'Firefoxのメニューが表示されること。'), { sources: firefoxSources, button: c('The menu is open', 'メニューを開きました') });
+        act(prefix + 'firefox-settings', c('Open Firefox Settings', 'Firefoxの「設定」を開く'), c('Select Settings in that menu.', 'そのメニューで「Settings / 設定」を選びます。'), c('Firefox’s settings are visible.', 'Firefoxの設定が表示されること。'), { sources: firefoxSources, button: c('Settings are open', '設定を開きました') });
+        act(prefix + 'firefox-privacy', c('Find Close Private Tabs without changing it yet', 'まだ変更せず「プライベートタブを閉じる」を探す'), c('Scroll to Privacy and find Close Private Tabs. Firefox can close private tabs when you leave private browsing or quit the app. Check the current switch first.', 'プライバシーの項目までスクロールし、「Close Private Tabs / プライベートタブを閉じる」を探します。Firefoxではプライベートの表示を離れる・アプリを終了する際にタブが閉じる場合があるため、まず現在のスイッチを確認してください。'), c('The current switch is visible.', '現在のスイッチが見えること。'), { sources: firefoxSources, button: c('I found the current setting', '現在の設定を確認しました') });
+        ask('firefox-close-tabs', c('What is the current Close Private Tabs setting?', '「プライベートタブを閉じる」は、現在どちらですか？'), [ch('off', 'Off; keep it', 'オフ。そのまま保つ'), ch('change', 'On; let private tabs stay open so I can return to this guide', 'オン。案内へ戻れるよう、タブを残す設定に変える'), ch('keep', 'On; keep this setting and choose another browser', 'オン。変更せず、別のブラウザーを使う'), ch('unknown', 'I cannot confirm it', '確認できない')], { sources: firefoxSources });
+        const close = a[prefix + 'firefox-close-tabs'];
+        if (!close) return steps;
+        if (!['off', 'change'].includes(close)) {
+          stop('firefox-tabs-unavailable', c('Keep this setting and use another available screen', '設定を保ち、使える別の画面を選ぶ'), c('Use Back to choose another installed browser or an already prepared unsigned-in profile. Keep working sessions. Do not count a lost private tab as a completed sign-in.', '「戻る」で、インストール済みの別ブラウザーか、用意済みの未ログインプロフィールを選びます。使えるログインは残し、閉じたプライベートタブをログインの完了にはしません。'));
+          return steps;
+        }
+        if (close === 'change') act(prefix + 'firefox-keep-tabs', c('Allow this Firefox private tab to stay open', 'Firefoxのプライベートタブを残せるようにする'), c('Turn Close Private Tabs off. If it is already off, keep it. Private tabs will then remain until you close them, so other people with access to this unlocked browser may see them.', '「プライベートタブを閉じる」をオフにします。すでにオフならそのまま保ちます。以後は自分で閉じるまでタブが残るため、解除済みのこのブラウザーを使える人には見える場合があります。'), c('Close Private Tabs is off.', '「プライベートタブを閉じる」がオフになっていること。'), { sources: firefoxSources, physical: true, button: c('The setting is off', 'オフになっています') });
+        act(prefix + 'firefox-done', c('Return from Firefox Settings', 'Firefoxの設定から戻る'), c('Select Done at the top right. Keep existing tabs and sessions.', '右上の「Done / 完了」を選びます。既存のタブとログインは残してください。'), c('Firefox has returned from Settings.', 'Firefoxの設定を閉じて戻れること。'), { sources: firefoxSources, button: c('I returned from Settings', '設定から戻りました') });
+      }
+      let layout: SafariLayout | undefined;
+      if (browser === 'safari' && os === 'ios') {
+        ask('safari-device', c('Are you using Safari on an iPhone or an iPad?', 'Safariを使うのはiPhoneですか、iPadですか？'), [ch('iphone', 'iPhone'), ch('ipad', 'iPad')]);
+        if (!a[prefix + 'safari-device']) return steps;
+        if (a[prefix + 'safari-device'] === 'ipad') layout = 'ipad';
+        else {
+          ask('safari-layout', c('Which Safari controls do you see?', 'Safariには、どの操作ボタンが表示されていますか？'), [ch('more', 'More button — current layout', '「詳細」ボタンがある'), ch('tabs', 'Tabs button — iOS 17 or earlier layout', 'タブのボタンを使う以前の表示'), ch('other', 'Neither / the item is unavailable', 'どちらも見つからない・使えない')]);
+          if (!a[prefix + 'safari-layout']) return steps;
+          layout = a[prefix + 'safari-layout'] as SafariLayout;
+        }
+      }
+      const recipe = privateBrowserOperations(browser as PrivateBrowser, os, layout);
+      if (!recipe) {
+        stop('browser-layout-unavailable', c('Keep this browser step unfinished', 'このブラウザーの操作を未完了で残す'), c('Keep your current sessions. Use Back to match the actual controls or choose another available browser. Do not guess a menu, change restrictions or erase browsing data to force the check.', '現在のログインを残し、「戻る」で実際の表示に合わせるか、使える別のブラウザーを選びます。メニューの推測・制限の解除・閲覧データの消去で確認を通そうとしません。'));
+        return steps;
+      }
+      for (const operation of recipe) act(prefix + 'browser-' + operation.key, operation.title, operation.action, operation.expected, { button: operation.button, sources: operation.sources });
+      sources = [...new Set([...sources, ...recipe.flatMap(operation => operation.sources), ...(browser === 'firefox' && os === 'ios' ? ['privateFirefoxKeepTabs'] : [])])];
+    }
+    const device = data.assets.find(d => d.id === ctx.deviceRef)?.name ?? '';
+    signInPlace = browser === 'ready' ? c(`${device} · Separate unsigned-in screen`, `${device} · 用意した別の未ログイン画面`) : c(`${device} · ${browser === 'safari' ? 'Safari' : browser === 'chrome' ? 'Chrome' : browser === 'firefox' ? 'Firefox' : 'Microsoft Edge'} · Private screen`, `${device} · ${browser === 'safari' ? 'Safari' : browser === 'chrome' ? 'Chrome' : browser === 'firefox' ? 'Firefox' : 'Microsoft Edge'} · プライベート画面`);
+    act(ctx.kind === 'root' ? 'root-login-open' : prefix + 'open', c('Open Ente in the separate screen', '別の画面で、EnteのログインURLを開く'),
+      c('Copy the address below, paste it into the address bar of the separate private tab or profile you prepared, and open it. Then return to this guide.', '下のURLをコピーし、用意したプライベートのタブか別プロフィールのアドレス欄へ貼り付けて開きます。開いたら、このガイドへ戻ってください。'),
+      c('Ente has opened in that separate screen. Next, we will check what it shows.', '用意した別の画面でEnteが開くこと。次に実際の表示を確認します。'), { copyUrl: 'https://auth.ente.com/', button: c('It is open in the separate screen', '別の画面で開きました') });
+    ask('session', c('What is shown at the Auth address?', 'AuthのURLを開くと、何が表示されましたか？'), [ch('login', 'The login form', 'ログインの入力画面'), ch('signed-in', 'A code list is already open', '最初からコード一覧が開いている'), ch('other', 'Another screen / a different address', '別の画面・別のURL')]);
+    if (!a[prefix + 'session']) return steps;
+    if (a[prefix + 'session'] !== 'login') {
+      stop('session-not-fresh', c('Use a screen that is actually not signed in', '実際に未ログインの画面を使う'), c('A new private tab can share an existing private login. Keep that working access. Restart only this check and choose another unsigned-in browser or profile; do not close all tabs, sign out the only working session or count the existing list as a new login.', '新しいプライベートタブでも、既存のプライベートのログインを共有することがあります。その利用手段は残し、今回の確認だけを始め直して、未ログインの別ブラウザーかプロフィールを選びます。すべてのタブを閉じたり、唯一の使えるログインからサインアウトしたりせず、既存一覧を新しいログインの成功にしません。'));
+      return steps;
+    }
+  } else {
   act(ctx.kind === 'root' ? 'root-login-open' : prefix + 'open', c('Open an Ente sign-in that is not already logged in', 'Enteに未ログインの画面を開く'),
     c('Keep working sessions. Open the official Auth web app in another browser profile or a private session that is not already signed in. Private windows can share a session with other private windows. If a code list opens immediately, use a different unsigned-in environment instead of counting it as a new sign-in.',
       '使えるログインを残し、別のブラウザープロフィールか、Enteに未ログインのプライベート画面で正規のAuth Webを開きます。プライベート画面同士でログインを共有する場合があります。最初からコード一覧が開いた場合は、新しいログインとして数えず、別の未ログイン環境を使ってください。'),
     c('The official Auth login is open; an existing code list is not being reused.', '正規Authのログイン画面が開き、既存のコード一覧を流用していないこと。'),
     { url: 'https://auth.ente.com/', button: c('The login screen is open', 'ログイン画面を開きました') });
+  }
   act(prefix + 'email', c('Enter this existing Account’s email in Ente', 'この既存AccountのメールをEnteへ入力する'),
     c('Use the exact existing Account’s email in Ente’s login form and select Login. Keep its identity; do not choose Sign up or enter the address here.',
       '今回の正しい既存AccountのメールをEnteのログイン欄だけへ入れ、「Login / ログイン」を選びます。同じAccountで続け、「Sign up」で新設したり、このアプリへアドレスを入れたりしません。'),
-    c('Ente shows its next check for the intended existing Account.', '今回の正しい既存Accountについて、次の確認が表示されること。'));
+    c('Ente shows its next check for the intended existing Account.', '今回の正しい既存Accountについて、次の確認が表示されること。'), { button: c('I entered the email in Ente', 'Enteへメールを入力しました') });
   let next = screen('entry', c('What is Ente asking for after the email?', 'メールを入れた後、Enteで何を求められていますか？'), ['password', 'email', 'other', 'expired']);
   if (!next) return steps;
   let passwordUsed = false, factorUsed = false;
@@ -103,12 +169,12 @@ export function enteSignInSteps(data: Dataset, task: EnteTask, ctx: Context): En
     act(prefix + 'mail-open', c('Read the new Ente verification message', '今回のEnteの確認メールを読む'),
       c('Open the correct mailbox using a working method outside this unavailable sign-in. Read the verification message for this attempt. Keep its code in that mailbox; do not enter it here.',
         '今回のログインがまだ使えなくても開ける方法で、正しいメールを開き、今回届いたEnteの確認メールを読みます。コードはメール側で扱い、このアプリへ入力しません。'),
-      c('The new message belongs to this exact Account and this attempt.', '今回の正しいAccount・今回のログイン用の新しいメールを読めること。'), { refs: [...ctx.refs, mailRef], place:c(`Mailbox · ${data.assets.find(v=>v.id===mailRef)?.name??''}`,`メール · ${data.assets.find(v=>v.id===mailRef)?.name??''}`) });
+      c('The new message belongs to this exact Account and this attempt.', '今回の正しいAccount・今回のログイン用の新しいメールを読めること。'), { refs: [...ctx.refs, mailRef], button:c('I read the verification message','確認メールを読めました'), place:c(`Mailbox · ${data.assets.find(v=>v.id===mailRef)?.name??''}`,`メール · ${data.assets.find(v=>v.id===mailRef)?.name??''}`) });
     act(prefix + 'email-verify', c('Submit the email code only in Ente', 'メールのコードをEnteだけへ入力する'),
       c('Enter the code from that message in Ente’s verification field and select Verify. Keep the same sign-in open; receiving email alone does not prove data can be opened.',
         'そのメールのコードをEnteの確認欄だけへ入れ、「Verify / 認証」を選びます。同じログインを残し、受信しただけでデータを開けたとは扱いません。'),
       c('Ente accepts this email check and shows the next screen.', 'Enteが今回のメール確認を受け付け、次の画面へ進むこと。'),
-      { refs: [...ctx.refs, mailRef], ...(ctx.kind === 'recovery' ? { effect: 'recovery-mail-access' } : {}) });
+      { refs: [...ctx.refs, mailRef], button:c('The email verification was accepted','メールの確認が受け付けられました'), ...(ctx.kind === 'recovery' ? { effect: 'recovery-mail-access' } : {}) });
     next = screen('after-email', c('What appears after the email check?', 'メール確認の後、何が表示されていますか？'), ['password', 'choice', 'passkey', 'totp', 'data', 'other', 'expired']);
     if (!next) return steps;
   }
@@ -129,7 +195,7 @@ export function enteSignInSteps(data: Dataset, task: EnteTask, ctx: Context): En
     }
     act(prefix + 'method-select', c('Choose the method on Ente’s Two-factor screen', 'Enteの二要素の画面で、今回の方法を選ぶ'),
       method === 'totp' ? c('Select Login with TOTP on the displayed choice screen.', 'いま表示されている選択画面で「Login with TOTP / TOTPでログイン」を選びます。') : c('Select Login with passkey on the displayed choice screen.', 'いま表示されている選択画面で「Login with passkey / パスキーでログイン」を選びます。'),
-      method === 'totp' ? c('Ente shows its authenticator-code field.', 'Enteの認証アプリのコード欄が表示されること。') : c('Ente starts this Account’s passkey verification.', '今回のAccountのパスキーの本人確認が開くこと。'));
+      method === 'totp' ? c('Ente shows its authenticator-code field.', 'Enteの認証アプリのコード欄が表示されること。') : c('Ente starts this Account’s passkey verification.', '今回のAccountのパスキーの本人確認が開くこと。'), { button: c('I selected this method', '今回の方法を選びました') });
     next = method as 'passkey' | 'totp';
   }
   if (next === 'passkey' || next === 'totp') {

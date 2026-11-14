@@ -8,7 +8,7 @@ import { fileTransferSteps } from './phoneFileTransfer';
 import type { PhoneWorkflow } from './phoneSchemas';
 
 export type EnteChoice={value:string;label:Copy};
-export type EnteStep={id:string;kind:'question'|'action'|'blocked'|'finished';title:Copy;place?:Copy;action?:Copy;expected?:Copy;button?:Copy;url?:string;choices?:EnteChoice[];refs:string[];sources:string[];requires:string[];effect?:string;child?:{kind:'prepare'|'backup'|'account'|'recovery';appRef:string;rootRef?:string};appRef?:string;subjectRef?:string;question?:string;webDeviceRef?:string;physical?:boolean;restartSignIn?:'root'|'recovery';signInFactorType?:'passkey'|'totp'};
+export type EnteStep={id:string;kind:'question'|'action'|'blocked'|'finished';title:Copy;place?:Copy;action?:Copy;expected?:Copy;button?:Copy;url?:string;copyUrl?:string;choices?:EnteChoice[];refs:string[];sources:string[];requires:string[];effect?:string;child?:{kind:'prepare'|'backup'|'account'|'recovery';appRef:string;rootRef?:string};appRef?:string;subjectRef?:string;question?:string;webDeviceRef?:string;physical?:boolean;restartSignIn?:'root'|'recovery';signInFactorType?:'passkey'|'totp'};
 const ch=(value:string,en:string,ja=en):EnteChoice=>({value,label:c(en,ja)});
 const ask=(id:string,title:Copy,choices:EnteChoice[],extra:Partial<EnteStep>={}):EnteStep=>({id,kind:'question',title,choices,refs:[],sources:[],requires:[],...extra});
 const act=(id:string,title:Copy,place:Copy,action:Copy,refs:string[],sources:string[],extra:Partial<EnteStep>={}):EnteStep=>({id,kind:'action',title,place,action,expected:enteExpected(id),button:c('I checked this','確認しました'),refs,sources,requires:[],...extra});
