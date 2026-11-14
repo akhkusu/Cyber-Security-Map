@@ -129,10 +129,12 @@ export function afterRecipe(data: Dataset, asset: Asset, recipeId: string): Data
     }
     return requireAuthenticatorRoots(next, asset.id, answers['cloud-password:return'] ?? taskCursor(asset.id, `cloud-password:${appId}`, 'save-current'));
   }
+  if (returnTo?.startsWith('cloud-sso-resume/')) { const answers = { ...data.guide.answers }; delete answers[returnKey]; const next = { ...data, guide: { ...data.guide, answers } }; const resume = cloudSetupRoute(next, returnTo.split('/')[1]), current = next.assets.find(a => a.id === asset.id); return current && ['mfa', 'recovery'].every(c => isRecorded(current, c)) ? requireAuthenticatorRoots(next, current.id, resume) : move(next, resume); }
   if (returnTo?.startsWith('cloud-resume/')) { const answers = { ...data.guide.answers }; delete answers[returnKey]; const next = { ...data, guide: { ...data.guide, answers } }; const resume = cloudSetupRoute(next, returnTo.split('/')[1]); return ['mfa', 'recovery'].every(c => isRecorded(asset, c)) ? requireAuthenticatorRoots(next, asset.id, resume) : move(next, resume); }
   if (returnTo?.startsWith('authenticator-root-security/')) { const answers = { ...data.guide.answers }; delete answers[returnKey]; const origin = returnTo.split('/')[1]; const next = { ...data, guide: { ...data.guide, answers } }; return requireAuthenticatorRoots(next, origin, answers[`auth:${origin}:security-return`] ?? 'manager-select'); }
   if (returnTo?.startsWith('native-resume/')) { const answers = { ...data.guide.answers }; delete answers[returnKey]; return move({ ...data, guide: { ...data.guide, answers } }, nativeSetupRoute(data, returnTo.split('/')[1])); }
   if (recipeId.startsWith('authenticator-setup:')) return move(data, authenticatorSetupRoute(data, asset.id));
+  if (recipeId.startsWith('cloud-sso-prepare:')) { const vaultId = cloudInstallation(data, asset.id)?.vaultRef; const route = cloudSetupRoute(data, vaultId ?? ''); return move(data, route.startsWith('cloud-sso-security/') || route.startsWith('cloud-sso-managed/') || route.startsWith('cloud-sso-unavailable/') ? route : `cloud-sso-state/${vaultId}`); }
   if (recipeId.startsWith('cloud-extra-')) {
     const answers = { ...data.guide.answers };
     const cursor = recipeId.startsWith('cloud-extra-inspect:') ? `cloud-extra-state/${asset.id}` : `cloud-ready/${cloudInstallation(data, asset.id)?.vaultRef}`;
@@ -163,7 +165,7 @@ export function completeStep(data: Dataset, jump?: string): Dataset {
   const old = data.guide.steps[key];
   const selectedApp = selectedAuthenticator(data, asset.id);
   const enrollment = data.guide.steps[data.guide.answers[`auth:${asset.id}:enrollment`]];
-  const record = { ...old, ...(selectedApp && (authenticatorScan(recipe.id, step.id) || authenticatorConfirmation(recipe.id, step.id)) ? { authenticatorRef: selectedApp.id } : {}), status: 'done' as const, updatedAt: now, ...(step.control ? {
+  const record = { ...old, ...(((recipe.id === 'cloud-onboard' && step.id === 'sso-state') || (recipe.id.startsWith('cloud-password:') && step.id === 'manager-reopen-state')) && jump ? { nordSsoChoice: 'v1', nextStepId: jump } : {}), ...(selectedApp && (authenticatorScan(recipe.id, step.id) || authenticatorConfirmation(recipe.id, step.id)) ? { authenticatorRef: selectedApp.id } : {}), status: 'done' as const, updatedAt: now, ...(step.control ? {
     beforeControl: old?.beforeControl ?? asset.controls[step.control] ?? 'unknown',
     beforeEvidence: old?.beforeEvidence ?? asset.controlEvidence[step.control] ?? 'not-assessed',
     beforeAnswer: old ? old.beforeAnswer : (answerKey ? data.assessmentAnswers[answerKey] : undefined),
@@ -250,13 +252,13 @@ export function helpPrompt(data: Dataset, problem: string, language: Language): 
   const allowedPlatforms = ['ios', 'macos', 'android', 'windows', 'web', 'ubuntu', 'chromeos'];
   return language === 'ja' ? [
     '最新の公式資料を確認し、一度に一つの質問または操作だけを案内してください。最新情報を確認できない場合は、その旨を明示してください。秘密情報の入力・共有は求めないでください。',
-    `サービス: ${service}`, ...(authLabel ? [`認証アプリ: ${authLabel.ja}`, `認証アプリの端末OS: ${authOS === 'ios' || authOS === 'android' ? authOS : '未確認'}（詳細版は未確認）`] : []), ...(managerLabel ? [`パスワード管理: ${managerLabel.ja}`] : []), ...(cloudHelp?.browser ? [`ブラウザー: ${cloudHelp.browser}（版は未確認）`] : []), ...(cloudHelp?.osRange ? [`確認したOSの世代: ${cloudHelp.osRange}`] : []), `端末・OSの種類: ${allowedPlatforms.includes(platform) ? platform : '未確認'}（詳細バージョンは未確認。必要なら質問してください）`,
+    `サービス: ${service}`, ...(authLabel ? [`認証アプリ: ${authLabel.ja}`, `認証アプリの端末OS: ${authOS === 'ios' || authOS === 'android' ? authOS : '未確認'}（詳細版は未確認）`] : []), ...(managerLabel ? [`パスワード管理: ${managerLabel.ja}`] : []), ...(cloudHelp?.connectedProvider ? [`Connected sign-in: ${cloudHelp.connectedProvider}`] : []), ...(cloudHelp?.browser ? [`ブラウザー: ${cloudHelp.browser}（版は未確認）`] : []), ...(cloudHelp?.osRange ? [`確認したOSの世代: ${cloudHelp.osRange}`] : []), `端末・OSの種類: ${allowedPlatforms.includes(platform) ? platform : '未確認'}（詳細バージョンは未確認。必要なら質問してください）`,
     `作業: ${task?.recipe.title.ja ?? cloudHelp?.title.ja ?? attemptedTask.ja}`, `現在のステップ: ${task?.step.title.ja ?? cloudHelp?.title.ja ?? 'この環境に対応する手順がない'}`, `想定される表示: ${task?.step.expected.ja ?? cloudHelp?.expected.ja ?? '未確認'}`, `困りごと: ${problem}`,
     '根拠となる公式資料:', ...sourceIds.map(s => `${s}: ${sourcelink(s)}`),
     'パスワード・認証コード・復旧コード・個人情報は共有しません。既存の認証方法を削除する前に、復旧手段と新しい方法の動作を確認してください。',
   ].join('\n') : [
     'Check current official documentation. Guide me through one question or action at a time. Say explicitly if you cannot check current information. Never request secrets or personal data.',
-    `Service: ${service}`, ...(authLabel ? [`Authenticator: ${authLabel.en}`, `Authenticator device OS: ${authOS === 'ios' || authOS === 'android' ? authOS : 'unknown'} (exact version unconfirmed)`] : []), ...(managerLabel ? [`Password manager: ${managerLabel.en}`] : []), ...(cloudHelp?.browser ? [`Browser: ${cloudHelp.browser} (version unconfirmed)`] : []), ...(cloudHelp?.osRange ? [`Confirmed OS range: ${cloudHelp.osRange}`] : []), `Device / OS family: ${allowedPlatforms.includes(platform) ? platform : 'unknown'} (exact version unknown; ask if needed)`,
+    `Service: ${service}`, ...(authLabel ? [`Authenticator: ${authLabel.en}`, `Authenticator device OS: ${authOS === 'ios' || authOS === 'android' ? authOS : 'unknown'} (exact version unconfirmed)`] : []), ...(managerLabel ? [`Password manager: ${managerLabel.en}`] : []), ...(cloudHelp?.connectedProvider ? [`Connected sign-in: ${cloudHelp.connectedProvider}`] : []), ...(cloudHelp?.browser ? [`Browser: ${cloudHelp.browser} (version unconfirmed)`] : []), ...(cloudHelp?.osRange ? [`Confirmed OS range: ${cloudHelp.osRange}`] : []), `Device / OS family: ${allowedPlatforms.includes(platform) ? platform : 'unknown'} (exact version unknown; ask if needed)`,
     `Task: ${task?.recipe.title.en ?? cloudHelp?.title.en ?? attemptedTask.en}`, `Current step: ${task?.step.title.en ?? cloudHelp?.title.en ?? 'Unsupported environment'}`, `Expected display: ${task?.step.expected.en ?? cloudHelp?.expected.en ?? 'Unknown'}`, `Problem: ${problem}`,
     'Official sources:', ...sourceIds.map(s => `${s}: ${sourcelink(s)}`),
     'Keep existing authentication until recovery and a new method have been tested. I will not share passwords, authentication codes, recovery codes or personal data.',

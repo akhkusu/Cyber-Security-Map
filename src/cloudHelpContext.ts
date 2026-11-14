@@ -1,9 +1,14 @@
+import { nordSsoBinding } from './nordSsoSchemas';
 import type { Dataset } from './models';
 import type { Copy } from './guideCatalog';
 import { cloudAnswer, cloudInstallation, cloudVault, selectedCloudInstallation, CLOUD_NAMES, CLOUD_PRODUCTS, type CloudProduct } from './cloudManagers';
 import { cloudRouteSources } from './cloudSources';
 
 const labels: Record<string, Copy> = {
+  'cloud-sso-provider': { en: 'Choose the connected provider', ja: '接続している提供元を選ぶ' },
+  'cloud-sso-account': { en: 'Identify the actual connected account', ja: '実際の接続先アカウントを確認する' },
+  'cloud-sso-security': { en: 'Protect the connected account', ja: '接続先のアカウントを保護する' },
+  'cloud-sso-state': { en: 'Inspect the current connected-account setting', ja: '現在の接続済み表示を確認する' },
   'cloud-extra-state': { en: 'Inspect the Pass extra-password setting', ja: 'Passの追加パスワード設定を確認する' },
   'cloud-extra-choice': { en: 'Choose standard sign-in or an optional extra password', ja: '通常のログインと任意の追加パスワードを選ぶ' },
   'cloud-extra-unavailable': { en: 'Preserve access when the extra secret or setting is unavailable', ja: '追加の秘密や設定が使えないとき、現在の利用を残す' },
@@ -42,7 +47,8 @@ export function cloudHelpContext(data: Dataset, subjectRef?: string, recipeId?: 
   const rawBrowser = selected && cloudAnswer(data, selected.id, 'browser');
   const browser = ({ chrome: 'Chrome', firefox: 'Firefox', edge: 'Edge', safari: 'Safari', brave: 'Brave', opera: 'Opera' } as Record<string, string>)[rawBrowser ?? ''];
   const osRange = ({ ios18plus: 'iOS / iPadOS 18+', ios17: 'iOS / iPadOS 17', android9plus: 'Android 9+' } as Record<string, string>)[selected ? cloudAnswer(data, selected.id, device?.operatingSystem === 'ios' ? 'ios' : 'android') ?? '' : ''];
-  return { product: CLOUD_NAMES[product as CloudProduct], os: device?.operatingSystem, browser, osRange,
+  const connected = nordSsoBinding(data, vault?.authenticationAccountRef);
+  return { product: CLOUD_NAMES[product as CloudProduct], connectedProvider: connected?.provider === 'google' ? 'Google' : connected?.provider === 'apple' ? 'Apple' : undefined, os: device?.operatingSystem, browser, osRange,
     title: labels[route] ?? { en: 'Continue the verified password-manager setup', ja: '確認済みのパスワード管理の手順を続ける' },
     expected: route.startsWith('cloud-extra-') ? { en: 'The intended personal Proton Pass account shows whether its extra password is configured. Existing sessions and private copies remain available; a forgotten extra-password recovery method is unverified.', ja: '今回の個人用Proton Passで追加パスワードの設定済み・未設定を確認できること。使えるセッションと私的な控えを残す。忘れた追加パスワードの復旧方法は未確認。' } : { en: 'The personal account, selected device/profile and official app settings match. Preserve existing data and working access.', ja: '個人用アカウント、選んだ端末・プロファイル、正規アプリの設定が一致すること。既存データと使えるログインを維持する。' },
     sources: cloudRouteSources(product, route),

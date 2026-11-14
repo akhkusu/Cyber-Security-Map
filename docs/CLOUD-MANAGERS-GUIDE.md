@@ -39,7 +39,7 @@
 | NordPass iOS / iPadOS | 公式モバイル項目資料の18以降。設定 → 一般 → 自動入力とパスワード | 以前のOS／不明は未完了 |
 | NordPass Android | 同資料のAndroid 9以降。Profile → Settings → Autofill → Open Device Settings | 以前のOS／不明は未完了 |
 | PCのブラウザー | Chrome / Firefox / Edge / Safari / Brave / Opera、実際のプロファイルに正規拡張を導入 | OS単体・デスクトップアプリだけの導入で自動入力を完了しない。その他のブラウザーは未確認 |
-| NordのGoogle / Apple接続 | 接続を残し、Account detailsで確認する案内 | 完全な個人SSO経路は追加対象。接続解除・Account再作成・唯一の認証の移動をしない |
+| NordのGoogle / Apple接続 | 実際の個人Account・独立した利用と復旧・接続確認／追加・新しい認証を分ける | [専用契約](NORDPASS-CONNECTED-SIGN-IN.md)の範囲。組織SSO・新規SSO専用Account・接続解除／置換は追加対象 |
 
 Nordの汎用ダウンロードURLはブラウザーによって転送されるため、確認済みのiOS・Android・各ブラウザーの公式URLに分けます。Braveは公式Chromeページが明示するChromium用拡張を使います。
 
@@ -102,7 +102,7 @@ MFAのバックアップコードは、Protonの暗号化済みデータを復�
 
 ## 保存互換性と機種変更の境界
 
-暗号化封筒のv1形式・KDF・IndexedDB識別子は維持します。既存のデータ本体v1／モデルrevision 1をそのまま読み書きし、クラウドの基本機能の初回はモデルrevision 2へ、任意のPass追加パスワードを使う場合はrevision 3へ拡張します。NordPassの任意のマスター復旧ではrevision 4を使います。以前の形式を読み書きし、後の機能でrevisionを下げません。古いrevision 1専用読込みは、新しい意味を解釈して書き換える前に拒否します。新しい説明の配布だけで既存の完了記録を消しません。非対応の将来revisionは書き戻さず、元の暗号化ファイルを退避できます。
+暗号化封筒のv1形式・KDF・IndexedDB識別子は維持します。既存のデータ本体v1／モデルrevision 1をそのまま読み書きし、クラウドの基本機能の初回はモデルrevision 2へ、任意のPass追加パスワードを使う場合はrevision 3へ拡張します。NordPassの任意のマスター復旧ではrevision 4、個人用Google・Apple接続ではrevision 5を使います。以前の形式を読み書きし、後の機能でrevisionを下げません。古いrevision 1専用読込みは、新しい意味を解釈して書き換える前に拒否します。新しい説明の配布だけで既存の完了記録を消しません。非対応の将来revisionは書き戻さず、元の暗号化ファイルを退避できます。
 
 任意の機種変更に、新端末の正規アプリ、既存Accountの認証、同じ保管庫の解除、自動入力、旧端末なしでの保存パスワード利用を組み込みました。基本ガイドの全体は保持します。新しいスマホ・登録済みの別の端末・旧端末だけでの継続利用を分けます。対応範囲・確認の取り消し・残るSSO等は[機種変更の実装契約](CLOUD-MANAGERS-PHONE-MOVE.md)を参照してください。
 
@@ -110,7 +110,7 @@ MFAのバックアップコードは、Protonの暗号化済みデータを復�
 
 操作データと確認日は `src/cloudSources.ts`、通常操作は `cloudManagerCatalog.ts`、復旧は `cloudRecoveryCatalog.ts`、マスター変更は `cloudMasterCatalog.ts`、保存・変更・実利用は `cloudPasswordCatalog.ts`、Nord AccountのMFAは `nordAccountCatalog.ts` で管理します。語句の作り方は `passphraseCatalog.ts` を共用します。
 
-[Protonの追加パスワード](PROTON-PASS-EXTRA-PASSWORD.md)の導入・既存設定の確認・再ログインを任意の経路として追加しました。追加対象には、Nord個人SSO、追加パスワードの変更・解除・専用復旧、共有・組織用、全旧OS、全パスキー方式、製品間インポート／移行、失った現在のマスターからの復旧、機種変更の未対応の環境・復旧経路があります。Norton・KeePass系等の別製品を今回の対応と表示しません。全実機での画面照合・第三者の設定画面画像も未完了です。
+[Protonの追加パスワード](PROTON-PASS-EXTRA-PASSWORD.md)の導入・既存設定の確認・再ログインを任意の経路として追加しました。追加対象には、Nord接続の解除・置換・新規SSO専用Account、追加パスワードの変更・解除・専用復旧、共有・組織用、全旧OS、全パスキー方式、製品間インポート／移行、失った現在のマスターからの復旧、機種変更の未対応の環境・復旧経路があります。Norton・KeePass系等の別製品を今回の対応と表示しません。全実機での画面照合・第三者の設定画面画像も未完了です。
 
 検証の件数と対象は[実装状況](IMPLEMENTATION-STATUS.md)へ記録します。公式資料の確認、アプリ内経路テスト、外部の実機・テストAccountでの操作は別の証拠です。
 

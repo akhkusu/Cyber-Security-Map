@@ -1,10 +1,13 @@
 import type { Asset, Dataset } from './models';
 import { c, emailRecipe, isExtendedMail, passwordRecipe, type GuideStep, type Recipe, type SourceId } from './guideCatalog';
+import { nordSsoLoginSteps } from './nordSsoCatalog';
+import { nordDirectPasswordAvailable, nordSsoBinding } from './nordSsoSchemas';
 import { cloudAnswer, cloudInstallation, cloudVault, CLOUD_NAMES, type CloudProduct } from './cloudManagers';
 
 export function cloudPasswordRecipe(data: Dataset, target: Asset, installationId: string): Recipe | undefined {
   const app = cloudInstallation(data, installationId), vault = cloudVault(data, app?.vaultRef), device = data.assets.find(a => a.id === app?.deviceRef);
   if (!app || !vault || !device || !(['apple', 'google', 'microsoft', 'nord'].includes(target.provider ?? '') || isExtendedMail(target.provider))) return;
+  if (target.provider === 'nord' && cloudAnswer(data, target.id, 'method') === 'sso' && !nordDirectPasswordAvailable(data, target.id) && !(data.guide.steps[`do/${target.id}/cloud-password:${app.id}/apply`]?.status === 'done' && data.guide.steps[`do/${target.id}/cloud-password:${app.id}/test`]?.status !== 'done')) return;
   const mode = cloudAnswer(data, target.id, `password:${app.id}`);
   if (!['keep', 'change'].includes(mode ?? '') || (mode === 'change' && ['mailcom', 'gmx'].includes(target.provider ?? ''))) return;
   const proton = vault.productId === 'proton-pass', ios = device.operatingSystem === 'ios', mobile = ios || device.operatingSystem === 'android';
@@ -15,7 +18,8 @@ export function cloudPasswordRecipe(data: Dataset, target: Asset, installationId
   const accountPasswordSource = target.provider === 'nord' ? 'nordPassword' : undefined;
   const base = passwordRecipe('bitwarden', target, platform);
   const url = target.provider === 'nord' ? 'https://nordaccount.com/' : emailRecipe(target.provider, platform).steps.find(s => s.url)?.url;
-  const protectsOwnAccount = vault.authenticationAccountRef === target.id;
+  const providerDependency = vault.productId === 'nordpass' && nordSsoBinding(data, vault.authenticationAccountRef)?.providerRef === target.id;
+  const protectsOwnAccount = vault.authenticationAccountRef === target.id || providerDependency;
   const steps: GuideStep[] = [make('save-current', c('Keep the current working login first', '現在使えるログイン情報を先に保存する'),
     c(proton ? 'Open the exact existing login in your personal Proton Pass vault, or choose + → Login. Keep the current username, password and official website in that item. On web choose Create login; on mobile finish the item’s save action. Do not replace it with a generated password yet.' : `Open the correct existing Password item in your personal NordPass vault, or choose ${mobile ? 'Add item (or +)' : 'Add item (or + in the extension)'} and a password item. Enter the current username, password and official website, then Save. Do not overwrite it with a candidate password.`, proton ? '個人用のProton Passで、今回の正しい保存済みログインを開くか、「＋」→「Login」で追加します。現在使えるユーザー名・パスワード・公式サイトをその項目に保存してください。Webでは「Create login」、モバイルでは項目の保存操作を完了します。まだ生成したパスワードへ置き換えません。' : `個人用のNordPassで、正しい既存のPassword項目を開くか、「Add item」（または${mobile ? '「＋」' : '拡張機能の「＋」'}）からパスワード項目を追加します。現在使えるユーザー名・パスワード・公式サイトを入力し、「Save」で保存します。まだ変更候補では上書きしません。`),
     c('The current working login is safely saved in the intended personal vault.', '現在使えるログイン情報が、意図した個人用保管庫に保存されていること。'), [])];
@@ -39,12 +43,18 @@ export function cloudPasswordRecipe(data: Dataset, target: Asset, installationId
       c('The official Nord Account new-password form is open.', '正規のNord Accountの新しいパスワードを設定する画面が開くこと。'), ['change-open'], { sources: ['nordPassword'] }));
     const apply = base.steps.find(s => s.id === 'apply')!;
     steps.push({ ...apply, action: c('Retrieve the saved candidate from the manager or your independent copy and enter it in the official service’s new-password fields. Confirm the change at the service. Keep the existing session and recovery methods; a change to the manager item alone does not change the service.', 'マネージャーまたは独立した控えから変更候補を取り出し、正規サービスの新しいパスワード欄へ入れて、サービス側で変更を確定します。今のログインと復旧手段は残してください。マネージャー内の項目だけを変更しても、サービスのパスワードは変わりません。'), requires: [target.provider === 'nord' ? 'change-link' : 'change-open'], ...(accountPasswordSource ? { sources: [accountPasswordSource] } : {}) });
+    if (providerDependency) {
+      steps.push(make('manager-reopen-state', c('Can you still open the existing manager?', '既存のマネージャーを、引き続き開けますか？'), c('Keep a working session. If Nord Account sign-in is required, use the connected provider. The new password belongs in that provider’s screen, not Nord’s password field.', '使えるログインは残します。Nord Accountのログインが必要な場合は接続先を使い、変更後のパスワードは提供元の画面で使います。Nordのパスワード欄へ入力するものではありません。'), c('Choose the current state without logging out.', 'ログアウトせず、現在の状態を選ぶこと。'), ['apply'], { choices: [{ label: c('It remains open; save the accepted password', '開けるので、受け付けられたパスワードを保存する'), next: 'save-new' }, { label: c('Connected sign-in is required', '接続先を使ったログインが必要'), next: 'manager-sso-email' }] }));
+      steps.push(...nordSsoLoginSteps(data, app.id).map(item => ({ ...item, id: `manager-${item.id}`, requires: item.id === 'sso-email' ? ['manager-reopen-state'] : item.requires?.map(id => `manager-${id}`) })));
+      steps.push(make('manager-reopen', c('Open the same store after provider sign-in', '接続先へのログイン後、同じ保管庫を開く'), c('Use the unchanged NordPass Master Password or configured unlock. Read the existing store without resetting it. The provider’s changed password and this master are different.', '変更していないNordPassのMaster Passwordか設定済みの解除で、既存の保管庫を開きます。リセットは行いません。提供元の変更後のパスワードと、このマスターは別です。'), c('The same existing store is readable.', '同じ既存保管庫を読めること。'), ['manager-sso-nord-auth']));
+    } else {
     if (protectsOwnAccount) steps.push(make('manager-reopen', c('Keep access to the manager after the change', '変更後もマネージャーを開けることを確認する'),
       c(`Return to ${name.en}. Keep a working session. If it asks for account sign-in again, use the newly accepted account password from your independent copy and the configured MFA. NordPass may then ask separately for its unchanged Master Password. Open the existing vault without resetting it.`, `${name.ja}へ戻り、使えるログインはそのまま残します。アカウントへの再ログインを求められたら、独立した控えにある変更後のパスワードと、設定済みのMFAを使います。NordPassでは、その後に変更していない保管庫用Master Passwordを別に求められる場合があります。既存保管庫をリセットせず開いてください。`),
       c('The same manager vault remains accessible after the account-password change.', 'アカウント用パスワードの変更後も、同じ保管庫を開けること。'), ['apply'], { sources: [proton ? 'protonPassExtra' : 'nordAccount'] }));
+    }
     steps.push(make('save-new', c('Update the original saved login after acceptance', '受け付けられた後に、元の保存項目を更新する'),
       c(`Only after the service accepts the change, open the original login in ${name.en} → Edit. Replace its password with the accepted candidate and save the item. Keep the temporary candidate until the next sign-in check succeeds.`, `サービスで変更が受け付けられてから、${name.ja}の元のログイン項目を「Edit」で開き、パスワードを受け付けられた変更候補へ置き換えて保存してください。一時的な候補の項目は、次のログイン確認が済むまで残します。`),
-      c('The original saved item matches the password accepted by the service.', '元の保存項目が、サービスに受け付けられたパスワードと一致すること。'), [protectsOwnAccount ? 'manager-reopen' : 'apply']));
+      c('The original saved item matches the password accepted by the service.', '元の保存項目が、サービスに受け付けられたパスワードと一致すること。'), [providerDependency && data.guide.steps[`do/${target.id}/cloud-password:${app.id}/manager-reopen-state`]?.nordSsoChoice === 'v1' && data.guide.steps[`do/${target.id}/cloud-password:${app.id}/manager-reopen-state`]?.nextStepId === 'save-new' ? 'manager-reopen-state' : protectsOwnAccount ? 'manager-reopen' : 'apply']));
   }
   steps.push(make('test', c('Use the saved password at the real service', '保存したパスワードで正規サービスへログインする'),
     c(`Keep your current session. In a separate sign-in without inheriting that session, open the official service and choose the original saved login from ${name.en}. Use its password, then complete any MFA. A passkey-only sign-in or an already-open account does not test this saved password. If the extension is unavailable in a private window, copy from the trusted manager instead of changing browser permissions.`, `現在のログインは残し、その状態を引き継がない別のログイン画面で正規サービスを開きます。${name.ja}から元の保存済みログインを選び、パスワードと必要なMFAでログインしてください。パスキーだけのログインや、開いたままの画面では、保存したパスワードを試したことにはなりません。プライベートウインドウで拡張機能が使えなければ、権限を変更せず、正規マネージャーから手動でコピーして使えます。`),

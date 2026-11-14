@@ -1,6 +1,7 @@
 import type { Asset, Dataset, Language, RecoveryDependency } from './models';
 import { authenticator, authenticatorReady } from './authenticatorGuide';
 import { evaluateAccess, type SecurityEntity } from './securityModel';
+import { nordSsoStore } from './nordSsoSchemas';
 import { cloudInstallation, cloudManagerReady, cloudVault } from './cloudManagers';
 
 export type MapItem = Asset & { entityKind?: SecurityEntity['kind'] };
@@ -32,6 +33,13 @@ export function typedMapStatus(data: Dataset, node: MapItem, language: Language)
     const used = data.version === 2 && app.controls?.codeUse === 'verified' && data.securityModel.routes.some(r => r.purpose === 'second-step' && r.contexts.includes('new-device') && data.securityModel.facts.some(f => f.id === (r.requirements.kind === 'fact' ? r.requirements.factId : '') && f.requiredRefs.includes(app.id)) && evaluateAccess(data.securityModel, r.id, { context: 'new-device', now: new Date().toISOString() }).state === 'available');
     const recorded = used || (authenticatorReady(data, app) && app.controls?.codeAccepted === 'verified');
     return { tone: recorded ? 'recorded' : 'unknown', label: yes ? used ? '新端末でコード利用の記録あり' : recorded ? 'コード登録の記録あり' : 'コードの確認待ち' : used ? 'Code used on new phone' : recorded ? 'Code registration recorded' : 'Code check needed', reason: yes ? used ? '新端末のコードを正規サービスが受け付けた記録' : 'この端末のアプリと、サービス側の登録確認' : used ? 'Official service accepted the new phone’s code' : 'App on this device and service-side registration' };
+  }
+  if (entity?.kind === 'grant' && entity.nordSsoGrant === 'v1' && data.version === 2 && data.securityModel.revision >= 5) {
+    const binding = nordSsoStore(data)?.bindings.find(b => b.id === entity.nordSsoBindingRef), life = data.securityModel.lifecycle[entity.id];
+    const revoked = life?.evidence === 'user-confirmed' && ['revoked', 'deleted', 'retired', 'transferred'].includes(life.state);
+    const connected = !revoked && binding?.grantRef === entity.id && !!binding.records.connection && data.securityModel.relations.some(r => r.nordSsoEvidence === 'v1' && r.nordSsoBindingRef === binding.id && r.evidence === 'user-confirmed');
+    const used = connected && data.securityModel.routes.some(r => r.targetRef === binding?.rootRef && r.requirements.kind === 'fact' && data.securityModel.facts.some(f => f.id === (r.requirements.kind === 'fact' ? r.requirements.factId : '') && f.nordSsoEvidence === 'v1' && f.requiredRefs.includes(entity.id)) && evaluateAccess(data.securityModel, r.id, { context: r.contexts.includes('new-device') ? 'new-device' : 'normal', now: new Date().toISOString() }).state === 'available');
+    return { tone: used ? 'recorded' : 'unknown', label: yes ? revoked ? '接続権限の失効を記録' : used ? '接続ログインの利用記録あり' : connected ? '接続済み・ログイン試験は別' : '接続の確認待ち' : revoked ? 'Permission revoked' : used ? 'Connected sign-in used' : connected ? 'Connected; sign-in check separate' : 'Connection unconfirmed', reason: yes ? '実際の提供元・接続先と、設定・利用の記録を区別' : 'Exact provider, destination, configuration and use are separate' };
   }
   if (entity?.kind === 'credential' && entity.nordRecoveryCredential === 'v1' && data.version === 2 && data.securityModel.revision >= 4) {
     const revoked = ['revoked', 'deleted', 'retired', 'transferred'].includes(data.securityModel.lifecycle[entity.id]?.state ?? '');

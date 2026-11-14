@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { emptySecurityModel, securityModelIssues, securityModelSchema } from './securityModel';
+import { nordSsoStoreSchema } from './nordSsoSchemas';
 import { nordRecoveryStoreSchema } from './nordRecoverySchemas';
 import { phoneWorkflowSchema } from './phoneSchemas';
 import { CONTROL_STATES, controlEvidenceSchema, assessmentAnswerSchema, type AssessmentAnswer, type ControlState } from './recordSchemas';
@@ -110,6 +111,28 @@ export const currentDatasetSchema = z.object({
 }).passthrough().superRefine((data, context) => {
   for (const issue of securityModelIssues(data.securityModel, data.assets)) {
     context.addIssue({ code: 'custom', path: ['securityModel'], message: `${issue.code}: ${issue.recordId}` });
+  }
+  if (data.securityModel.revision >= 5 && Object.hasOwn(data.securityModel, 'nordSsoV1')) {
+    const parsed = nordSsoStoreSchema.safeParse(data.securityModel.nordSsoV1);
+    const issue = (message: string) => context.addIssue({ code: 'custom', path: ['securityModel', 'nordSsoV1'], message });
+    if (!parsed.success) issue('invalid-nord-sso-store');
+    else {
+      const ids = new Set<string>(), store = parsed.data;
+      for (const b of store.bindings) {
+        const root = data.assets.find(a => a.id === b.rootRef && a.kind === 'account' && a.provider === 'nord');
+        const provider = data.assets.find(a => a.id === b.providerRef && a.kind === 'account' && a.provider === b.provider);
+        if (ids.has(b.id) || !root || !provider || b.rootRef === b.providerRef) issue('invalid-nord-sso-binding');
+        ids.add(b.id);
+        if (b.grantRef) { const grant = data.securityModel.entities.find(e => e.id === b.grantRef && e.kind === 'grant'); if (!grant || grant.kind !== 'grant' || grant.grantType !== 'sso' || grant.grantorRef !== b.providerRef || grant.granteeRef !== b.rootRef || !grant.targetRefs.includes(b.rootRef)) issue('invalid-nord-sso-grant'); }
+      }
+      for (const ref of Object.keys({ ...store.methods, ...store.directPasswords })) if (!data.assets.some(a => a.id === ref && a.kind === 'account' && a.provider === 'nord')) issue('invalid-nord-sso-method');
+      for (const [ref, selected] of Object.entries(store.selections)) if (!data.assets.some(a => a.id === ref && a.kind === 'account' && a.provider === 'nord') || (selected.bindingRef && !store.bindings.some(b => b.id === selected.bindingRef && b.rootRef === ref && b.provider === selected.provider))) issue('invalid-nord-sso-selection');
+      for (const session of store.sessions) {
+        const app = data.securityModel.entities.find(e => e.id === session.appRef && e.kind === 'installation');
+        if (ids.has(session.id) || !app || app.vaultRef !== session.vaultRef || !data.securityModel.entities.some(e => e.id === session.vaultRef && e.kind === 'vault' && e.productId === 'nordpass') || !guideSchema.safeParse(session.guide).success) issue('invalid-nord-sso-session');
+        ids.add(session.id);
+      }
+    }
   }
   if (data.securityModel.revision >= 4 && Object.hasOwn(data.securityModel, 'nordRecoveryV1')) {
     const store = nordRecoveryStoreSchema.safeParse(data.securityModel.nordRecoveryV1);

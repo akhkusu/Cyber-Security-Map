@@ -3,6 +3,8 @@ import type { PhoneWorkflow } from './phoneSchemas';
 import type { PhoneStep } from './phoneCatalog';
 import { c, type Copy, type GuideStep, type Source } from './guideCatalog';
 import { cloudAnswer, cloudEnvironmentReady, cloudInstallation, cloudVault, chooseCloudDevice, selectedCloudInstallation, setCloudAnswer, CLOUD_NAMES, type CloudProduct } from './cloudManagers';
+import { nordDirectPasswordAvailable, nordSsoBinding, nordSsoReady } from './nordSsoSchemas';
+import { nordSsoLoginSteps } from './nordSsoCatalog';
 import { cloudManagerRecipe } from './cloudManagerCatalog';
 import { cloudPasswordRecipe } from './cloudPasswordCatalog';
 
@@ -69,9 +71,11 @@ export function cloudPhoneSteps(data: Dataset, w: PhoneWorkflow): { steps: Phone
       continue;
     }
     if (!root || root.purpose !== 'personal' || vault.storageMode !== 'account') { steps.push(blocked(`${prefix}scope`, c('Keep this store’s move unfinished', 'この保管庫の引き継ぎを未完了で残す'), c('Confirm its exact personal backing account first. This route does not replace a managed/shared vault or reset existing data.', '実際に使う個人用の基盤アカウントを先に確認する必要があります。管理用・共有の保管庫を置き換えたり、既存データをリセットしたりしません。'), refs, sources)); continue; }
-    if (!proton && cloudAnswer(data, root.id, 'method') !== 'direct') { steps.push(blocked(`${prefix}sso`, c('Keep connected account sign-in intact', '接続しているアカウントのログイン方法を残す'), c('Google/Apple sign-in needs its own account dependencies. The dedicated phone SSO route is not yet verified here. Keep existing access; do not unlink it or create a replacement account.', 'Google・Apple経由のログインには、接続先のアカウントも必要です。この機種変更用のSSO経路はまだ確認できていません。既存の利用手段を残し、接続の解除や別アカウントの作成は行いません。'), refs, ['nordConnected', 'nordSso'])); continue; }
+    const connection = !proton && cloudAnswer(data, root.id, 'method') === 'sso' ? nordSsoBinding(data, root.id) : undefined;
+    const linkedRefs = connection?.grantRef ? [connection.providerRef, connection.grantRef] : [];
+    if (!proton && cloudAnswer(data, root.id, 'method') !== 'direct' && !(connection && nordSsoReady(data, root.id))) { steps.push(blocked(`${prefix}sso`, c('Keep connected account sign-in intact', '接続しているアカウントのログイン方法を残す'), c('Identify the actual connected provider and its independent authentication/recovery first. Use the connection guide here; the main guide stays saved. Keep existing access and do not unlink or replace accounts.', '実際の接続先と、その独立した認証・復旧手段を先に確認します。ここから接続先のガイドを開いても、通常ガイドは保存したままです。使えるログインを残し、接続の解除や別アカウントの作成は行いません。'), refs, ['nordConnected', 'nordSso'])); continue; }
     let place = c(`${w.answers[use] === 'new' ? 'New phone' : 'Device you will keep'} · ${name.en}`, `${w.answers[use] === 'new' ? '新しいスマホ' : '今後も残す別の端末'} · ${name.ja}`);
-    const action = (id: string, title: Copy, text: Copy, expected: Copy, requires: string[] = [], extra: Partial<PhoneStep> = {}): PhoneStep => ({ id: `${prefix}${id}`, kind: 'action', title, context: c(`${vault.label} · ${root.name}`, `${vault.label} · ${root.name}`), place, action: text, expected, refs: [vault.id, root.id, fresh.id], sources, requires: requires.map(s => `${prefix}${s}`), button: c('I checked this', '確認しました'), ...extra });
+    const action = (id: string, title: Copy, text: Copy, expected: Copy, requires: string[] = [], extra: Partial<PhoneStep> = {}): PhoneStep => ({ id: `${prefix}${id}`, kind: 'action', title, context: c(`${vault.label} · ${root.name}`, `${vault.label} · ${root.name}`), place, action: text, expected, refs: [vault.id, root.id, fresh.id], sources, requires: requires.map(s => `${prefix}${s}`), button: c('I checked this', '確認しました'), ...extra, ...((id === 'recovery' || id === 'account-mfa' || id === 'sign-in' || id.startsWith('sso-')) && connection ? { refs: [...(extra.refs ?? [vault.id, root.id, fresh.id]), ...linkedRefs], variant: `${connection.id}:${connection.proofEpoch}:${extra.variant ?? ''}` } : {}) });
     steps.push(action('recovery', c('Keep backing-account access outside the old phone', '基盤アカウントの利用手段を旧端末の外に残す'),
       c(proton ? 'Retrieve the current Proton Account sign-in information privately without the old phone or this same Pass vault. Keep a working session. Do not create or reset a replacement account.' : 'Retrieve the current Nord Account sign-in information, or confirm access to its registered mailbox, without the old phone or NordPass. Keep a working session. This is separate from the vault Master Password.', proton ? '旧端末や同じPass保管庫を開かなくても、現在のProton Accountのログイン情報を私的に取り出せるか確かめます。使えるログインは残し、アカウントの作り直しやリセットは行いません。' : '旧端末やNordPassを開かなくても、現在のNord Accountのログイン情報を取り出すか、登録メールを受け取れるか確かめます。使えるログインは残してください。これは保管庫用マスターとは別のものです。'),
       c('You have a working way to sign in without relying only on the old phone or the vault itself.', '旧端末や同じ保管庫だけに頼らない、使えるログイン手段があること。'), [], { variant: w.answers[use] }));
@@ -84,6 +88,12 @@ export function cloudPhoneSteps(data: Dataset, w: PhoneWorkflow): { steps: Phone
     steps.push(action('vault-recovery', c('Keep the current vault recovery copy outside the old phone', '現在の復旧用の控えを旧端末の外に残す'),
       c(proton ? 'Keep your current Proton recovery phrase/Recovery Kit and recovery file privately reachable without Proton Pass, Proton Drive or the old phone. Preserve the existing copies; do not reset the password, rotate recovery or void files to test them.' : 'Retrieve the current 24-symbol NordPass vault Recovery Code privately outside NordPass and the old phone. Keep it labeled separately from the 10 Nord Account MFA backup codes. Do not rotate a valid code or reset the Master Password to test it.', proton ? '現在のProtonの復旧フレーズ・Recovery Kit、復旧ファイルを、Proton Pass・Proton Drive・旧端末を使わず私的に取り出せるように残します。既存の控えを維持し、確認のためのパスワードリセット、再発行、ファイルの失効は行いません。' : '現在の24文字のNordPass保管庫用Recovery Codeを、NordPassや旧端末の外から私的に取り出せるか確かめます。10個のNord AccountのMFA用コードとは、用途を区別して残してください。有効なコードの再発行や、確認目的のマスターのリセットは行いません。'),
       c('The current recovery information remains private and reachable outside the old phone.', '現在の復旧用情報を、旧端末の外から安全に取り出せること。'), ['vault-secret']));
+    if (connection) {
+      const previous = steps[steps.length - 4];
+      if (previous?.id === `${prefix}recovery`) steps[steps.length - 4] = { ...previous, action: c(`Retrieve the selected ${connection.provider === 'google' ? 'Google' : 'Apple'} sign-in outside NordPass and the old phone. Keep any direct Nord Account login and mailbox access too. Do not replace or disconnect the connected account.`, `選んだ${connection.provider === 'google' ? 'Google' : 'Apple'}のログイン手段を、NordPassや旧端末の外から取り出せるか確かめます。使っているNord Accountの直接ログインや登録メールの利用も残し、接続先の置換・解除は行いません。`), sources: [...sources, 'nordSso', 'nordConnections'] };
+      const authentication = steps[steps.length - 3];
+      if (authentication?.id === `${prefix}account-mfa`) steps[steps.length - 3] = { ...authentication, action: c('Keep both the connected provider’s and Nord Account’s existing MFA/recovery usable without the old phone and this NordPass store. Finish needed authenticator transfers first. A provider sign-in does not prove that Nord MFA or vault unlock was completed.', '接続先とNord Accountの両方で、既存のMFA・復旧を、旧端末やこのNordPass保管庫なしで使えるように残します。必要な認証アプリの移行を先に済ませてください。提供元へのログインだけで、NordのMFAや保管庫の解除が済んだとはしません。'), sources: [...sources, 'nordSso', 'nordConnections'] };
+    }
     const destination = `cloud-destination:${vault.id}`;
     if (w.answers[use] === 'elsewhere') {
       steps.push(ask(destination, c('Which registered app on another device will you check?', '今後も残す別の端末の、どのアプリで確認しますか？'), [
@@ -117,7 +127,18 @@ export function cloudPhoneSteps(data: Dataset, w: PhoneWorkflow): { steps: Phone
     steps.push(ask(state, c('What does the selected app show now?', '選んだアプリには、何が表示されていますか？'), [['signin', c('Account sign-in is required', 'アカウントへのログインが必要')], ['unlock', c('The account is selected; the vault needs unlocking', 'アカウントは選択済み・保管庫の解除が必要')], ['open', c('The intended vault is already open', '使いたい保管庫を、すでに開ける')]], vault.id));
     if (!w.answers[state]) return { steps, ready: false };
     let beforeUnlock = 'open';
-    if (w.answers[state] === 'signin') {
+    if (w.answers[state] === 'signin' && connection) {
+      let previous = 'open';
+      for (const s of nordSsoLoginSteps(data, app.id)) {
+        const independent = { ...s, action: c(`${s.action.en} Complete it without the old phone or this locked NordPass store. If either is the only method, keep this unfinished.`, `${s.action.ja} 旧端末や、このロックされたNordPass保管庫を使わずに行います。それだけが頼りなら未完了で残します。`) };
+        const wrapped = wrap(independent, 'cloud-onboard', [previous]);
+        steps.push({ ...wrapped, cloudContext: { ...wrapped.cloudContext!, independentOfOld: true } }); previous = s.id;
+      }
+      const signin = onboard.steps.find(s => s.id === 'sign-in')!;
+      const wrapped = wrap({ ...signin, extraControls: undefined }, 'cloud-onboard', [previous]);
+      steps.push({ ...wrapped, cloudContext: { ...wrapped.cloudContext!, independentOfOld: true, completedAccountRef: root.id } });
+      beforeUnlock = 'sign-in';
+    } else if (w.answers[state] === 'signin') {
       if (!proton) steps.push(action('email', c('Continue with the existing Nord Account email', '既存のNord Accountのメールで進む'), c('In NordPass enter the email for the selected existing Nord Account and select Continue. Do not create another account.', 'NordPassで、選んだ既存のNord Accountのメールを入力し、「Continue」を選びます。別のアカウントは作りません。'), c('Nord shows sign-in for the intended existing account.', '意図した既存アカウントのログインが表示されること。'), ['open']));
       steps.push(action('credentials', c('Sign in to the existing backing account', '既存の基盤アカウントへログインする'), c(proton ? 'Select Sign in and use the existing Proton Account username and password. Mail, Drive and Pass can share that same account. Enter credentials only in Proton’s screen and keep working sessions.' : 'Use the existing Nord Account password, or its offered one-time email login code, in Nord’s official sign-in screen. Keep the NordPass vault Master Password for the later unlock; it is not the Account password.', proton ? '「Sign in」から、既存のProton Accountのユーザー名とパスワードをProtonの画面だけに入力します。Mail・Drive・Passで同じAccountを使っている場合も、そのまま使います。現在使えるログインは残してください。' : 'Nordの正規のログイン画面で、現在のNord Account用のパスワード、または提示された一回用メールのログインコードを使います。NordPassの保管庫用Master Passwordは、この後の解除に使う別のものです。'), c('The account accepts the credentials or asks for its configured additional authentication.', 'アカウントの情報が受け付けられるか、設定済みの追加認証が求められること。'), [proton ? 'open' : 'email']));
       const mfa = `${prefix}mfa-needed`;
@@ -145,7 +166,7 @@ export function cloudPhoneSteps(data: Dataset, w: PhoneWorkflow): { steps: Phone
       previousStep = id;
     }
     const targetKey = `${prefix}target`;
-    steps.push(ask(targetKey, c('Which existing saved login will you try?', 'どの保存済みログインを使ってみますか？'), [...data.assets.filter(a => a.kind === 'account').map(a => [a.id, c(a.name, a.name)] as [string, Copy]), ['unlisted', c('The account is not registered here', 'このアプリには未登録のアカウント')]], vault.id, c('Choose an important login already in this exact store. Do not change its password merely to test the phone move.', 'この保管庫に保存している、重要なログインを選びます。機種変更の確認だけのためにパスワードを変更する必要はありません。')));
+    steps.push(ask(targetKey, c('Which existing saved login will you try?', 'どの保存済みログインを使ってみますか？'), [...data.assets.filter(a => a.kind === 'account' && !(a.provider === 'nord' && cloudAnswer(data, a.id, 'method') === 'sso' && !nordDirectPasswordAvailable(data, a.id))).map(a => [a.id, c(a.name, a.name)] as [string, Copy]), ['unlisted', c('The account is not registered here', 'このアプリには未登録のアカウント')]], vault.id, c('Choose an important login already in this exact store. Do not change its password merely to test the phone move.', 'この保管庫に保存している、重要なログインを選びます。機種変更の確認だけのためにパスワードを変更する必要はありません。')));
     if (!w.answers[targetKey]) return { steps, ready: false };
     const target = data.assets.find(a => a.id === w.answers[targetKey] && a.kind === 'account');
     const projection = target ? setCloudAnswer(data, target.id, `password:${app.id}`, 'keep') : data;

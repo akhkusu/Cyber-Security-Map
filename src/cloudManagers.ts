@@ -1,4 +1,6 @@
 import { makeAsset, type Asset, type Dataset, type Language, type OperatingSystem } from './models';
+import { nordSsoChoiceRoute, nordSsoSetupRoute, setNordSsoMethod } from './nordSso';
+import { nordSsoReady, nordSsoStore } from './nordSsoSchemas';
 import { nordRecoveryMasterConfirmed, nordRecoveryPending } from './nordRecoverySchemas';
 import { securityEntitySchema } from './securityModel';
 import { addPasswordRoot, configurePasswordRoot, makePasswordVault, passwordInstallation, passwordVault, type StoreProduct } from './passwordStoreIdentity';
@@ -33,6 +35,7 @@ export function addCloudDevice(data: Dataset, vaultId: string, operatingSystem: 
   return chooseCloudDevice({ ...data, assets: [...data.assets, device] }, vaultId, device.id);
 }
 export function setCloudAnswer(data: Dataset, ref: string, key: string, answer: string): Dataset {
+  if (data.version === 2 && data.securityModel.revision >= 5 && key === 'method' && ['direct', 'sso', 'unknown'].includes(answer) && data.assets.some(a => a.id === ref && a.provider === 'nord')) return setNordSsoMethod(data, ref, answer as 'direct' | 'sso' | 'unknown');
   const app = cloudInstallation(data, ref) ?? (key === 'usage' ? selectedCloudInstallation(data, ref) : undefined);
   if (app && data.version === 2 && ['usage', 'account', 'browser', 'ios', 'android'].includes(key)) {
     if (key === 'browser' && cloudAnswer(data, app.id, key) && cloudAnswer(data, app.id, key) !== answer && Object.keys(app.controls ?? {}).length) {
@@ -45,6 +48,7 @@ export function setCloudAnswer(data: Dataset, ref: string, key: string, answer: 
   return { ...data, guide: { ...data.guide, answers: { ...data.guide.answers, ...(key === 'master' && answer === 'change' && (cloudAnswer(data, ref, key) !== 'change' || cloudMasterChanged(data, ref)) ? { [`${ref}:cloud-master-request`]: crypto.randomUUID() } : {}), [`${ref}:cloud-${key}`]: answer } } };
 }
 export const cloudAnswer = (data: Dataset, ref: string, key: string): string | undefined => {
+  if (key === 'method' && nordSsoStore(data)?.methods[ref]) return nordSsoStore(data)!.methods[ref];
   const app = cloudInstallation(data, ref), settings = app?.cloudSettings;
   const value = settings && typeof settings === 'object' && !Array.isArray(settings) ? (settings as Record<string, unknown>)[key] : undefined;
   return typeof value === 'string' ? value : data.guide.answers[`${ref}:cloud-${key}`];
@@ -71,7 +75,7 @@ export function cloudMasterChanged(data: Dataset, vaultId: string): boolean {
 export function cloudManagerReady(data: Dataset, vaultId: string, installationId?: string): boolean {
   const vault = cloudVault(data, vaultId), app = installationId ? cloudInstallation(data, installationId) : selectedCloudInstallation(data, vaultId);
   const root = data.assets.find(a => a.id === vault?.authenticationAccountRef), device = data.assets.find(a => a.id === app?.deviceRef);
-  if (nordRecoveryPending(data, vaultId) || data.version !== 2 || data.securityModel.revision < 2 || !vault || !app || app.vaultRef !== vault.id || !cloudEnvironmentReady(data, app.id) || root?.purpose !== 'personal' || (vault.productId === 'nordpass' && cloudAnswer(data, root.id, 'method') !== 'direct')) return false;
+  if (nordRecoveryPending(data, vaultId) || data.version !== 2 || data.securityModel.revision < 2 || !vault || !app || app.vaultRef !== vault.id || !cloudEnvironmentReady(data, app.id) || root?.purpose !== 'personal' || (vault.productId === 'nordpass' && cloudAnswer(data, root.id, 'method') !== 'direct' && !(cloudAnswer(data, root.id, 'method') === 'sso' && nordSsoReady(data, root.id)))) return false;
   const master = cloudAnswer(data, vault.id, 'master');
   const masterReady = vault.productId !== 'nordpass' || master === 'keep' || (master === 'change' ? cloudMasterChanged(data, vault.id) : recorded(vault, 'masterStrength'));
   return masterReady && ['opened', 'storageChecked', 'autofill'].every(c => recorded(app, c)) && recorded(device, 'screenLock') && ['mfa', 'recovery'].every(c => recorded(root, c)) && (vault.productId === 'nordpass' ? ['recovery', 'independentRoot'].every(c => recorded(vault, c)) : ['dataRecovery', 'passwordResetRecovery', 'recoveryFile'].every(c => recorded(root, c)));
@@ -79,12 +83,14 @@ export function cloudManagerReady(data: Dataset, vaultId: string, installationId
 export function cloudSetupRoute(data: Dataset, vaultId: string): string {
   const vault = cloudVault(data, vaultId); if (!vault) return 'manager-select';
   const root = data.assets.find(a => a.id === vault.authenticationAccountRef), app = selectedCloudInstallation(data, vault.id);
-  if (nordRecoveryPending(data, vault.id)) return `cloud-recovery-pending/${vault.id}`;
+  const connectionSession = typeof data.guide.nordSsoSessionV1 === 'string' && nordSsoStore(data)?.sessions.some(s => s.id === data.guide.nordSsoSessionV1 && s.vaultRef === vault.id);
+  if (nordRecoveryPending(data, vault.id) && !connectionSession) return `cloud-recovery-pending/${vault.id}`;
   if (!root) return `cloud-root/${vault.id}`;
   if (!root.purpose) return `cloud-purpose/${vault.id}`;
   if (root.purpose === 'work') return `cloud-managed/${vault.id}`;
   if (vault.productId === 'nordpass' && !cloudAnswer(data, root.id, 'method')) return `cloud-account-method/${vault.id}`;
-  if (vault.productId === 'nordpass' && cloudAnswer(data, root.id, 'method') !== 'direct') return `cloud-sso-unavailable/${vault.id}`;
+  if (vault.productId === 'nordpass' && !['direct', 'sso'].includes(cloudAnswer(data, root.id, 'method') ?? '')) return `cloud-sso-unavailable/${vault.id}`;
+  if (vault.productId === 'nordpass' && cloudAnswer(data, root.id, 'method') === 'sso') { const route = nordSsoChoiceRoute(data, root.id, vault.id); if (route) return route; }
   if (!cloudAnswer(data, vault.id, 'usage')) return `cloud-usage/${vault.id}`;
   if (!app) return `cloud-device/${vault.id}`;
   const device = data.assets.find(a => a.id === app.deviceRef);
@@ -96,6 +102,7 @@ export function cloudSetupRoute(data: Dataset, vaultId: string): string {
   if (vault.productId === 'nordpass' && device.operatingSystem === 'android' && !['android9plus', 'other'].includes(cloudAnswer(data, app.id, 'android') ?? '')) return `cloud-android/${vault.id}`;
   if (cloudAnswer(data, app.id, 'browser') === 'other' || cloudAnswer(data, app.id, 'ios') === 'other' || cloudAnswer(data, app.id, 'android') === 'other') return `cloud-unsupported/${vault.id}`;
   if (!cloudEnvironmentReady(data, app.id)) return `cloud-unsupported/${vault.id}`;
+  if (vault.productId === 'nordpass' && cloudAnswer(data, root.id, 'method') === 'sso') { const route = nordSsoSetupRoute(data, root.id, vault.id, app.id); if (route) return route; }
   if (!['opened', 'storageChecked'].every(c => recorded(app, c))) return `do/${app.id}/cloud-onboard/open`;
   if (vault.productId === 'nordpass' && !['recovery', 'independentRoot'].every(c => recorded(vault, c))) return cloudAnswer(data, vault.id, 'recovery') ? `do/${app.id}/cloud-recovery/open` : `cloud-recovery/${vault.id}`;
   if (vault.productId === 'nordpass' && !cloudAnswer(data, vault.id, 'master') && !recorded(vault, 'masterStrength')) return `cloud-master-review/${vault.id}`;

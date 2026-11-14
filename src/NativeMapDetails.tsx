@@ -1,3 +1,4 @@
+import { NordConnectionDetails } from './NordConnectionDetails';
 import { Link } from 'react-router-dom';
 import { AUTHENTICATORS, authenticator, setAuthCursor, type AuthenticatorProduct } from './authenticatorGuide';
 import { ArrowRight } from 'lucide-react';
@@ -14,6 +15,7 @@ import { AccessChecks } from './AccessChecks';
 export function NativeMapDetails({ data, item, nodes, connections, language, startGuide, missing }: { data: Dataset; item: MapItem; nodes: MapItem[]; connections: MapConnection[]; language: Language; startGuide: (data: Dataset) => Promise<void>; missing: string }) {
   const entity = data.version === 2 ? data.securityModel.entities.find(e => e.id === item.id) : undefined;
   if (!entity) return null;
+  if (data.version === 2 && data.securityModel.revision >= 5 && entity.kind === 'grant' && entity.nordSsoGrant === 'v1') return <NordConnectionDetails data={data} id={entity.id} language={language} startGuide={startGuide} missing={missing} />;
   const authApp = authenticator(data, entity.id);
   const authAccount = authApp && data.assets.find(a => data.guide.answers[`auth:${a.id}:app`] === authApp.id);
   const nordTask = (entity.nordRecoveryCredential === 'v1' || entity.nordRecoveryPaper === 'v1') && typeof entity.nordRecoveryTaskRef === 'string' ? nordRecoveryTasks(data).find(t => t.id === entity.nordRecoveryTaskRef) : undefined;

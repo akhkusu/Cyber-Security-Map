@@ -8,6 +8,7 @@ import { PROVIDERS } from './guideCatalog';
 import { answerAuthenticatorQuestion, recordPhoneAuthenticator, undoPhoneAuthenticator } from './phoneAuthenticatorRecords';
 import { answerCloudPhoneQuestion } from './phoneCloudManagers';
 import { recordCloudObservation, undoCloudObservation } from './cloudObservations';
+import { nordSsoBinding } from './nordSsoSchemas';
 import { cloudAnswer, cloudInstallation, cloudVault, CLOUD_NAMES, type CloudProduct } from './cloudManagers';
 
 export const getPhoneWorkflows = (data: Dataset): PhoneWorkflow[] => data.version === 2 ? data.deviceWorkflows : [];
@@ -223,7 +224,7 @@ export function phoneHelpPrompt(data: Dataset, workflow: PhoneWorkflow, problemI
   const os = data.assets.find(a => a.id === app?.deviceRef)?.operatingSystem;
   const version = app && ({ ios18plus: 'iOS / iPadOS 18+', ios17: 'iOS / iPadOS 17', android9plus: 'Android 9+' } as Record<string, string>)[cloudAnswer(data, app.id, os === 'ios' ? 'ios' : 'android') ?? ''];
   return [language === 'ja' ? '最新の公式資料を確認し、一度に一つの質問または操作を案内してください。確認できない最新情報は、その旨を明示してください。秘密情報を求めず、新しい手段が使える前に既存の方法を削除させないでください。' : 'Check current official documentation. Guide one question or action at a time. State if you cannot verify current information. Do not request secrets or remove old access before new access works.',
-    `Task: ${language === 'ja' ? 'スマホの機種変更' : 'Move to a new phone'}`, ...(vault ? [`Password manager: ${CLOUD_NAMES[vault.productId as CloudProduct][language]}`] : []), ...(os && ['ios', 'android', 'macos', 'windows', 'ubuntu', 'chromeos'].includes(os) ? [`Selected app OS: ${os}${version ? ` / ${version}` : ' (version unconfirmed)'}`] : []), `Current step: ${safeStep.title[language]}`,
+    `Task: ${language === 'ja' ? 'スマホの機種変更' : 'Move to a new phone'}`, ...(vault && nordSsoBinding(data, vault.authenticationAccountRef) ? [`Connected sign-in: ${nordSsoBinding(data, vault.authenticationAccountRef)!.provider}`] : []), ...(vault ? [`Password manager: ${CLOUD_NAMES[vault.productId as CloudProduct][language]}`] : []), ...(os && ['ios', 'android', 'macos', 'windows', 'ubuntu', 'chromeos'].includes(os) ? [`Selected app OS: ${os}${version ? ` / ${version}` : ' (version unconfirmed)'}`] : []), `Current step: ${safeStep.title[language]}`,
     `Where: ${safeStep.place?.[language] ?? 'Official settings on the selected phone'}`,
     `OS: ${old?.operatingSystem === 'ios' ? 'iOS' : old?.operatingSystem === 'android' ? 'Android' : 'unconfirmed'} → ${fresh?.operatingSystem === 'ios' ? 'iOS' : fresh?.operatingSystem === 'android' ? 'Android' : 'unconfirmed'} (version unconfirmed)`,
     `Expected: ${safeStep.expected?.[language] ?? safeStep.text?.[language] ?? 'A supported migration path'}`,

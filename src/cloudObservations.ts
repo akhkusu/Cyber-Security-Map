@@ -1,14 +1,20 @@
 import type { Dataset } from './models';
 import type { GuideStep } from './guideCatalog';
 import type { AccessContext, SecurityRelation } from './securityModel';
-import { cloudInstallation, cloudVault } from './cloudManagers';
+import { recordNordSsoPreparation, undoNordSsoEvidence } from './nordSso';
+import { nordSsoBinding } from './nordSsoSchemas';
+import { cloudAnswer, cloudInstallation, cloudVault } from './cloudManagers';
 
 export function recordCloudObservation(data: Dataset, key: string, subjectRef: string, recipeId: string, step: GuideStep, requiredGuideSteps: string[], now: string, phone?: { context: AccessContext; requiredPhoneRecords: string[]; observedWithoutRefs?: string[]; sourceIds: string[] }): Dataset {
   if (data.version !== 2 || !recipeId.startsWith('cloud-')) return data;
   const app = cloudInstallation(data, recipeId.startsWith('cloud-password:') ? recipeId.slice('cloud-password:'.length) : subjectRef), vault = cloudVault(data, app?.vaultRef);
   if (!app || !vault) return data;
+  if (/^cloud-sso-(prepare|add):/.test(recipeId)) return recordNordSsoPreparation(data, key, app.id, recipeId, step, requiredGuideSteps, now);
   if (phone && data.securityModel.revision < 2) data = { ...data, securityModel: { ...data.securityModel, revision: 2 } };
   if (recipeId.startsWith('cloud-master-change:') && step.id === 'apply') return { ...data, securityModel: { ...data.securityModel, lifecycle: { ...data.securityModel.lifecycle, [vault.id]: { ...data.securityModel.lifecycle[vault.id], state: data.securityModel.lifecycle[vault.id]?.state ?? 'unknown', evidence: data.securityModel.lifecycle[vault.id]?.evidence ?? 'unknown', updatedAt: data.securityModel.lifecycle[vault.id]?.updatedAt ?? now, accessResetAt: now } } } };
+  const binding = vault.productId === 'nordpass' && cloudAnswer(data, vault.authenticationAccountRef ?? '', 'method') === 'sso' ? nordSsoBinding(data, vault.authenticationAccountRef) : undefined;
+  const ssoLogin = binding?.grantRef && recipeId === 'cloud-onboard' && ['sign-in', 'sso-auth'].includes(step.id) ? binding : undefined;
+  const ssoProof = ssoLogin ? { nordSsoEvidence: 'v1', nordSsoBindingRef: ssoLogin.id, nordSsoPurpose: step.id === 'sso-auth' ? 'provider-auth' : 'nord-auth', requiredNordSsoRecords: ['outside', 'connection'].flatMap(id => ssoLogin.records[id] ? [ssoLogin.records[id].key] : []) } : {};
   const model = data.securityModel, entities = [...model.entities], relations = [...model.relations], facts = [...model.facts], routes = [...model.routes];
   const proof = { requiredGuideSteps, ...(phone ? { requiredPhoneRecords: phone.requiredPhoneRecords, cloudPhoneObservation: 'v1' } : {}) }, sourceIds = phone?.sourceIds ?? step.sources;
   const edge = (suffix: string, fromRef: string, toRef: string, kind: SecurityRelation['kind']) => {
@@ -19,13 +25,16 @@ export function recordCloudObservation(data: Dataset, key: string, subjectRef: s
   const observed = (suffix: string, targetRef: string, purpose: 'sign-in' | 'decrypt', label: string, requiredRefs: string[], contexts: AccessContext[] = ['normal']) => {
     const factId = `${key}:cloud:${suffix}`, routeId = `${factId}:route`;
     const useContexts = phone ? [phone.context] : contexts;
-    const value = { ...facts.find(f => f.id === factId), id: factId, label, state: 'available' as const, evidence: 'user-confirmed' as const, checkedAt: now, requiredRefs, contexts: useContexts, dependencyCompleteness: 'partial' as const, sourceIds, observationActionId: key, ...proof, ...(phone?.observedWithoutRefs ? { observedWithoutRefs: phone.observedWithoutRefs } : {}) };
+    const stores = ssoLogin ? new Set(data.securityModel.entities.filter(e => e.kind === 'vault' && e.productId === 'nordpass' && e.authenticationAccountRef === ssoLogin.rootRef).map(e => e.id)) : new Set<string>();
+    const independentVaults = ssoLogin ? data.securityModel.entities.filter(e => stores.has(e.id) || (e.kind === 'credential' && stores.has(e.subjectRef)) || (e.kind === 'grant' && e.nordSsoGrant === 'v1' && e.nordSsoBindingRef === ssoLogin.id && e.id !== ssoLogin.grantRef)).map(e => e.id) : [];
+    const value = { ...facts.find(f => f.id === factId), id: factId, label, state: 'available' as const, evidence: 'user-confirmed' as const, checkedAt: now, requiredRefs, contexts: useContexts, dependencyCompleteness: 'partial' as const, sourceIds, observationActionId: key, ...proof, ...ssoProof, ...(ssoLogin || phone?.observedWithoutRefs ? { observedWithoutRefs: [...independentVaults, ...(phone?.observedWithoutRefs ?? [])] } : {}) };
     const route = { ...routes.find(r => r.id === routeId), id: routeId, label, targetRef, purpose, contexts: useContexts, requirements: { kind: 'fact' as const, factId }, sourceIds, observationActionId: key };
     const index = facts.findIndex(f => f.id === factId); if (index < 0) facts.push(value); else facts[index] = value;
     const routeIndex = routes.findIndex(r => r.id === routeId); if (routeIndex < 0) routes.push(route); else routes[routeIndex] = route;
   };
   if (recipeId === 'cloud-onboard' && step.id === 'open') edge('device', app.id, app.deviceRef, 'installed-on');
-  if (recipeId === 'cloud-onboard' && step.id === 'sign-in' && vault.authenticationAccountRef) observed('account-signin', vault.authenticationAccountRef, 'sign-in', 'Cloud manager account sign-in accepted', [app.id, app.deviceRef, vault.authenticationAccountRef]);
+  if (recipeId === 'cloud-onboard' && step.id === 'sign-in' && vault.authenticationAccountRef) observed('account-signin', vault.authenticationAccountRef, 'sign-in', 'Cloud manager account sign-in accepted', [app.id, app.deviceRef, vault.authenticationAccountRef, ...(ssoLogin?.grantRef ? [ssoLogin.providerRef, ssoLogin.grantRef] : [])]);
+  if (ssoLogin?.grantRef && step.id === 'sso-auth') observed('provider-auth', ssoLogin.providerRef, 'sign-in', 'Connected provider accepted this Nord sign-in', [app.id, app.deviceRef, ssoLogin.providerRef, ssoLogin.rootRef, ssoLogin.grantRef]);
   if (recipeId === 'cloud-onboard' && step.id === 'vault-open') observed('vault-read', vault.id, 'decrypt', 'Opened the intended cloud password store', [app.id, app.deviceRef, vault.id]);
   if (recipeId.startsWith('cloud-master-change:') && step.id === 'test') observed('master-unlock', vault.id, 'decrypt', 'The changed Master Password opened the same vault', [app.id, app.deviceRef, vault.id]);
   if (recipeId === 'cloud-onboard' && step.id === 'storage-check' && vault.authenticationAccountRef) { edge('store', app.id, vault.id, 'unlocks'); edge('sync', vault.id, vault.authenticationAccountRef, 'synced-via'); }
@@ -48,6 +57,8 @@ export function recordCloudObservation(data: Dataset, key: string, subjectRef: s
   return { ...data, securityModel: { ...model, entities, relations, facts, routes } };
 }
 export function undoCloudObservation(data: Dataset, key: string): Dataset {
+  if (data.version !== 2) return data;
+  data = undoNordSsoEvidence(data, key);
   if (data.version !== 2) return data;
   const withdrawn = (entry: { [key: string]: unknown }) => entry.observationActionId === key || (Array.isArray(entry.requiredGuideSteps) && entry.requiredGuideSteps.includes(key)) || (Array.isArray(entry.requiredPhoneRecords) && entry.requiredPhoneRecords.includes(key));
   return { ...data, securityModel: { ...data.securityModel, relations: data.securityModel.relations.map(r => withdrawn(r) ? { ...r, evidence: 'unknown' } : r), facts: data.securityModel.facts.map(f => withdrawn(f) ? { ...f, state: 'unknown', evidence: 'unknown' } : f) } };

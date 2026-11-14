@@ -1,4 +1,7 @@
 import { DataUpgradeConflict, makeAsset, upgradeDataset, type CurrentDataset, type Dataset, type Language } from './models';
+import { recordCloudObservation } from './cloudObservations';
+import { nordSsoBinding } from './nordSsoSchemas';
+import { c } from './guideCatalog';
 import { recordControl, undoControl } from './controlRecords';
 import { cloudAnswer, cloudInstallation, cloudVault, chooseCloudDevice, selectedCloudInstallation, setCloudAnswer } from './cloudManagers';
 import { securityEntitySchema, type AccessFact } from './securityModel';
@@ -13,7 +16,7 @@ const snapshot = (w: CurrentDataset['deviceWorkflows'][number]) => JSON.stringif
 function write(data: CurrentDataset, task: NordRecoveryTask): CurrentDataset {
   const parsed = nordRecoveryStoreSchema.safeParse(data.securityModel.nordRecoveryV1);
   const store = parsed.success ? parsed.data : { version: 1 as const, tasks: [] };
-  return { ...data, securityModel: { ...data.securityModel, revision: 4, nordRecoveryV1: { ...store, tasks: [...store.tasks.filter(t => t.id !== task.id), task] } } };
+  return { ...data, securityModel: { ...data.securityModel, revision: data.securityModel.revision >= 4 ? data.securityModel.revision : 4, nordRecoveryV1: { ...store, tasks: [...store.tasks.filter(t => t.id !== task.id), task] } } };
 }
 export function startNordRecovery(data: Dataset, appId: string, returnTo: string = '/guide', phoneId?: string, now = new Date().toISOString()): CurrentDataset {
   let next = upgradeDataset(data);
@@ -103,13 +106,13 @@ function replaceCode(data: CurrentDataset, task: NordRecoveryTask, suffix: strin
   // Only our marked credentials or the exact old cloud-recovery relationship
   // are recognized. Account MFA backup codes and opaque imported fields are not.
   const stores = new Set(data.securityModel.entities.filter(e => e.kind === 'vault' && e.productId === 'nordpass' && e.authenticationAccountRef === task.rootRef).map(e => e.id));
-  const revoked = data.securityModel.entities.filter(e => e.kind === 'credential' && e.credentialType === 'recovery-code' && stores.has(e.subjectRef) && (e.nordRecoveryCredential === 'v1' || (e.cloudRecoveryPhase === 'cloud-recovery' && data.securityModel.relations.some(r => r.fromRef === e.id && r.toRef === e.subjectRef && r.id.endsWith(':cloud:recovery') && r.sourceIds.includes('nordRecovery'))))).map(e => e.id);
+  const revoked = data.securityModel.entities.filter(e => e.kind === 'credential' && (e.credentialType === 'recovery-code' || (e.credentialType === 'recovery-key' && e.cloudRecoveryPhase === 'cloud-recovery')) && stores.has(e.subjectRef) && (e.nordRecoveryCredential === 'v1' || (e.cloudRecoveryPhase === 'cloud-recovery' && data.securityModel.relations.some(r => r.fromRef === e.id && r.toRef === e.subjectRef && r.id.endsWith(':cloud:recovery') && r.sourceIds.includes('nordRecovery'))))).map(e => e.id);
   const made = codeEntity(resetAccess(data, revoked, now, true), task, suffix, now);
   return { next: made.next, task: { ...task, currentCodeRef: made.ref, mutations: { ...task.mutations, [suffix]: { kind: 'code' as const, ref: made.ref, at: now, sourceRef: suffix === 'bio-code' ? task.sourceRef : task.targetRef } } } };
 }
 function observe(data: CurrentDataset, task: NordRecoveryTask, step: NordStep, refs: string[], now: string, purpose: string, routePurpose?: 'decrypt' | 'restore'): CurrentDataset {
   const id = `${task.id}:fact:${step.id}`, fact: AccessFact = { id, label: step.title.en.slice(0, 80), state: 'available', evidence: 'user-confirmed', checkedAt: now, requiredRefs: refs, contexts: task.originPhone ? ['new-device', 'normal'] : ['normal'], dependencyCompleteness: 'partial', sourceIds: step.sources, nordRecoveryEvidence: 'v1', nordRecoveryTaskRef: task.id, nordRecoveryPurpose: purpose };
-  if (step.id === 'master-test') Object.assign(fact, { observedWithoutRefs: data.securityModel.entities.filter(e => e.kind === 'credential' && e.subjectRef === task.vaultRef && e.credentialType === 'recovery-code' && (e.nordRecoveryCredential === 'v1' || e.cloudRecoveryPhase === 'cloud-recovery')).map(e => e.id) });
+  if (step.id === 'master-test') Object.assign(fact, { observedWithoutRefs: data.securityModel.entities.filter(e => e.kind === 'credential' && e.subjectRef === task.vaultRef && (e.credentialType === 'recovery-code' || (e.credentialType === 'recovery-key' && e.cloudRecoveryPhase === 'cloud-recovery')) && (e.nordRecoveryCredential === 'v1' || e.cloudRecoveryPhase === 'cloud-recovery')).map(e => e.id) });
   if (task.originPhone && step.id === 'master-test') { const old = data.deviceWorkflows.find(w => w.id === task.originPhone!.id)?.oldDeviceRef; if (old) Object.assign(fact, { cloudPhoneObservation: 'v1', observedWithoutRefs: [...(Array.isArray(fact.observedWithoutRefs) ? fact.observedWithoutRefs : []), old] }); }
   const relations = [...data.securityModel.relations];
   const edge = (suffix: string, fromRef: string, toRef: string, kind: 'installed-on' | 'decrypts' | 'stored-in' | 'recovers') => {
@@ -139,6 +142,12 @@ export function confirmNordRecovery(data: Dataset, taskId: string, now = new Dat
   if (step.id === 'use-code' && task.currentCodeRef) {
     task = { ...task, usedCodeRef: task.currentCodeRef };
     next = observe(next, task, step, [...refs, task.currentCodeRef!], now, 'code-accepted', 'restore');
+  }
+  if (step.id === 'target-sso-sign-in') {
+    const key = `${task.id}:sso-sign-in`;
+    const s = { ...step, id: 'sign-in', title: c('Connected Nord Account sign-in accepted', '接続先を使ったNord Accountのログインを確認'), sources: ['nordAlternatives' as const, 'nordAccount' as const] };
+    next = recordCloudObservation(next, key, app.id, 'cloud-onboard', s, [], now) as CurrentDataset;
+    next = { ...next, securityModel: { ...next.securityModel, facts: next.securityModel.facts.map(f => f.observationActionId === key ? { ...f, nordRecoveryEvidence: 'v1', nordRecoveryTaskRef: task!.id, nordRecoveryStep: step.id } : f) } };
   }
   if (step.id === 'apply' && !nordRecoveryApplied(task)) {
     const stores = new Set(data.securityModel.entities.filter(e => e.kind === 'vault' && e.productId === 'nordpass' && e.authenticationAccountRef === task!.rootRef).map(e => e.id));
@@ -201,7 +210,7 @@ export function undoNordRecovery(data: Dataset, taskId: string, stepId: string, 
   for (const id of [...removed].reverse()) for (const control of task.records[id].controls) next = undoControl(next, `${task.id}:${id}:${control.targetRef}:${control.controlId}`, control.targetRef, control.controlId, { state: 'unknown', evidence: 'not-assessed' }, now) as CurrentDataset;
   for (const w of next.deviceWorkflows) for (const [key, record] of Object.entries(w.records)) if (record.nordRecoveryTaskRef === task.id) next = undoPhoneRecord(next, w.id, key, now) as CurrentDataset;
   const factIds = new Set([...removed].map(id => `${task.id}:fact:${id}`));
-  next = { ...next, securityModel: { ...next.securityModel, relations: next.securityModel.relations.map(r => r.nordRecoveryEvidence === 'v1' && r.nordRecoveryTaskRef === task.id && typeof r.nordRecoveryStep === 'string' && removed.has(r.nordRecoveryStep) ? { ...r, evidence: 'unknown' } : r), facts: next.securityModel.facts.map(f => factIds.has(f.id) ? { ...f, state: 'unknown', evidence: 'unknown' } : f) } };
+  next = { ...next, securityModel: { ...next.securityModel, relations: next.securityModel.relations.map(r => r.nordRecoveryEvidence === 'v1' && r.nordRecoveryTaskRef === task.id && typeof r.nordRecoveryStep === 'string' && removed.has(r.nordRecoveryStep) ? { ...r, evidence: 'unknown' } : r), facts: next.securityModel.facts.map(f => factIds.has(f.id) || (f.nordRecoveryEvidence === 'v1' && f.nordRecoveryTaskRef === task.id && typeof f.nordRecoveryStep === 'string' && removed.has(f.nordRecoveryStep)) ? { ...f, state: 'unknown', evidence: 'unknown' } : f) } };
   const records = { ...task.records }; for (const id of removed) delete records[id];
   return write(next, { ...task, records, status: 'active', cursor: nordRecoveryApplied(task) ? 'master-test' : stepId, updatedAt: now });
 }
@@ -216,6 +225,6 @@ export function nordRecoveryPrompt(data: Dataset, task: NordRecoveryTask, proble
   const step = currentNordStep(data, task), app = cloudInstallation(data, task.targetRef), device = data.assets.find(a => a.id === app?.deviceRef), sourceApp = cloudInstallation(data, task.sourceRef), sourceOS = data.assets.find(a => a.id === sourceApp?.deviceRef)?.operatingSystem;
   const problems = language === 'ja' ? ['画面が違う', '項目が見つからない', '生体認証・コードが使えない', '権限・管理の制限がある'] : ['Screen differs', 'Item missing', 'Biometrics/code unavailable', 'Permission/management restriction'];
   // Deliberately exclude labels, notes, identifiers and free text from saved data.
-  return [language === 'ja' ? '最新の公式情報を確認し、一度に一つの質問または操作で案内してください。確認できなければ明示してください。秘密情報・個人情報は求めないでください。' : 'Check current official documentation and guide one question or action at a time. State if you cannot verify it. Do not request secrets or personal information.', 'Service: NordPass personal vault', `OS: ${['ios', 'android', 'macos', 'windows', 'ubuntu', 'chromeos'].includes(device?.operatingSystem ?? '') ? device?.operatingSystem : 'unknown'}; browser: ${['chrome', 'firefox', 'edge', 'safari', 'brave', 'opera'].includes(cloudAnswer(data, app?.id ?? '', 'browser') ?? '') ? cloudAnswer(data, app?.id ?? '', 'browser') : 'native mobile / unknown'}`, `Biometric source OS: ${['ios', 'android', 'windows', 'macos'].includes(sourceOS ?? '') ? sourceOS : 'not selected / unknown'}; surface: ${sourceApp?.nordRecoverySurface === 'native-v1' ? 'native app' : ['windows', 'macos'].includes(sourceOS ?? '') ? 'browser extension' : 'mobile app / unknown'}`, `Task: recover forgotten Master Password; method: ${['code', 'biometric', 'none'].includes(task.answers.method) ? task.answers.method : 'not selected'}`, `Step: ${step?.title[language] ?? 'unknown'}`, `Expected: ${step?.expected[language] ?? ''}`, `Problem: ${problems[problem] ?? problems[0]}`, ...NORD_PROMPT_URLS].join('\n');
+  return [language === 'ja' ? '最新の公式情報を確認し、一度に一つの質問または操作で案内してください。確認できなければ明示してください。秘密情報・個人情報は求めないでください。' : 'Check current official documentation and guide one question or action at a time. State if you cannot verify it. Do not request secrets or personal information.', 'Service: NordPass personal vault', `Connected sign-in: ${nordSsoBinding(data, task.rootRef)?.provider ?? 'not selected'}`, `OS: ${['ios', 'android', 'macos', 'windows', 'ubuntu', 'chromeos'].includes(device?.operatingSystem ?? '') ? device?.operatingSystem : 'unknown'}; browser: ${['chrome', 'firefox', 'edge', 'safari', 'brave', 'opera'].includes(cloudAnswer(data, app?.id ?? '', 'browser') ?? '') ? cloudAnswer(data, app?.id ?? '', 'browser') : 'native mobile / unknown'}`, `Biometric source OS: ${['ios', 'android', 'windows', 'macos'].includes(sourceOS ?? '') ? sourceOS : 'not selected / unknown'}; surface: ${sourceApp?.nordRecoverySurface === 'native-v1' ? 'native app' : ['windows', 'macos'].includes(sourceOS ?? '') ? 'browser extension' : 'mobile app / unknown'}`, `Task: recover forgotten Master Password; method: ${['code', 'biometric', 'none'].includes(task.answers.method) ? task.answers.method : 'not selected'}`, `Step: ${step?.title[language] ?? 'unknown'}`, `Expected: ${step?.expected[language] ?? ''}`, `Problem: ${problems[problem] ?? problems[0]}`, ...NORD_PROMPT_URLS].join('\n');
 }
 const NORD_PROMPT_URLS = ['https://support.nordpass.com/hc/en-us/articles/360002376657-What-if-I-forgot-my-NordPass-Master-Password', 'https://support.nordpass.com/hc/en-us/articles/360002378758-Forgot-your-NordPass-Master-password-and-no-recovery-code', 'https://support.nordpass.com/hc/en-us/articles/360002376557-How-to-generate-a-new-Recovery-Code', 'https://support.nordpass.com/hc/en-us/articles/360005811298-How-to-enable-biometric-unlock-in-the-NordPass-Extension'];

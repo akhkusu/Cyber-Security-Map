@@ -143,7 +143,7 @@ describe('cloud password managers', () => {
   it('keeps SSO and missing mobile-version unfinished; requires the guided weak-master change', () => {
     const f = fixture('nordpass'); let data = prepare(f);
     data = setCloudAnswer(data, f.rootId, 'method', 'sso') as CurrentDataset;
-    expect(cloudSetupRoute(data, f.vaultId)).toMatch(/^cloud-sso-unavailable/); expect(cloudManagerReady(data, f.vaultId)).toBe(false);
+    expect(cloudSetupRoute(data, f.vaultId)).toMatch(/^cloud-sso-provider/); expect(cloudManagerReady(data, f.vaultId)).toBe(false);
     data = setCloudAnswer(data, f.rootId, 'method', 'direct') as CurrentDataset;
     data = setCloudAnswer(data, f.vaultId, 'master', 'change') as CurrentDataset;
     expect(cloudSetupRoute(data, f.vaultId)).toBe(`do/${f.appId}/${cloudMasterRecipeId(data, f.vaultId)}/open`); expect(cloudManagerReady(data, f.vaultId)).toBe(false);

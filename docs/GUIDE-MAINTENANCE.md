@@ -133,3 +133,10 @@ Accountの認証、保管庫の復号、保存したパスワードの利用を�
 `protonPassExtraCatalog.ts`のOS別表示、`protonPassExtra.ts`の要求と物理変更の時点、古い設定への誤った復帰の抑止を合わせて検証します。`GuideStep.explanation`は折りたたみの技術説明です。追加パスワードの設定だけをMFAや保存パスワード利用に数えません。完了記録から準備も取り消せます。資料にない追加パスワードの紛失復旧をAccountリセットで代用しません。
 
 NordPassの個人用マスター復旧はnordRecoveryCatalog.tsの説明とnordRecovery.tsの進行・観測を分ける。CLOUD_SOURCESのnordForgotMaster / nordForgotCode / nordBiometricExtension / nordDestructiveResetと既存nordRecoveryが一次根拠。法人・MSPの回復仕様を個人用へ流用しない。環境差、破壊的な全体リセットとの境界、設定済み生体認証、コード発行前後、新マスターの実利用、現在の控え、途中再開、取り消し後の物理変更保持を対にして確認する。
+
+
+## Nordの個人用Google・Apple接続
+
+[NORDPASS-CONNECTED-SIGN-IN.md](NORDPASS-CONNECTED-SIGN-IN.md)を契約とします。nordSsoCatalog.tsの説明、nordSso.tsの進行・Grant・取り消し、NordConnectionSession.tsxの主ガイド保持、cloudObservations.tsの部分的な利用証拠を合わせて確認します。接続設定／提供元認証／Nord認証／保管庫復号／保存パスワード利用を混ぜません。接続先の正しい本人情報は利用者が確認し、Appleのリレーアドレスから別Accountを推測しません。
+
+モデルrevision 5で版付きの接続ストアと補助セッションを検証します。revision 1〜4の同名不明項目と既存データを保持し、復旧・Proton・機種変更等が版を下げないようにします。接続の確認訂正で古い端末認証を復活させず、実際に失効したGrantの再接続は別登録にします。物理接続の記録は取り消しでも削除しません。

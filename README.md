@@ -46,7 +46,7 @@ docker compose down
 
 旧端末を残す場合も、ロック・更新・実際の用途の試用・予備の保管を一操作ずつ案内します。用途を選んだだけで利用可能な予備にせず、未定・故障は区別します。確認の取り消しでは別の作業の記録と、後から実行した消去の状態を保ちます。
 
-Proton Pass・NordPassでは、実際のAccount・保管庫・端末上のアプリを分け、復旧・自動入力・保存したログインの実利用まで案内します。対応OSと、残るSSO・復旧等の経路は[実装契約](docs/CLOUD-MANAGERS-GUIDE.md)で確認できます。
+Proton Pass・NordPassでは、実際のAccount・保管庫・端末上のアプリを分け、復旧・自動入力・保存したログインの実利用まで案内します。対応OSと、残る復旧等の経路は[実装契約](docs/CLOUD-MANAGERS-GUIDE.md)で確認できます。
 
 Proton Pass・NordPassの既存個人保管庫は、任意の機種変更内で、同じAccountへの認証・保管庫の解除・旧端末なしの保存パスワード利用まで確認できます。旧端末だけで使い続ける場合は移行を強制せず、手放す場合は未完了を残して消去を止めます。[機種変更の対応範囲](docs/CLOUD-MANAGERS-PHONE-MOVE.md)をご確認ください。
 
@@ -87,3 +87,5 @@ Apple・Google組込み管理の対応OS・保存方式・機種変更と残る�
 認証アプリ3製品の新規登録は[認証アプリの実装契約](docs/AUTHENTICATOR-GUIDE.md)、Microsoft・Bitwardenの確認済みの移行／復元は[認証アプリの機種変更](docs/AUTHENTICATOR-PHONE-MOVE.md)にまとめています。新端末の既存コード・実際の保存先・対象Accountを確認し、コードの表示だけでログイン済みにはしません。
 
 NordPassの[忘れたマスターの復旧](docs/NORDPASS-RECOVERY.md)では、現在の保管庫用コードか、設定済みの生体認証を使って既存項目を開ける状態へ戻します。機種変更中も通常ガイドを維持し、全体リセットによる項目の削除とは分けて案内します。
+
+既存の個人用Nord AccountのGoogle・Apple接続ログインを追加しました。[専用契約](docs/NORDPASS-CONNECTED-SIGN-IN.md)に、実際の本人情報・独立した復旧・新端末での利用・主ガイドを保つ補助経路・残る範囲を記載しています。

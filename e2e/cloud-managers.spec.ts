@@ -141,7 +141,9 @@ test('cloud exception help is manual, sanitized, keyboard accessible and leaves 
   await open(page, fixture('nordpass', 'ios'));
   await pick(page, 'NordPass'); await pick(page, '別の個人用の保管庫を設定・登録する'); await pick(page, '非公開のNord Account名');
   const sso = page.getByRole('button', { name: 'Google・Appleでログインする', exact: true }); await sso.focus(); await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('接続しているログイン方法を維持する');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('どの提供元でログインしますか？');
+  await pick(page, '別の方法・分からない');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('既存のログイン方法を残す');
   await page.getByRole('button', { name: 'うまくいかない', exact: true }).click();
   await page.locator('.problem-options button').first().click();
   await page.getByRole('button', { name: 'この案内でも解決しない', exact: true }).click();
