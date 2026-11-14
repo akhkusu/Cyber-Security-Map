@@ -102,6 +102,19 @@ export function currentTask(data: Dataset): { asset: Asset; recipe: Recipe; step
   }
   return { asset, recipe, step: recipe.steps[index], index, needsPrerequisites, redirectTo: setup && !setup.startsWith('do/') ? setup : undefined };
 }
+/** Resolve the instruction to display without saving navigation on a page view. */
+export function guidePresentation(saved: Dataset) {
+  let data = saved;
+  const seen = new Set<string>();
+  for (let depth = 0; depth < 40; depth++) {
+    if (seen.has(data.guide.cursor)) return { data: saved, task: undefined };
+    seen.add(data.guide.cursor);
+    const task = currentTask(data), target = task?.redirectTo;
+    if (!target?.startsWith('do/')) return { data, task };
+    data = { ...data, guide: { ...data.guide, cursor: target } };
+  }
+  return { data: saved, task: undefined };
+}
 export function beginRecipe(data: Dataset, assetId: string, recipeId: string, revisit = false): Dataset {
   const asset = cloudSubject(data, assetId) ?? nativeSubject(data, assetId) ?? guideSubject(data, assetId);
   if (!asset) return move(data, 'start');

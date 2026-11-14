@@ -1,4 +1,3 @@
-import { SaveStateContext } from './SaveStateContext';
 import { nativePasswordUseCurrent } from './nativePasswordContext';
 import {guideProgress} from './guideProgress';
 import {resumeAfterRecoveryContact} from './recoveryContacts';
@@ -15,11 +14,11 @@ import {bindTwofasGuidePath,twofasTask} from './twofasEngine';
 import {finishTwofas} from './twofasIntegration';
 import {twofasStore} from './twofasSchemas';
 import { Link } from 'react-router-dom';
-import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, Check, CircleHelp, ExternalLink, LockKeyhole, Mail, RotateCcw, Smartphone } from 'lucide-react';
 import { makeAsset, type Asset, type Dataset, type Language } from './models';
 import { c, PLATFORMS, PROVIDERS, say, SOURCES, TECHNICAL, isExtendedMail, emailRecipe, type Platform } from './guideCatalog';
-import { addRelation, afterRecipe, back, beginRecipe, completeStep, currentTask, deferStep, helpPrompt, isRecorded, move, selectAccount, taskCursor, undoStep } from './guideEngine';
+import { addRelation, afterRecipe, back, beginRecipe, completeStep, currentTask, guidePresentation, deferStep, helpPrompt, isRecorded, move, selectAccount, taskCursor, undoStep } from './guideEngine';
 import { tx } from './ui';
 import { keyTasks } from './hardwareKeySchemas';
 import {keyNordOrigin} from './nordKeyReturn';
@@ -39,25 +38,16 @@ import { managerReady, nativeSetupRoute, nativeVault, NATIVE_NAMES, NATIVE_PRODU
 type Props = { data: Dataset; language: Language; save: (data: Dataset) => Promise<boolean>; protectionParentRef?: string; nordSessionRef?: string };
 const isManager = (a: Asset) => a.type === 'Password manager' || a.services.includes('manager');
 const titleFor = (a: Asset) => a.name;
-export function Guide({ data, language, save: saveData, protectionParentRef, nordSessionRef }: Props) {
+export function Guide({ data: storedData, language, save: saveData, protectionParentRef, nordSessionRef }: Props) {
   const scopePath=nordSessionRef?`/nord-connection/${encodeURIComponent(nordSessionRef)}`:protectionParentRef?`/protect/account/${encodeURIComponent(protectionParentRef)}`:'/guide';
-  const save=(next:Dataset)=>saveData(bindEnteGuidePath(data,bindTwofasGuidePath(data,scopePath==='/guide'?trackMailboxCursor(data,next):next,scopePath),scopePath));
-  const task = currentTask(data), cursor = data.guide.cursor;
+  const data = storedData, presentation = guidePresentation(storedData), task = presentation.task;
+  const save=(next:Dataset)=>saveData(bindEnteGuidePath(storedData,bindTwofasGuidePath(storedData,scopePath==='/guide'?trackMailboxCursor(storedData,next):next,scopePath),scopePath));
+  const cursor = data.guide.cursor;
   const enteId=(task?.redirectTo??cursor).startsWith('ente/')?(task?.redirectTo??cursor).slice(5):undefined;
   const twofasId=(task?.redirectTo??cursor).startsWith('twofas/')?(task?.redirectTo??cursor).slice(7):undefined;
   const [help, setHelp] = useState(false);
   const heading = useRef<HTMLDivElement>(null);
-  useEffect(() => { setHelp(false); heading.current?.focus(); }, [cursor,task?.redirectTo]);
-  const writePending=useContext(SaveStateContext);
-  const redirectAttempt=useRef<{data:Dataset;target:string}|undefined>(undefined);
-  useEffect(() => {
-    const target=task?.redirectTo;
-    if(writePending)return;
-    if(!target?.startsWith('do/')||target===cursor){redirectAttempt.current=undefined;return;}
-    if(redirectAttempt.current?.data===data&&redirectAttempt.current.target===target)return;
-    redirectAttempt.current={data,target};
-    void save({...data,guide:{...data.guide,cursor:target}});
-  }, [data,cursor,task?.redirectTo,writePending]);
+  useEffect(() => { setHelp(false); heading.current?.focus(); }, [cursor,task?.redirectTo,task?.recipe.id,task?.step.id]);
   const go = (route: string) => void save(move(data, route));
   const [route, id, recipeId] = cursor.split('/');
   const resumeDeferred=(key:string)=>{
@@ -115,6 +105,7 @@ export function Guide({ data, language, save: saveData, protectionParentRef, nor
     content = <><h1>{currentTask({...data,guide:{...data.guide,cursor:task.redirectTo}})?.step.title[language]??tx(language,'Open the needed step','必要な手順を開く')}</h1>{button(tx(language, 'Open this step', '手順を開く'), () => go(task.redirectTo!))}{cloudTaskApp && <NordRecoveryLauncher data={data} language={language} save={save} appId={cloudTaskApp.id} />}</>;
   } else if (task?.redirectTo?.startsWith('native-')) { const [nativeRoute, nativeId] = task.redirectTo.split('/'); content = <NativeManagerQuestions key={task.redirectTo} data={data} language={language} save={save} route={nativeRoute} id={nativeId} />;
   } else if (task && !task.needsPrerequisites) {
+    const data = presentation.data, cursor = data.guide.cursor;
     const { asset, recipe, step, index } = task;
     const selected=selectedAuthenticator(data,asset.id);
     const done=(s:typeof step)=>{const record=data.guide.steps[taskCursor(asset.id,cursor.split('/')[2]??recipe.id,s.id)];return record?.status==='done'&&(!(recipe.id.startsWith('native-password:')&&s.id==='test')||nativePasswordUseCurrent(data,asset.id,recipe.id))&&(!(authenticatorScan(recipe.id,s.id)||authenticatorConfirmation(recipe.id,s.id))||record.authenticatorRef===selected?.id);};
@@ -141,7 +132,7 @@ export function Guide({ data, language, save: saveData, protectionParentRef, nor
       {recorded && <p className="subtle">{tx(language, 'This step is already recorded. You can review it without erasing the record.', 'この手順は記録済みです。記録を残したまま見直せます。')}</p>}
       <div className="primary-actions">{step.choices ? step.choices.map(choice => button(say(choice.label, language), () => void save(completeStep(data, choice.next)), true)) : button(say(step.button ?? c('Next', '次へ'), language), () => void save(completeStep(data)))}</div>
       <div className="step-tools"><button className="text-button" onClick={() => setHelp(!help)}><CircleHelp size={17} />{tx(language, 'Something is different', 'うまくいかない')}</button><button className="text-button" onClick={() => void save(deferStep(data))}>{tx(language, 'Do this later', 'この作業を後回しにする')}</button></div>
-      {cloudTaskApp && <NordRecoveryLauncher data={data} language={language} save={save} appId={cloudTaskApp.id} />}
+      {cloudTaskApp && <NordRecoveryLauncher data={storedData} language={language} save={save} appId={cloudTaskApp.id} />}
       {cloudTaskApp && <button className="text-button" onClick={() => {
         const next = deferStep(data);
         void save(move({ ...next, guide: { ...next.guide, managerId: cloudTaskApp.vaultRef, answers: { ...next.guide.answers, [`${cloudTaskApp.vaultRef}:installation`]: cloudTaskApp.id } } }, `cloud-device/${cloudTaskApp.vaultRef}`));

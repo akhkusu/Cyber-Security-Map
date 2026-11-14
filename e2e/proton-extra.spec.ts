@@ -25,7 +25,7 @@ async function open(page: Page, data: CurrentDataset) {
   await page.goto('./'); await page.locator('.language-picker select').selectOption('ja'); await writeSavedVault(page, await sealRawVault(data)); await page.reload();
   await page.getByLabel('アプリの保存用パスフレーズ', { exact: true }).fill(passphrase); await advance(page, '開いて再開する');
 }
-async function confirm(page: Page) { const button = page.locator('.guide-card .primary-actions .button'); await expect(button).toHaveCount(1); await button.click(); await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy', 'false'); }
+async function confirm(page: Page) { const actualPassword=page.getByRole('button',{name:/^(保存したパスワードでログインできました|I signed in with the saved password)$/,exact:true}); if(await actualPassword.isVisible()){await actualPassword.click();await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy','false');return;}  const button = page.locator('.guide-card .primary-actions .button'); await expect(button).toHaveCount(1); await button.click(); await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy', 'false'); }
 async function saved(page: Page) { return currentDatasetSchema.parse((await decryptVault(await readSavedVault(page), passphrase)).data); }
 async function start(page: Page) {
   await page.getByText('Passの追加パスワード（任意）', { exact: true }).click();

@@ -42,7 +42,7 @@ async function open(page: Page, data: CurrentDataset) {
   await writeSavedVault(page, await sealRawVault(data)); await page.reload(); await page.getByLabel(ja ? 'アプリの保存用パスフレーズ' : 'App passphrase', { exact: true }).fill(passphrase); await advance(page, ja ? '開いて再開する' : 'Unlock and continue');
 }
 async function saved(page: Page) { return currentDatasetSchema.parse((await decryptVault(await readSavedVault(page), passphrase)).data); }
-async function primary(page: Page) { if(await answerRecoveryPreparation(page))return; const button = page.locator('.guide-card .primary-actions button'); await expect(button).toHaveCount(1); await button.click(); await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy', 'false'); }
+async function primary(page: Page) { const actualPassword=page.getByRole('button',{name:/^(保存したパスワードでログインできました|I signed in with the saved password)$/,exact:true}); if(await actualPassword.isVisible()){await actualPassword.click();await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy','false');return;}  if(await answerRecoveryPreparation(page))return; const button = page.locator('.guide-card .primary-actions button'); await expect(button).toHaveCount(1); await button.click(); await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy', 'false'); }
 async function prepare(page: Page, f: ReturnType<typeof fixture>, lang = 'ja') {
   await advance(page, f.provider === 'google' ? 'Google' : 'Apple'); await advance(page, f.providerName);
   for (let n = 0; n < 4; n++) await primary(page);

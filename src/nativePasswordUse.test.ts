@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeAsset, newDataset, currentDatasetSchema, type CurrentDataset } from './models';
 import { makeNativeVault, chooseNativeDevice, configureNativeStorage, selectedNativeInstallation, type NativeProduct } from './nativeManagers';
-import { beginRecipe, completeStep, currentTask, deferStep, helpPrompt, move, taskCursor, undoStep } from './guideEngine';
+import { beginRecipe, completeStep, currentTask, guidePresentation, deferStep, helpPrompt, move, taskCursor, undoStep } from './guideEngine';
 import { recordControl } from './controlRecords';
 import { nativeCandidateCopy, nativeCandidateIndependent, nativePreparedCandidate } from './nativePasswordContext';
 import { controlSubject } from './subjects';
@@ -101,6 +101,15 @@ for(const product of ['apple-passwords','google-password-manager'] as const)desc
   });
   it('does not treat an acceptance before a later known password change as the current result',()=>{
     const f=fixture(product,true),d=f.data;d.guide.steps[taskCursor(f.account,f.recipe,'apply')]={status:'done',updatedAt:'2026-01-01T00:00:00Z'};d.securityModel.lifecycle[f.account]={state:'in-use',evidence:'user-confirmed',updatedAt:'2026-11-14T00:00:00Z',accessResetAt:'2026-11-14T00:00:00Z'};expect(currentTask(move(d,taskCursor(f.account,f.recipe,'apply')))?.needsPrerequisites).toBe(true);expect(beginRecipe(d,f.account,f.recipe).guide.cursor).toBe('password-prerequisite');expect(d.guide.steps[taskCursor(f.account,f.recipe,'apply')]?.status).toBe('done');
+  });
+  it('displays a required question without changing the saved cursor, and records its answer in one action',()=>{
+    const f=fixture(product),original=move(f.data,taskCursor(f.account,f.recipe,'apply')) as CurrentDataset,before=structuredClone(original);const view=guidePresentation(original);
+    expect(view.task?.step.id).toBe('candidate-status');expect(view.data.guide.cursor).toBe(taskCursor(f.account,f.recipe,'candidate-status'));expect(original).toEqual(before);expect(view.data.guide.history).toEqual(before.guide.history);expect(view.data.guide.steps).toBe(original.guide.steps);
+    const answered=completeStep(view.data,'save-new');expect(answered.guide.cursor).toBe(taskCursor(f.account,f.recipe,'save-new'));expect(answered.guide.steps[taskCursor(f.account,f.recipe,'candidate-status')]?.status).toBe('done');expect(answered.guide.steps[taskCursor(f.account,f.recipe,'apply')]).toBeUndefined();expect(original).toEqual(before);
+  });
+  it('presents an accepted result without persisting a redirect or regenerating a candidate',()=>{
+    const f=fixture(product);const accepted=choose(choose(prepare(f.data,'paper'),'apply'),'save-new'),original=move(accepted,taskCursor(f.account,f.recipe,'generate')),before=structuredClone(original);const view=guidePresentation(original);
+    expect(view.task?.step.id).toBe('accepted-result');expect(original).toEqual(before);const continued=completeStep(view.data,'save-new');expect(continued.guide.cursor).toBe(taskCursor(f.account,f.recipe,'save-new'));expect(continued.guide.steps[taskCursor(f.account,f.recipe,'generate')]).toEqual(before.guide.steps[taskCursor(f.account,f.recipe,'generate')]);expect(original).toEqual(before);
   });
   it('withdraws a failed retrieval rather than reusing the old candidate proof',()=>{
     const f=fixture(product);let d=choose(prepare(f.data,'paper'),'apply');d=choose(move(d,taskCursor(f.account,f.recipe,'candidate-check')) as CurrentDataset,'candidate-not-ready');expect(nativePreparedCandidate(d,f.account,f.recipe)).toBeUndefined();expect(currentTask(move(d,taskCursor(f.account,f.recipe,'apply')))?.redirectTo).toBe(taskCursor(f.account,f.recipe,'candidate-status'));
