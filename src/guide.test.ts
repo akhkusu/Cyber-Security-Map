@@ -41,9 +41,11 @@ describe('guide records and identity', () => {
     const key = taskCursor(d.assets[0].id, 'email-mfa', 'verify'); d = completeStep(move(d, key)); d = undoStep(d, key);
     expect(d.assets[0].controls.mfa).toBe('implemented'); expect(d.assessmentAnswers[answerKey]).toEqual(answer);
   });
-  it('skips enrollment when already enabled, without adding a completed control early', () => {
-    const d = ready(); const state = move(d, taskCursor(d.assets[0].id, 'email-mfa', 'state'));
-    const next = completeStep(state, 'verify'); expect(currentTask(next)?.step.id).toBe('verify'); expect(next.assets[0].controls.mfa).toBe('unknown');
+  it('records an observed enabled state once and advances without asking for the same confirmation again', () => {
+    const d = ready(),id=d.assets[0].id,state=move(d,taskCursor(id,'email-mfa','state'));
+    const next=completeStep(state,'verify');expect(next.guide.cursor).toBe(`auth-location/${id}`);expect(next.assets[0].controls.mfa).toBe('verified');expect(next.assets[0].controls.recovery).toBe('unknown');
+    expect(next.guide.steps[taskCursor(id,'email-mfa','state')]).toBeUndefined();expect(next.guide.steps[taskCursor(id,'email-mfa','verify')]?.status).toBe('done');expect(next.actions.filter(a=>a.controlId==='mfa')).toHaveLength(1);
+    for(const step of ['enable','enroll','auth-scan','auth-confirm'])expect(next.guide.steps[taskCursor(id,'email-mfa',step)]).toBeUndefined();
   });
   it('preserves the precise step across encrypted save/reload, including deferral and back', async () => {
     const d = completeStep(ready()); const encrypted = await createEncryptedVault('a long storage-only phrase', d);
@@ -86,15 +88,15 @@ describe('map and exception help', () => {
 });
 describe('maintainable bilingual recipes', () => {
   it('has valid transitions and official sources for all platform and product branches', () => {
-    const recipes = [...(['proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx'] as const).flatMap(p => [emailRecipe(p, 'web'), recoveryRecipe(p, 'web')]), emailRecipe('apple', 'ios'), emailRecipe('apple', 'macos'), emailRecipe('apple', 'web'), emailRecipe('google', 'web'), emailRecipe('microsoft', 'web'), recoveryRecipe('apple', 'web'), recoveryRecipe('google', 'web'), managerRecipe('bitwarden', 'ios', 'eu'), managerRecipe('1password', 'windows', 'us'), ...['ios', 'macos', 'android', 'windows'].map(deviceRecipe)];
+    const recipes = [...(['proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx'] as const).flatMap(p => [emailRecipe(p, 'web'), recoveryRecipe(p, 'web')]), emailRecipe('apple', 'ios'), emailRecipe('apple', 'macos'), emailRecipe('apple', 'web'), emailRecipe('google', 'web'), emailRecipe('microsoft', 'web'), recoveryRecipe('apple', 'web'), recoveryRecipe('google', 'web'), recoveryRecipe('microsoft','web'), managerRecipe('bitwarden', 'ios', 'eu'), managerRecipe('1password', 'windows', 'us'), ...['ios', 'macos', 'android', 'windows'].map(deviceRecipe)];
     const d = ready(); recipes.push(passwordRecipe('bitwarden', d.assets[0], 'ios'), passwordRecipe('1password', d.assets[0], 'macos'));
     for (const recipe of recipes) {
       expect(new Set(recipe.steps.map(s => s.id)).size).toBe(recipe.steps.length);
       for (const step of recipe.steps) {
         for (const text of [step.title, step.place, step.action, step.expected]) { expect(text.en.length).toBeGreaterThan(4); expect(text.ja.length).toBeGreaterThan(2); }
         expect(step.sources.length).toBeGreaterThan(0);
-        for (const s of step.sources) { expect(SOURCES[s].checked).toBe('2026-11-13'); expect(SOURCES[s].url).toMatch(/^https:\/\//); }
-        for (const choice of step.choices ?? []) expect(recipe.steps.some(s => s.id === choice.next)).toBe(true);
+        for (const s of step.sources) { expect(SOURCES[s].checked).toMatch(/^\d{4}-\d{2}-\d{2}$/); expect(SOURCES[s].checked <= '2026-11-14').toBe(true); expect(SOURCES[s].url).toMatch(/^https:\/\//); }
+        for (const choice of step.choices ?? []) expect(choice.next === '$complete' || recipe.steps.some(s => s.id === choice.next)).toBe(true);
       }
     }
   });

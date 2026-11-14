@@ -1,3 +1,4 @@
+import {hasSavedPasswordCandidate,standardPasswordScope} from './passwordContext';
 import { recordedUnavailable } from './recordAvailability';
 import { recordProtonExtra } from './protonPassExtra';
 import { AUTHENTICATORS, authSources, authenticatorPrerequisiteRoute, authenticatorConfirmation, authenticatorScan, authenticatorScanStep, authenticatorSetupRecipe, authenticatorSetupRoute, requireAuthenticatorRoots, selectedAuthenticator, type AuthenticatorProduct } from './authenticatorGuide';
@@ -42,7 +43,7 @@ function baseRecipeFor(data: Dataset, asset: Asset, recipeId: string): Recipe | 
     if (asset.provider === 'mailcom' || asset.provider === 'gmx') return undefined;
     if (nativeVault(data, data.guide.managerId)) return builtinPasswordRecipe(data, asset);
     const manager = data.assets.find(a => a.id === data.guide.managerId);
-    if (manager && (['apple', 'google', 'microsoft'].includes(asset.provider ?? '') || isExtendedMail(asset.provider))) return passwordRecipe(manager.provider, asset, data.guide.answers[`${asset.id}:platform`] ?? 'web');
+    if (manager && ['bitwarden','1password'].includes(manager.provider??'') && (['apple', 'google', 'microsoft'].includes(asset.provider ?? '') || isExtendedMail(asset.provider))) return passwordRecipe(manager.provider, asset, data.guide.answers[`${asset.id}:platform`] ?? 'web',data.guide.answers[`${manager.id}:region`]??'us',data);
   }
   if (recipeId === 'device' && ['ios', 'android', 'macos', 'windows'].includes(platform)) return deviceRecipe(platform);
 }
@@ -81,6 +82,9 @@ export function currentTask(data: Dataset): { asset: Asset; recipe: Recipe; step
   if (recipeId.startsWith('authenticator-setup:')) { const prerequisite = authenticatorPrerequisiteRoute(data, assetId); if (prerequisite) return { asset, recipe, step: recipe.steps[index], index, redirectTo: prerequisite }; }
   const bound = recipeId.startsWith('native-password:') ? nativeInstallation(data, recipeId.slice('native-password:'.length)) : undefined;
   const needsPrerequisites = (recipeId === 'password' || recipeId.startsWith('native-password:')) && (!isRecorded(asset, 'recovery') || !managerReady(data, bound?.vaultRef, bound?.id));
+  const standardManager=recipe.id==='password'?data.assets.find(a=>a.id===data.guide.managerId):undefined;
+  if(standardManager?.provider==='1password'&&!needsPrerequisites&&!['ios','android','macos','windows'].includes(data.guide.answers[`${standardManager.id}:platform`]??''))return {asset,recipe,step:recipe.steps[index],index,redirectTo:`password-manager-device/${standardManager.id}/${asset.id}`};
+  if(recipe.id==='password'&&stepId==='apply'&&!needsPrerequisites&&!hasSavedPasswordCandidate(data,assetId))return {asset,recipe,step:recipe.steps[index],index,redirectTo:taskCursor(assetId,recipeId,'save-candidate')};
   if (authenticatorScan(recipeId, stepId)) {
     const route = authenticatorSetupRoute(data, assetId, data.guide.cursor);
     return { asset, recipe, step: recipe.steps[index], index, redirectTo: route !== data.guide.cursor ? route : undefined };
@@ -165,6 +169,16 @@ export function completeStep(data: Dataset, jump?: string): Dataset {
   if (task.redirectTo) return move(data, task.redirectTo);
   if (task.needsPrerequisites) return move(data, 'password-prerequisite');
   const { asset, recipe, step, index } = task;
+  if(step.control && step.choices && !jump)return data;
+  if(jump === '$complete' && !step.choices?.some(c=>c.next==='$complete'))return data;
+  if(jump && jump !== '$complete' && !recipe.steps.some(s=>s.id===jump))return data;
+  const choice = jump ? step.choices?.find(c => c.next === jump) : undefined;
+  if (choice?.record === false) {
+    const target = recipe.steps.find(s => s.id === choice.next);
+    const unconfirmed=step.control&&data.guide.steps[data.guide.cursor]?.status==='done'?undoStep(data,data.guide.cursor):data;
+    return target ? move(unconfirmed, taskCursor(asset.id, recipe.id, target.id)) : data;
+  }
+  if(choice?.confirmNext){const target=recipe.steps.find(s=>s.id===choice.next);return target?.control?completeStep(move(data,taskCursor(asset.id,recipe.id,target.id))):data;}
   const now = new Date().toISOString();
   const key = data.guide.cursor;
   const requiredGuideSteps = recipe.id.startsWith('cloud-') ? cloudRequiredSteps(asset.id, recipe, step) : [];
@@ -173,7 +187,7 @@ export function completeStep(data: Dataset, jump?: string): Dataset {
   const old = data.guide.steps[key];
   const selectedApp = selectedAuthenticator(data, asset.id);
   const enrollment = data.guide.steps[data.guide.answers[`auth:${asset.id}:enrollment`]];
-  const record = { ...old, ...(((recipe.id === 'cloud-onboard' && step.id === 'sso-state') || (recipe.id.startsWith('cloud-password:') && step.id === 'manager-reopen-state')) && jump ? { nordSsoChoice: 'v1', nextStepId: jump } : {}), ...(selectedApp && (authenticatorScan(recipe.id, step.id) || authenticatorConfirmation(recipe.id, step.id)) ? { authenticatorRef: selectedApp.id } : {}), status: 'done' as const, updatedAt: now, ...(step.control ? {
+  const record = { ...old, ...(recipe.id==='password'&&step.id==='save-candidate'?{managerRef:data.guide.managerId,managerScope:standardPasswordScope(data)}:{}), ...(((recipe.id === 'cloud-onboard' && step.id === 'sso-state') || (recipe.id.startsWith('cloud-password:') && step.id === 'manager-reopen-state')) && jump ? { nordSsoChoice: 'v1', nextStepId: jump } : {}), ...(selectedApp && (authenticatorScan(recipe.id, step.id) || authenticatorConfirmation(recipe.id, step.id)) ? { authenticatorRef: selectedApp.id } : {}), status: 'done' as const, updatedAt: now, ...(step.control ? {
     beforeControl: old?.beforeControl ?? asset.controls[step.control] ?? 'unknown',
     beforeEvidence: old?.beforeEvidence ?? asset.controlEvidence[step.control] ?? 'not-assessed',
     beforeAnswer: old ? old.beforeAnswer : (answerKey ? data.assessmentAnswers[answerKey] : undefined),
@@ -193,7 +207,8 @@ export function completeStep(data: Dataset, jump?: string): Dataset {
   next = recordProtonExtra(next, key, asset.id, recipe.id, step.id, requiredGuideSteps, now);
   const nextStep = jump ? recipe.steps.find(s => s.id === jump) : recipe.steps[index + 1];
   if (nextStep && recipe.id.startsWith('cloud-extra-')) next = { ...next, guide: { ...next.guide, answers: { ...next.guide.answers, [`${asset.id}:proton-extra-pending`]: taskCursor(asset.id, recipe.id, nextStep.id) } } };
-  return nextStep ? move(next, taskCursor(asset.id, recipe.id, nextStep.id)) : afterRecipe(next, asset, recipe.id);
+  const moved = nextStep ? move(next, taskCursor(asset.id, recipe.id, nextStep.id)) : afterRecipe(next, asset, recipe.id);
+  return step.recoveryEmailLink ? move({...moved,guide:{...moved.guide,answers:{...moved.guide.answers,[`recovery-mail-return:${asset.id}`]:moved.guide.cursor}}},`recovery-email-link/${asset.id}`) : moved;
 }
 export function undoStep(data: Dataset, key: string): Dataset {
   const record = data.guide.steps[key];

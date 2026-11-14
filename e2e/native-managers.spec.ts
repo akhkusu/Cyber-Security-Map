@@ -41,9 +41,9 @@ for (const [product, os] of [['apple-passwords', 'ios'], ['apple-passwords', 'ma
   test(`${product} ${os}: existing account, inline setup, keep strong password, typed map and loss check`, async ({ page, context }) => {
     const external: string[] = []; context.on('request', r => { if (!r.url().startsWith('http://127.0.0.1:4174')) external.push(r.url()); });
     const original = fixture(product, os); await open(page, original); await setup(page, product, os);
-    await advance(page, '確認しました'); await advance(page, '固有の生成済みパスワードを使う');
+    await advance(page, '確認しました'); await advance(page, '今のパスワードを使う');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('保存した情報でログインする');
-    await advance(page, 'ログインできました');
+    await advance(page, '保存したパスワードでログインできました');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('次に、どの端末を対策しますか？');
     const data = currentDatasetSchema.parse((await decryptVault(await readSavedVault(page), passphrase)).data);
     expect(data.assets).toHaveLength(2); expect(data.assets[0].id).toBe(original.assets[0].id); expect(data.assets[0].services).toEqual(['mail']);
@@ -77,7 +77,7 @@ test('native setup returns from missing account authentication without changing 
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('保管庫の基盤アカウントを保護する');
   await advance(page, 'アカウントの認証を設定・確認する');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('アカウントの設定を開く');
-  await mfaState(page, 'ios'); await advance(page, 'すでに有効になっている'); await advance(page, '確認しました');
+  await mfaState(page, 'ios'); await advance(page, 'すでに有効になっている');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('パスワード管理を開く');
   const restored = currentDatasetSchema.parse((await decryptVault(await readSavedVault(page), passphrase)).data);
   expect(restored.guide.accountId).toBe(primary.id); expect(restored.assets).toHaveLength(3);

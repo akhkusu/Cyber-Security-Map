@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 import { makeAsset, newDataset, currentDatasetSchema } from '../src/models';
 import { decryptVault } from '../src/crypto';
 import { evaluateAccess } from '../src/securityModel';
-import { advance, mfaState, passphrase, prepareAuthenticator, readSavedVault, sealRawVault, writeSavedVault } from './helpers';
+import { advance, reachMfaMethodChoice, passphrase, prepareAuthenticator, readSavedVault, sealRawVault, writeSavedVault } from './helpers';
 
 test.setTimeout(60000);
 for (const [product, os, manual, sync] of [
@@ -110,7 +110,7 @@ test('after service recovery, protect the actual code-sync account and return wi
   await page.getByLabel('アプリの保存用パスフレーズ', { exact: true }).fill(passphrase); await advance(page, '開いて再開する');
   await advance(page, 'つながりは記録しない'); await expect(page.getByRole('heading', { level: 1 })).toHaveText('コードを保存するアカウントも保護する');
   await expect(page.locator('.guide-card')).toContainText('実際の同期用Google'); await advance(page, 'Googleの認証を設定・確認する');
-  await mfaState(page, 'web'); await advance(page, 'すでに有効になっている'); await advance(page, '確認しました');
+  await reachMfaMethodChoice(page); await advance(page, 'すでに有効になっている');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('同期先アカウントの復旧を備える'); await advance(page, 'Googleの復旧手段を備える');
   await advance(page); await advance(page, '予備の手段を確保しました');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('どのパスワードマネージャーを使いますか？');

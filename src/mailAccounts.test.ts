@@ -76,6 +76,10 @@ describe('mail identities and the main email', () => {
     expect(d.guide.cursor).toBe(cursor); expect(mailPlan(d)!.primaryRef).toBe(p.primaryRef); expect(d.assets[0].controls.mfa).toBe('unknown');
     const next = continueAfterMailboxes(d); expect(next.guide.accountId).toBe(p.primaryRef); expect(mailPlan(next)!.phase).toBe('paused');
   });
+  it('resumes the contact identity question after switching between mailboxes',()=>{
+    let d=add(newDataset('ja'),'main@example.com');d=add(d,'backup@example.com');const p=mailPlan(d)!,id=p.primaryRef!,cursor=`recovery-email-link/${id}`;
+    d=beginMailboxChecks(d,id,'ja');d=trackMailboxCursor(d,move(d,cursor));d=beginMailboxChecks(d,p.accountRefs[1],'ja');d=beginMailboxChecks(d,id,'ja');expect(d.guide.cursor).toBe(cursor);expect(d.guide.accountId).toBe(id);expect(mailPlan(d)!.primaryRef).toBe(id);expect(d.assets[0].controls.mfa).toBe('unknown');
+  });
   it('keeps work/school permission checks and prevents removal of a queued email record', () => {
     const d = add(newDataset('ja'), 'work@example.com', 'work'), p = mailPlan(d)!;
     const next = beginMailboxChecks(d, p.primaryRef!, 'ja'); expect(next.guide.cursor).toBe(`managed/${p.primaryRef}`);

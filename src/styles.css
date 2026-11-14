@@ -102,4 +102,5 @@
 .mail-accounts>.button,.mail-match>.text-button{margin-top:.75rem}
 
 .task-context>span:first-child{min-width:0;flex:1 1 12rem;overflow-wrap:anywhere}
+.task-context>span:first-child>small{display:block}
 .guide-main>.records{margin:0 0 1rem;padding:.75rem 1rem;border:1px solid #dce6df;border-radius:.75rem}

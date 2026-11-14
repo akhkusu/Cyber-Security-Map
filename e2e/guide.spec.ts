@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createWorkspace, prepareAuthenticator, chooseApple, mfaState, advance, passphrase, exportVault, readSavedVault, sealRawVault, writeSavedVault } from './helpers';
+import { createWorkspace, answerRecoveryPreparation, prepareAuthenticator, chooseApple, mfaState, advance, passphrase, exportVault, readSavedVault, sealRawVault, writeSavedVault } from './helpers';
 import { decryptVault } from '../src/crypto';
 import { newDataset, makeAsset } from '../src/models';
 
@@ -44,7 +44,7 @@ test('resume exact step, back, different-screen branch, safe manual AI help, def
   await expect(page.getByRole('button', { name: '相談文をコピーする' })).toHaveCount(0);
   await advance(page, 'この案内でも解決しない'); await expect(page.getByLabel('AIへの相談文')).toHaveValue(/最新の公式資料/);
   await advance(page, 'Webの手順へ切り替える'); await mfaState(page, 'web');
-  await advance(page, 'すでに有効になっている'); await advance(page, '確認しました');
+  await advance(page, 'すでに有効になっている');
   await page.getByText('作業の完了記録 · 1件', { exact: true }).click(); await advance(page, '取り消す');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('有効になった状態を確認する');
   await advance(page, 'この作業を後回しにする');
@@ -54,7 +54,7 @@ test('resume exact step, back, different-screen branch, safe manual AI help, def
 });
 
 test('a new user can finish Bitwarden, save a generated important password and continue', async ({ page }) => {
-  await createWorkspace(page); await chooseApple(page); await mfaState(page); await advance(page, 'すでに有効になっている'); await advance(page, '確認しました');
+  await createWorkspace(page); await chooseApple(page); await mfaState(page); await advance(page, 'すでに有効になっている');
   await advance(page, '分からない・つながりを記録しない'); await advance(page); await advance(page, '予備の手段を確保しました'); await advance(page, '独立した予備の電話・電話番号');
   await page.getByRole('button', { name: /^Bitwarden/ }).click(); await advance(page, 'このマネージャーを追加する');
   await page.getByRole('button', { name: /登録済みの端末/ }).click(); await advance(page, 'EU · vault.bitwarden.eu');
@@ -65,8 +65,9 @@ test('a new user can finish Bitwarden, save a generated important password and c
   await advance(page); await advance(page, '安全な場所へ保管しました'); await advance(page, '確認しました'); await advance(page, 'これから設定する'); await prepareAuthenticator(page); await advance(page); await advance(page, 'コードが受け付けられました');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('2段階ログインの復旧コードを保管する');
   await advance(page, '復旧コードを保管しました'); await advance(page, 'ログインできました');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('現在のログイン情報を先に保存する');
-  await advance(page); await advance(page); await advance(page); await advance(page); await advance(page); await advance(page, 'ログインできました');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('このアカウントの保存項目を探す');
+  await advance(page,'まだ保存していない');await advance(page);await advance(page,'新しく生成して変更する');
+  await advance(page);await advance(page);await advance(page,'候補を保存しました');await advance(page);await advance(page);await advance(page,'保存したパスワードでログインできました');await advance(page,'整理しました');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('次に、どの端末を対策しますか？');
   const d = (await decryptVault(await exportVault(page), passphrase)).data;
   expect(d.assets.find(a => a.provider === 'bitwarden')?.controls).toMatchObject({ mfa: 'verified', recovery: 'verified' });
@@ -148,7 +149,7 @@ for (const provider of ['Gmail / Google', 'Outlook / Microsoft', 'Proton Mail', 
     const notEnabled = page.getByRole('button', { name: 'まだ有効になっていない', exact: true });
     if (before === 'どの認証アプリを使いますか？') await prepareAuthenticator(page);
     else if (await notEnabled.count()) await notEnabled.click();
-    else await page.locator('.primary-actions button').first().click();
+    else if(!await answerRecoveryPreparation(page)) await page.locator('.primary-actions button').first().click();
     await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy', 'false'); await expect(heading).not.toHaveText(before!);
     if (before === '有効になった状態を確認する' || before === '有効な状態を確認する') break;
   }
@@ -159,7 +160,7 @@ for (const provider of ['Gmail / Google', 'Outlook / Microsoft', 'Proton Mail', 
   while ((await page.getByRole('heading', { level: 1 }).textContent()) !== '予備の手段の場所を記録する') {
     if (++count > 8) throw new Error('Recovery route did not finish');
     const heading = page.getByRole('heading', { level: 1 }), before = await heading.textContent();
-    await page.locator('.primary-actions button').first().click(); await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy', 'false'); await expect(heading).not.toHaveText(before!);
+    if(!await answerRecoveryPreparation(page))await page.locator('.primary-actions button').first().click(); await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy', 'false'); await expect(heading).not.toHaveText(before!);
   }
   await advance(page, 'つながりは記録しない');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('どのパスワードマネージャーを使いますか？');

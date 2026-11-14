@@ -85,8 +85,24 @@ export async function reachMfaMethodChoice(page: Page, language: 'ja'|'en' = 'ja
   const title=language==='ja'?'すでに認証は有効になっていますか？':'Is two-step verification already on?';
   for(let n=0;n<8;n++){
     if(await page.getByRole('heading',{level:1,name:title,exact:true}).isVisible())return;
+    if(await answerRecoveryPreparation(page))continue;
     await page.locator('.guide-card .primary-actions .button').first().click();
     await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy','false');
   }
   await expect(page.getByRole('heading',{level:1})).toHaveText(title);
+}
+
+export async function answerRecoveryPreparation(page: Page): Promise<boolean> {
+  const en=(await page.locator('html').getAttribute('lang'))==='en';
+  const labels=[
+    ['再設定用の電話番号を確認する','Check a recovery phone'],
+    ['登録済みの番号でSMSを受信できる','The registered number is mine and can receive texts'],
+    ['登録済みのスマホを確認しました','I checked the registered phone'],
+    ['登録済みの認証アプリ・電話で確認する','Check an existing authenticator or phone'],
+    ['本人確認が受け付けられました','Microsoft accepted the verification'],
+    ['登録済みの別メールを確認する','Check a registered email'],
+    ['メインのスマホなしでメールを読めました','I read the mailbox without my main phone'],
+  ];
+  for(const pair of labels){const button=page.getByRole('button',{name:pair[en?1:0],exact:true});if(await button.isVisible()){await button.click();await expect(page.locator('.workspace-body')).toHaveAttribute('aria-busy','false');return true;}}
+  return false;
 }

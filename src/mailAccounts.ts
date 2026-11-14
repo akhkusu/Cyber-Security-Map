@@ -155,7 +155,7 @@ export function beginMailboxChecks(data: Dataset, id: string, language: Language
 }
 function mailCursorFor(id:string,cursor:string):boolean{
   const parts=cursor.split('/');
-  return parts[1]===id&&(parts[0]==='do'||parts[0]==='platform'||parts[0]==='managed'||parts[0]==='recorded'||parts[0]==='auth-location'||parts[0]==='recovery-location'||parts[0].startsWith('authenticator-'));
+  return parts[1]===id&&(parts[0]==='do'||parts[0]==='platform'||parts[0]==='managed'||parts[0]==='recorded'||parts[0]==='auth-location'||parts[0]==='recovery-location'||parts[0]==='recovery-email-link'||parts[0].startsWith('authenticator-'));
 }
 export function resumeMailboxStep(data:Dataset,id:string,cursor:string):Dataset{
   const p=mailPlan(data);if(!p?.accountRefs.includes(id)||!mailCursorFor(id,cursor))return move(data,cursor);
