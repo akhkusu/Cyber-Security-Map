@@ -6,7 +6,7 @@ import { privatePassphraseStep } from './passphraseCatalog';
 import { cloudAnswer, cloudEnvironmentReady, cloudInstallation, cloudVault } from './cloudManagers';
 import { nordRecoveryApplied, nordRecoveryStale, type NordRecoveryTask } from './nordRecoverySchemas';
 
-export type NordStep = GuideStep & { kind?: 'question' | 'blocked' | 'finished'; choicesNord?: { value: string; label: Copy }[] };
+export type NordStep = GuideStep & { unavailableMapRef?: string; kind?: 'question' | 'blocked' | 'finished'; choicesNord?: { value: string; label: Copy }[] };
 export const NORD_RECOVERY_SOURCES = ['nordForgotMaster', 'nordForgotCode', 'nordRecovery', 'nordBiometricExtension', 'nordDestructiveReset', 'nordAccount', 'effDice'] as const;
 export const nordNativeSource = (app: Record<string, unknown>) => app.nordRecoverySurface === 'native-v1';
 export function nordBiometricEligible(data: Dataset, appId: string) {

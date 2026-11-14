@@ -1,3 +1,4 @@
+import { recordedUnavailable } from './recordAvailability';
 import { recordProtonExtra } from './protonPassExtra';
 import { AUTHENTICATORS, authSources, authenticatorPrerequisiteRoute, authenticatorConfirmation, authenticatorScan, authenticatorScanStep, authenticatorSetupRecipe, authenticatorSetupRoute, requireAuthenticatorRoots, selectedAuthenticator, type AuthenticatorProduct } from './authenticatorGuide';
 import { recordAuthenticatorObservation, undoAuthenticatorObservation } from './authenticatorObservations';
@@ -68,6 +69,11 @@ export function currentTask(data: Dataset): { asset: Asset; recipe: Recipe; step
   const index = recipe?.steps.findIndex(s => s.id === stepId) ?? -1;
   if (recipe && recipeId.startsWith('authenticator-setup:') && recipe.id !== recipeId) return { asset, recipe, step: recipe.steps[0], index: 0, redirectTo: authenticatorSetupRoute(data, assetId) };
   if (!recipe || index < 0) return;
+  const contextRef = recipeId==='password'?data.guide.managerId:recipeId.startsWith('cloud-password:') || recipeId.startsWith('native-password:') || recipeId.startsWith('authenticator-setup:') ? recipeId.split(':')[1] : undefined;
+  const loginApp=cloudInstallation(data,recipeId.startsWith('cloud-password:')?recipeId.split(':')[1]:assetId);
+  const loginVault=cloudVault(data,loginApp?.vaultRef), onlineStep=recipeId==='cloud-onboard'&&(/^(sign-in|sso-)/.test(stepId));
+  const unavailable = recordedUnavailable(data,[assetId,contextRef,...(onlineStep?[loginVault?.authenticationAccountRef]:[])]);
+  if(unavailable)return {asset,recipe,step:recipe.steps[index],index,redirectTo:`record-unavailable/${unavailable}`};
   const cloudRedirect = cloudTaskRedirect(data, asset, recipe, recipe.steps[index]);
   if (cloudRedirect) return { asset, recipe, step: recipe.steps[index], index, ...(cloudRedirect === 'password-prerequisite' ? { needsPrerequisites: true } : { redirectTo: cloudRedirect }) };
   if (recipeId.startsWith('authenticator-setup:')) { const prerequisite = authenticatorPrerequisiteRoute(data, assetId); if (prerequisite) return { asset, recipe, step: recipe.steps[index], index, redirectTo: prerequisite }; }

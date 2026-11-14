@@ -7,7 +7,7 @@ import { cloudInstallation, cloudManagerReady, cloudVault } from './cloudManager
 export type MapItem = Asset & { entityKind?: SecurityEntity['kind'] };
 export type MapConnection = RecoveryDependency & { typed?: boolean };
 export const entityKindLabel = (kind: SecurityEntity['kind'], language: Language) => ({
-  person: ['Person', '利用者・協力者'], organization: ['Organization', '組織'], installation: ['App on a device', '端末上のアプリ'], vault: ['Password store', 'パスワード保管庫'], credential: ['Login credential', 'ログインの手段'], identifier: ['Identifier', '識別子'], 'phone-line': ['Phone line', '電話回線'], 'security-key': ['Security key', 'セキュリティキー'], 'data-set': ['Stored data', '保存データ'], grant: ['Access permission', 'アクセス権限'], 'recovery-arrangement': ['Recovery arrangement', '復旧の取り決め'], })[kind][language === 'ja' ? 1 : 0];
+  session: ['Signed-in session', 'ログイン中の状態'], person: ['Person', '利用者・協力者'], organization: ['Organization', '組織'], installation: ['App on a device', '端末上のアプリ'], vault: ['Password store', 'パスワード保管庫'], credential: ['Authentication or recovery method', '認証・復旧の手段'], identifier: ['Identifier', '識別子'], 'phone-line': ['Phone line', '電話回線'], 'security-key': ['Security key', 'セキュリティキー'], 'data-set': ['Stored data', '保存データ'], grant: ['Access permission', 'アクセス権限'], 'recovery-arrangement': ['Recovery arrangement', '復旧の取り決め'], })[kind][language === 'ja' ? 1 : 0];
 export function mapItems(data: Dataset, language: Language): MapItem[] {
   if (data.version !== 2) return data.assets;
   return [...data.assets, ...data.securityModel.entities.filter(e => !((e.kind === 'vault' || e.kind === 'installation') && e.mergedIntoRef)).map((e): MapItem => {
@@ -28,6 +28,7 @@ export function mapConnections(data: Dataset): MapConnection[] {
 export function typedMapStatus(data: Dataset, node: MapItem, language: Language) {
   const yes = language === 'ja';
   const entity = data.version === 2 ? data.securityModel.entities.find(e => e.id === node.id) : undefined;
+  if(entity&&(entity.kind==='session'||entity.kind==='grant')&&entity.expiresAt&&Date.parse(entity.expiresAt)<=Date.now())return {tone:'needs-work',label:yes?'記録した有効期限を過ぎています':'Recorded expiry has passed',reason:yes?'正規の設定で現在の状態を確認する':'Check the current state in official settings'};
   const app = authenticator(data, node.id);
   if (app) {
     const used = data.version === 2 && app.controls?.codeUse === 'verified' && data.securityModel.routes.some(r => r.purpose === 'second-step' && r.contexts.includes('new-device') && data.securityModel.facts.some(f => f.id === (r.requirements.kind === 'fact' ? r.requirements.factId : '') && f.requiredRefs.includes(app.id)) && evaluateAccess(data.securityModel, r.id, { context: 'new-device', now: new Date().toISOString() }).state === 'available');
@@ -74,7 +75,10 @@ export function mapAffectedItems(data: Dataset, missing: string, language: Langu
   let changed = true;
   while (changed) { changed = false; for (const d of data.dependencies) if (affected.has(d.recoveryAssetId) && !affected.has(d.assetId)) { affected.add(d.assetId); changed = true; } }
   if (data.version === 2) {
-    for (const r of data.securityModel.relations) if (r.evidence === 'user-confirmed' && r.kind === 'installed-on' && r.toRef === missing) affected.add(r.fromRef);
+    const reverse = new Set(['installed-on','stored-in','synced-via','restores-from']);
+    const forward = new Set(['authenticates-to','unlocks','decrypts','session-for','grants-access-to','delegated-to','recovers','requires-for-restore','backs-up','hosts','routes','manages-domain']);
+    let expanded=true;
+    while(expanded){expanded=false;for(const relation of data.securityModel.relations){if(relation.evidence!=='user-confirmed')continue;const from=reverse.has(relation.kind)?relation.toRef:relation.fromRef,to=reverse.has(relation.kind)?relation.fromRef:relation.toRef;if((reverse.has(relation.kind)||forward.has(relation.kind))&&affected.has(from)&&!affected.has(to)){affected.add(to);expanded=true;}}for(const edge of data.dependencies)if(affected.has(edge.recoveryAssetId)&&!affected.has(edge.assetId)){affected.add(edge.assetId);expanded=true;}}
     const now = new Date().toISOString();
     for (const r of data.securityModel.routes) {
       const context = r.contexts.includes('enrollment') ? 'enrollment' : r.contexts.includes('new-device') ? 'new-device' : 'normal';

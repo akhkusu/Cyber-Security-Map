@@ -77,7 +77,7 @@ for (const product of ['proton-pass', 'nordpass'] as const) for (const from of [
     await page.getByRole('link', { name: 'Security Map', exact: true }).first().click();
     const app = cloudInstallation(data, appId)!; await page.locator('.map-node').filter({ has: page.getByText(app.label, { exact: true }) }).click();
     await expect(page.locator('.map-details')).toContainText('保存パスワードの利用記録あり');
-    await page.getByLabel('失った端末を選ぶ').selectOption('old'); await expect(page.locator('.access-records')).toContainText('この条件での利用記録あり');
+    await page.getByLabel('使えない項目を選ぶ').selectOption('old'); await expect(page.locator('.access-records')).toContainText('この条件での利用記録あり');
     await page.getByRole('link', { name: 'この機種変更を続ける', exact: true }).click();
     await expect(page).toHaveURL(/(?:#)?\/phone\/cloud-phone$/);
     await expect(page.locator('.phone-guide')).toBeVisible();

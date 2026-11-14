@@ -1,3 +1,4 @@
+import { mapRecordEpoch, recordedUnavailable } from './recordAvailability';
 import { DataUpgradeConflict, makeAsset, upgradeDataset, type CurrentDataset, type Dataset, type Language } from './models';
 import { recordCloudObservation } from './cloudObservations';
 import { nordSsoBinding } from './nordSsoSchemas';
@@ -45,11 +46,13 @@ export function startPhoneNordRecovery(data: Dataset, phoneId: string, vaultId: 
   return startNordRecovery(next, app.id, `/phone/${phoneId}`, phoneId);
 }
 export function currentNordStep(data: Dataset, task: NordRecoveryTask): NordStep | undefined {
+  const guard=(step:NordStep|undefined):NordStep|undefined=>{const online=step&&(['target-account','target-mfa','target-sso-sign-in'].includes(step.id)||step.id.startsWith('sso-'));const missing=recordedUnavailable(data,[task.targetRef,...(online?[task.rootRef]:[])]);return missing?{id:'record-unavailable',unavailableMapRef:missing,kind:'blocked',title:c('A required recovery item is unavailable','復旧に必要な項目が利用できません'),place:c('Security Map','Security Map'),action:c('Keep the existing recovery task. Review the actual item in Security Map before continuing.','既存の復旧作業を保持し、Security Mapで実際の項目の状態を確認してから続けます。'),expected:c('The actual item is usable; changing a record alone is not recovery.','実際に利用できる状態であること。記録の訂正だけでは復旧しません。'),sources:[]}:step;};
+  const reset=mapRecordEpoch(data,[task.targetRef]).map(([,t])=>Date.parse(t));
   const steps = nordRecoverySteps(data, task), index = steps.findIndex(s => s.id === task.cursor);
   const end = index < 0 ? steps.length - 1 : index;
   // A route or stale cursor cannot skip unrecorded preparation or a question.
-  for (const s of steps.slice(0, end)) if (s.kind === 'blocked' || (s.kind === 'question' ? !task.answers[s.id] : s.kind !== 'finished' && !task.records[s.id])) return s;
-  return steps[end];
+  for (const s of steps.slice(0, end)) if (s.kind === 'blocked' || (s.id==='master-test'&&task.records[s.id]&&reset.some(t=>Date.parse(task.records[s.id].at)<=t)) || (s.kind === 'question' ? !task.answers[s.id] : s.kind !== 'finished' && !task.records[s.id])) return guard(s);
+  return guard(steps[end]);
 }
 function advance(data: CurrentDataset, task: NordRecoveryTask, previous: string, now: string) {
   const steps = nordRecoverySteps(data, task), index = steps.findIndex(s => s.id === previous);

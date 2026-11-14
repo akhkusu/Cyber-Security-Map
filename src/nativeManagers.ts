@@ -1,3 +1,4 @@
+import { recordedUnavailable } from './recordAvailability';
 import type { Asset, CurrentDataset, Dataset, Language } from './models';
 import type { SecurityEntity } from './securityModel';
 import { addPasswordRoot, choosePasswordDevice, configurePasswordRoot, makePasswordVault, passwordInstallation, passwordVault, type StoreProduct } from './passwordStoreIdentity';
@@ -21,11 +22,13 @@ export const chooseNativeDevice = (data: Dataset, vaultId: string, deviceId: str
 export const configureNativeStorage = (data: Dataset, vaultId: string, mode: 'account' | 'local', rootId?: string): Dataset => configurePasswordRoot(data, vaultId, mode, rootId, STORE_PRODUCTS);
 export const addNativeRoot = (data: Dataset, vaultId: string, purpose: 'personal' | 'work'): Dataset => addPasswordRoot(data, vaultId, purpose, STORE_PRODUCTS);
 export function managerReady(data: Dataset, vaultId = data.guide.managerId, installationId?: string): boolean {
+  if(recordedUnavailable(data,[vaultId]))return false;
   if (cloudVault(data, vaultId)) return cloudManagerReady(data, vaultId!, installationId);
   const vault = nativeVault(data, vaultId);
   if (!vault) return ['implemented', 'verified'].includes(data.assets.find(a => a.id === data.guide.managerId)?.controls.mfa ?? 'unknown');
   const installation = installationId ? nativeInstallation(data, installationId) : selectedNativeInstallation(data, vault.id);
   const device = data.assets.find(a => a.id === installation?.deviceRef);
+  if (recordedUnavailable(data,[installation?.id,vault?.id]))return false;
   if (!installation || installation.vaultRef !== vault.id || !['opened', 'autofill', 'storageChecked'].every(c => installation.controls?.[c] === 'verified') || !['implemented', 'verified'].includes(device?.controls.screenLock ?? 'unknown')) return false;
   if (vault.storageMode === 'local') return installation.controls?.localBackup === 'verified';
   const root = data.assets.find(a => a.id === vault.authenticationAccountRef);

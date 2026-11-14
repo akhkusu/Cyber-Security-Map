@@ -56,7 +56,7 @@ test('optional phone change: inline checks, resume, keep as spare, shared map an
   await page.getByRole('link', { name: 'Security Map', exact: true }).first().click();
   await page.locator('.map-node').filter({ hasText: '旧iPhone' }).click(); await expect(page.locator('.map-details')).toContainText('予備として保管');
   await page.locator('.map-node').filter({ hasText: '個人用Apple' }).click(); await expect(page.locator('.access-records')).toContainText('この条件での利用記録あり');
-  await page.getByLabel('失った端末を選ぶ').selectOption(fresh.id); await expect(page.locator('.access-records')).toContainText('必要な手段が使えない条件');
+  await page.getByLabel('使えない項目を選ぶ').selectOption(fresh.id); await expect(page.locator('.access-records')).toContainText('必要な手段が使えない条件');
   await page.getByRole('link', { name: '対策を進める', exact: true }).click(); await expect(page.getByRole('heading', { level: 1 })).toHaveText('次に、どの端末を対策しますか？');
   expect(external).toEqual([]);
 });

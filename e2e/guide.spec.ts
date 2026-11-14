@@ -27,7 +27,7 @@ for (const platform of ['ios', 'macos', 'web'] as const) test(`iCloud ${platform
   const count = await page.locator('.map-node').count();
   await advance(page, '同じアカウントでクラウドも使っている');
   await expect(page.locator('.map-node')).toHaveCount(count);
-  if (platform !== 'web') { await page.getByLabel('失った端末を選ぶ').selectOption({ label: platform === 'ios' ? 'iPhone / iPad 1' : 'Mac 1' }); await expect(page.locator('.affected-node')).toHaveCount(1); }
+  if (platform !== 'web') { await page.getByLabel('使えない項目を選ぶ').selectOption({ label: platform === 'ios' ? 'iPhone / iPad 1' : 'Mac 1' }); await expect(page.locator('.affected-node')).toHaveCount(1); }
   if (platform === 'ios') await page.screenshot({ path: 'test-results/security-map-desktop-ja.png', fullPage: true });
   const envelope = await exportVault(page), data = (await decryptVault(envelope, passphrase)).data;
   expect(data.assets.find(a => a.provider === 'apple')?.controls).toMatchObject({ mfa: 'verified', recovery: 'verified' });
@@ -125,7 +125,7 @@ for (const format of ['newer-payload', 'newer-model', 'unsupported-envelope']) t
   await page.goto('./'); await page.locator('.language-picker select').selectOption('ja');
   const original = format === 'newer-payload'
     ? await sealRawVault({ ...newDataset('ja'), version: 3, futureEntities: [{ id: 'keep-original' }] })
-    : format === 'newer-model' ? await sealRawVault({ ...newDataset('ja'), securityModel: { ...newDataset('ja').securityModel, revision: 6 } })
+    : format === 'newer-model' ? await sealRawVault({ ...newDataset('ja'), securityModel: { ...newDataset('ja').securityModel, revision: 7 } })
     : { format: 'future-envelope-format', ciphertext: 'opaque-original-data', metadata: { keep: true } };
   await writeSavedVault(page, original); await page.reload();
   if (format !== 'unsupported-envelope') {

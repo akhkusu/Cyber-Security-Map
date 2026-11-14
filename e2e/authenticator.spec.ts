@@ -41,7 +41,7 @@ for (const [product, os, manual, sync] of [
     await page.getByRole('link', { name: 'Security Map', exact: true }).click();
     await page.locator('.map-node').filter({ has: page.getByText('確認するProtonアカウント', { exact: true }) }).click();
     await expect(page.locator('.access-records')).toContainText('登録時にコードを受け付けた記録');
-    await page.getByLabel('失った端末を選ぶ').selectOption('phone'); await expect(page.locator('.access-records')).toContainText('必要な手段が使えない条件');
+    await page.getByLabel('使えない項目を選ぶ').selectOption('phone'); await expect(page.locator('.access-records')).toContainText('必要な手段が使えない条件');
     await page.locator('.map-node').filter({ has: page.getByText(app.label, { exact: true }) }).click();
     await expect(page.locator('.map-details')).toContainText('コード登録の記録あり');
     await advance(page, 'このアプリの設定を確認する');

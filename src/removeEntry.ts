@@ -1,9 +1,11 @@
 import type { Dataset } from './models';
+import { mapRecordStore } from './mapRecordSchemas';
 import { securityModelIssues } from './securityModel';
 
 // Refuse a local deletion that would silently remove or strand typed access
 // records or another task. Ordinary v1 entries retain their existing behavior.
 export function removeEntry(data: Dataset, id: string): Dataset | undefined {
+  if (mapRecordStore(data)?.manualRefs.includes(id) || mapRecordStore(data)?.drafts.some(d => d.editRef === id) || mapRecordStore(data)?.archivedRefs.includes(id)) return undefined;
   if (!data.assets.some(a => a.id === id)) return data;
   if (data.version === 2 && data.deviceWorkflows.some(w => w.oldDeviceRef === id || w.newDeviceRef === id)) return undefined;
   const steps = Object.fromEntries(Object.entries(data.guide.steps).filter(([key]) => !key.split('/').includes(id)));

@@ -33,3 +33,5 @@
 .completed-record > span { min-width: 0; overflow-wrap: anywhere; }
 .completed-record > button { flex-shrink: 0; }
 .prompt-preview { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .85rem; }
+
+.record-guide{max-width:760px;margin:0 auto}.record-checks{border:0;padding:0;margin:1.5rem 0}.record-checks label,.record-check{display:flex;align-items:center;gap:.7rem;margin:.6rem 0;padding:.7rem 0}.record-checks input,.record-check input{width:1.2rem;min-width:1.2rem;height:1.2rem;margin:0}.record-summary{margin:1.5rem 0}.record-summary>div{padding:.7rem 0;border-bottom:1px solid var(--line)}.record-summary dt{font-size:.85rem;color:var(--muted)}.record-summary dd{margin:.35rem 0 0;overflow-wrap:anywhere}.record-connection{font-weight:600;overflow-wrap:anywhere}.record-tool-actions{display:flex;flex-wrap:wrap;gap:.7rem}.record-tools .connection-row{flex-wrap:wrap}.record-guide .guide-topline{display:flex;justify-content:space-between;gap:1rem;margin-bottom:1rem}.record-guide select{max-width:100%}.record-guide .choices{gap:.6rem}

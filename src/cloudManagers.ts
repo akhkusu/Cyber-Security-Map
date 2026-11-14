@@ -1,3 +1,4 @@
+import { recordedUnavailable } from './recordAvailability';
 import { makeAsset, type Asset, type Dataset, type Language, type OperatingSystem } from './models';
 import { nordSsoChoiceRoute, nordSsoSetupRoute, setNordSsoMethod } from './nordSso';
 import { nordSsoReady, nordSsoStore } from './nordSsoSchemas';
@@ -61,6 +62,7 @@ export function cloudSubject(data: Dataset, id: string): Asset | undefined {
 const recorded = (a: { controls?: Asset['controls'] } | undefined, key: string) => ['verified', 'implemented'].includes(a?.controls?.[key] ?? 'unknown');
 export function cloudEnvironmentReady(data: Dataset, appId: string): boolean {
   const app = cloudInstallation(data, appId), vault = cloudVault(data, app?.vaultRef), os = data.assets.find(a => a.id === app?.deviceRef)?.operatingSystem;
+  if (recordedUnavailable(data,[appId,vault?.id]))return false;
   if (!app || !vault || (data.version === 2 && data.securityModel.revision >= 4 && app.nordRecoverySurface === 'native-v1' && !['ios', 'android'].includes(os ?? ''))) return false;
   if (os === 'ios') return ['ios18plus', ...(vault.productId === 'proton-pass' ? ['ios17'] : [])].includes(cloudAnswer(data, app.id, 'ios') ?? '');
   if (os === 'android') return vault.productId === 'proton-pass' || cloudAnswer(data, app.id, 'android') === 'android9plus';

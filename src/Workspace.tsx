@@ -7,6 +7,7 @@ import { Guide } from './Guide';
 import { NordConnectionSession } from './NordConnectionSession';
 import { NordRecoveryGuide } from './NordRecoveryGuide';
 import { PhoneGuide } from './PhoneGuide';
+import { MapRecordGuide, MapConnectionGuide, MapLifecycleGuide } from './MapRecordGuide';
 import { MAP_NAME, SecurityMap } from './SecurityMap';
 import { Brand, LanguagePicker, tx } from './ui';
 import { RestoreForm, type Notice } from './App';
@@ -32,6 +33,9 @@ export function Workspace(props: WorkspaceProps) {
       <Route path="/phone/:workflowId" element={<PhoneGuide data={data} language={language} save={save} />} />
       <Route path="/nord-connection/:sessionId" element={<NordConnectionSession data={data} language={language} save={save} />} />
       <Route path="/recover/nord/:taskId" element={<NordRecoveryGuide data={data} language={language} save={save} />} />
+      <Route path="/map/record/:draftId" element={<MapRecordGuide data={data} language={language} save={save} />} />
+      <Route path="/map/connection/:draftId" element={<MapConnectionGuide data={data} language={language} save={save} />} />
+      <Route path="/map/state/:nodeRef" element={<MapLifecycleGuide data={data} language={language} save={save} />} />
       <Route path="/map" element={<SecurityMap data={data} language={language} save={save} />} />
       <Route path="/settings" element={<SettingsPage {...props} save={save} />} />
       <Route path="*" element={<Navigate to="/guide" replace />} />

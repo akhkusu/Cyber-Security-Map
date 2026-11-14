@@ -140,3 +140,10 @@ NordPassの個人用マスター復旧はnordRecoveryCatalog.tsの説明とnordR
 [NORDPASS-CONNECTED-SIGN-IN.md](NORDPASS-CONNECTED-SIGN-IN.md)を契約とします。nordSsoCatalog.tsの説明、nordSso.tsの進行・Grant・取り消し、NordConnectionSession.tsxの主ガイド保持、cloudObservations.tsの部分的な利用証拠を合わせて確認します。接続設定／提供元認証／Nord認証／保管庫復号／保存パスワード利用を混ぜません。接続先の正しい本人情報は利用者が確認し、Appleのリレーアドレスから別Accountを推測しません。
 
 モデルrevision 5で版付きの接続ストアと補助セッションを検証します。revision 1〜4の同名不明項目と既存データを保持し、復旧・Proton・機種変更等が版を下げないようにします。接続の確認訂正で古い端末認証を復活させず、実際に失効したGrantの再接続は別登録にします。物理接続の記録は取り消しでも削除しません。
+
+
+## Security Mapの記録
+
+[専用契約](SECURITY-MAP-RECORDS.md)を保守します。mapRecordCatalog.tsの質問・説明、mapRecords.tsの保存・訂正・履歴、MapRecordGuide.tsxの一問ずつの画面を分けます。項目・参照・確認済みの関係・実際の利用を混同せず、登録や非表示で完了記録を作りません。既存ガイドのIDを単なる編集で別の実体へ置き換えません。
+
+モデルrevision 6、保存ストアmapRecordsV1、セッションの型、状態の時点、参照元の版を合わせて検証します。古い不明な同名項目、ID・日時の表現、全進行を保持します。負の状態を訂正しても古い観測を復活させず、明示的な参照の変更だけを再確認の対象にします。図から隠した物も影響判定へ含め、期限・待機・招待の状態を利用成功へ変換しません。

@@ -56,12 +56,12 @@ for (const [product, os] of [['apple-passwords', 'ios'], ['apple-passwords', 'ma
     await page.locator('.map-node').filter({ has: page.getByText(vault.label, { exact: true }) }).click();
     await expect(page.locator('.map-details')).toContainText('少なくとも1台で利用を確認した記録');
     await expect(page.locator('.access-records')).toContainText('この条件での利用記録あり');
-    await page.getByLabel('失った端末を選ぶ').selectOption(original.assets[1].id);
+    await page.getByLabel('使えない項目を選ぶ').selectOption(original.assets[1].id);
     await expect(page.locator('.access-records')).toContainText('必要な手段が使えない条件');
-    await page.getByLabel('失った端末を選ぶ').selectOption('');
+    await page.getByLabel('使えない項目を選ぶ').selectOption('');
     await page.locator('.map-node').filter({ hasText: '登録済みの個人用アカウント' }).filter({ hasNotText: '保存パスワード' }).click();
     await expect(page.locator('.access-records')).toContainText('この条件での利用記録あり');
-    await page.getByLabel('失った端末を選ぶ').selectOption(original.assets[1].id);
+    await page.getByLabel('使えない項目を選ぶ').selectOption(original.assets[1].id);
     await expect(page.locator('.access-records')).toContainText('必要な手段が使えない条件');
     expect(external).toEqual([]);
   });

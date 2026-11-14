@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, Check, CircleHelp, ExternalLink, LockKeyhole, Mail, RotateCcw, Smartphone } from 'lucide-react';
 import { makeAsset, type Asset, type Dataset, type Language } from './models';
@@ -53,7 +54,8 @@ export function Guide({ data, language, save }: Props) {
   const button = (label: string, action: () => void, secondary = false) => <button key={label} className={`button ${secondary ? 'secondary' : 'primary'}`} onClick={action}>{label}{!secondary && <ArrowRight size={18} />}</button>;
   const option = (label: string, action: () => void, description?: string, icon?: ReactNode) => <button key={label} className="choice" onClick={action}><span className="choice-icon">{icon ?? <ArrowRight size={18} />}</span><span><strong>{label}</strong>{description && <small>{description}</small>}</span><ArrowRight size={17} className="choice-arrow" /></button>;
   let content: ReactNode;
-  if (task?.redirectTo?.startsWith('authenticator-') || route.startsWith('authenticator-')) {
+  if (task?.redirectTo?.startsWith('record-unavailable/')) { const ref=task.redirectTo.split('/')[1];content=<><h1>{tx(language,'A required item is recorded as unavailable','必要な項目が、利用できない状態です')}</h1><p>{tx(language,'Keep this action unfinished. Review the actual item or choose another working device or method. Changing a record does not restore a lost device or revoked permission.','この作業は未完了で残します。実際の項目の状態を確認するか、利用できる別の端末・手段を選んでください。記録の訂正だけで、紛失した端末や失効した権限が復旧するわけではありません。')}</p><Link className="button secondary" to={`/map?item=${encodeURIComponent(ref)}`}>{tx(language,'Review the item in Map','Mapでこの項目を確認する')}</Link></>;
+  } else if (task?.redirectTo?.startsWith('authenticator-') || route.startsWith('authenticator-')) {
     const [authRoute, authId] = (task?.redirectTo ?? cursor).split('/');
     content = <AuthenticatorQuestions key={task?.redirectTo ?? cursor} data={data} language={language} save={save} route={authRoute} accountId={authId} trouble={<Trouble data={data} language={language} save={save} close={() => go(`authenticator-product/${authId}`)} />} />;
   } else if (task?.redirectTo?.startsWith('cloud-') || route.startsWith('cloud-')) {

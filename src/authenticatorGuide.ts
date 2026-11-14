@@ -1,3 +1,4 @@
+import { recordedUnavailable } from './recordAvailability';
 import { makeAsset, upgradeDataset, type Asset, type CurrentDataset, type Dataset } from './models';
 import { securityEntitySchema, type SecurityEntity } from './securityModel';
 import { c, deviceRecipe, type GuideStep, type Recipe, type SourceId } from './guideCatalog';
@@ -58,7 +59,7 @@ export function authenticatorPrerequisiteRoute(data: Dataset, accountId: string)
 export function authenticatorReady(data: Dataset, install?: AuthenticatorInstallation) {
   const device = data.assets.find(a => a.id === install?.deviceRef);
   const rootOK = install?.codeStorage === 'local' || (install?.productId === 'google-authenticator' && data.assets.some(a => a.id === install.syncAccountRef && a.kind === 'account' && a.provider === 'google' && a.purpose === 'personal'));
-  return !!install && rootOK && ['ios', 'android'].includes(device?.operatingSystem ?? '') && install.controls?.opened === 'verified' && install.controls?.storageChecked === 'verified' && ['implemented', 'verified'].includes(device?.controls.screenLock ?? 'unknown') && (install.productId !== 'microsoft-authenticator' || install.controls?.appLock === 'verified');
+  return !recordedUnavailable(data,[install?.id]) && !!install && rootOK && ['ios', 'android'].includes(device?.operatingSystem ?? '') && install.controls?.opened === 'verified' && install.controls?.storageChecked === 'verified' && ['implemented', 'verified'].includes(device?.controls.screenLock ?? 'unknown') && (install.productId !== 'microsoft-authenticator' || install.controls?.appLock === 'verified');
 }
 export function authenticatorSetupRoute(data: Dataset, accountId: string, returnCursor = data.guide.answers[`auth:${accountId}:task`]): string {
   const prerequisite = authenticatorPrerequisiteRoute(data, accountId); if (prerequisite) return prerequisite;

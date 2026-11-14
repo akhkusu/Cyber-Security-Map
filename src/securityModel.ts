@@ -14,6 +14,7 @@ const entityBase = { id, label, createdAt: time, scopeId: id.optional() };
 export const securityEntitySchema = z.discriminatedUnion('kind', [
   z.object({ ...entityBase, kind: z.literal('person'), role: z.enum(['self', 'trusted-contact', 'administrator', 'other']) }).passthrough(),
   z.object({ ...entityBase, kind: z.literal('organization') }).passthrough(),
+  z.object({ ...entityBase, kind: z.literal('session'), accountRef: id, installationRef: id.optional(), deviceRef: id.optional(), expiresAt: time.optional() }).passthrough(),
   z.object({ ...entityBase, kind: z.literal('installation'), codeStorage: z.enum(['local', 'account']).optional(), syncAccountRef: id.optional(), mergedIntoRef: id.optional(), productId: id, deviceRef: id, profileLabel: label.optional(), appVersion: z.string().max(40).optional(), vaultRef: id.optional(), platformVariant: z.enum(['ios18plus', 'mac15plus']).optional(), controls: z.record(z.string(), controlStateSchema).optional(), controlEvidence: z.record(z.string(), controlEvidenceSchema).optional() }).passthrough(),
   z.object({ ...entityBase, kind: z.literal('vault'), mergedIntoRef: id.optional(), productId: id, ownerRef: id.optional(), authenticationAccountRef: id.optional(), primaryDeviceRef: id.optional(), storageMode: z.enum(['account', 'local']).optional(), controls: z.record(z.string(), controlStateSchema).optional(), controlEvidence: z.record(z.string(), controlEvidenceSchema).optional() }).passthrough(),
   z.object({ ...entityBase, kind: z.literal('credential'), credentialType: z.enum(['password', 'totp', 'passkey', 'security-key-registration', 'app-password', 'recovery-code', 'recovery-key', 'api-token', 'ssh-key', 'certificate', 'other']), subjectRef: id, storageRef: id.optional(), replicaGroupId: id.optional(), roles: z.array(z.enum(['sign-in', 'second-step', 'decrypt', 'local-unlock', 'restore'])).min(1) }).passthrough(),
@@ -73,7 +74,7 @@ const controlBaselineSchema = z.object({
   answerKey: id.optional(), answer: assessmentAnswerSchema.optional(),
 }).passthrough();
 export const securityModelSchema = z.object({
-  revision: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]), entities: z.array(securityEntitySchema).default([]), relations: z.array(securityRelationSchema).default([]),
+  revision: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]), entities: z.array(securityEntitySchema).default([]), relations: z.array(securityRelationSchema).default([]),
   facts: z.array(accessFactSchema).default([]), routes: z.array(accessRouteSchema).default([]),
   lifecycle: z.record(z.string(), lifecycleSchema).default({}),
   controlBaselines: z.record(z.string(), controlBaselineSchema).default({}),
@@ -113,6 +114,7 @@ export function securityModelIssues(model: SecurityModel, legacy: readonly Legac
   }
   const check = (recordId: string, ref: string | undefined) => { if (ref && !entities.has(ref)) issues.push({ code: 'missing-entity', recordId, referenceId: ref }); };
   for (const e of model.entities) {
+    if (e.kind === 'session') { check(e.id, e.accountRef); check(e.id, e.installationRef); check(e.id, e.deviceRef); }
     if (e.kind === 'installation') { check(e.id, e.mergedIntoRef); check(e.id, e.syncAccountRef); check(e.id, e.deviceRef); check(e.id, e.vaultRef); }
     if (e.kind === 'vault') { check(e.id, e.mergedIntoRef); check(e.id, e.ownerRef); check(e.id, e.authenticationAccountRef); check(e.id, e.primaryDeviceRef); }
     if (e.kind === 'credential') { check(e.id, e.subjectRef); check(e.id, e.storageRef); }
@@ -149,6 +151,7 @@ export function evaluateAccess(model: SecurityModel, routeId: string, scenario: 
   const facts = new Map(model.facts.map(f => [f.id, f])), routes = new Map(model.routes.map(r => [r.id, r]));
   const unavailable = new Set(scenario.unavailableRefs ?? []), now = Date.parse(scenario.now);
   for (const [ref, life] of Object.entries(model.lifecycle)) if (life.evidence === 'user-confirmed' && ['unavailable', 'lost', 'transferred', 'retired', 'revoked', 'deleted'].includes(life.state)) unavailable.add(ref);
+  const constrained=(ref:string):AccessResult|undefined=>{const item=model.entities.find(e=>e.id===ref);if(item&&(item.kind==='grant'||item.kind==='session')&&item.expiresAt&&now>=Date.parse(item.expiresAt))return result('unavailable','expired',ref);if(item?.kind==='recovery-arrangement'){if(item.stage==='revoked')return result('unavailable','revoked',ref);if(item.availableAt&&now<Date.parse(item.availableAt))return result('unavailable','waiting',ref);if(item.stage!=='ready')return result('unknown',item.stage==='waiting'?'waiting':'unconfirmed',ref);}};
   let visits = 0;
   const factResult = (factId: string): AccessResult => {
     const f = facts.get(factId);
@@ -157,6 +160,7 @@ export function evaluateAccess(model: SecurityModel, routeId: string, scenario: 
     if (f.evidence !== 'user-confirmed') return result('unknown', f.evidence === 'user-reported' ? 'reported-only' : 'unconfirmed', f.id);
     const missing = f.requiredRefs.find(ref => unavailable.has(ref));
     if (missing) return result('unavailable', 'resource-unavailable', missing);
+    for(const ref of f.requiredRefs){const constraint=constrained(ref);if(constraint)return constraint;}
     const reset = f.requiredRefs.find(ref => { const life = model.lifecycle[ref]; return life?.accessResetAt && Date.parse(f.checkedAt) <= Date.parse(life.accessResetAt); });
     if (reset) return result('unknown', 'unconfirmed', reset);
     if (f.state === 'revoked') return result('unavailable', 'revoked', f.id);
@@ -190,6 +194,7 @@ export function evaluateAccess(model: SecurityModel, routeId: string, scenario: 
     if (path.has(ref)) return result('unknown', 'cycle', ref);
     if (!route.contexts.includes(scenario.context)) return result('not-applicable', 'outside-context', ref);
     if (unavailable.has(route.targetRef)) return result('unavailable', 'resource-unavailable', route.targetRef);
+    const constraint=constrained(route.targetRef);if(constraint)return constraint;
     return conditionResult(route.requirements, new Set([...path, ref]), depth + 1);
   };
   if (!Number.isFinite(now)) return result('unknown', 'unconfirmed', routeId);

@@ -1,3 +1,4 @@
+import { mapRecordEpoch, recordedUnavailable } from './recordAvailability';
 import type { Asset, Dataset } from './models';
 import type { PhoneWorkflow } from './phoneSchemas';
 import { builtinManagerRecipe } from './nativeManagerCatalog';
@@ -35,7 +36,7 @@ export const PHONE_SOURCES: Record<string, Source> = {
 };
 export type PhoneChoice = { value: string; label: Copy; description?: Copy };
 export type PhoneStep = {
-  id: string; kind: 'question' | 'action' | 'blocked' | 'gate' | 'finish'; title: Copy;
+  unavailableMapRef?: string; id: string; kind: 'question' | 'action' | 'blocked' | 'gate' | 'finish'; title: Copy;
   text?: Copy; context?: Copy; place?: Copy; action?: Copy; expected?: Copy; button?: Copy;
   answerKey?: string; choices?: PhoneChoice[]; sources: string[]; url?: string;
   refs: string[]; variant?: string; control?: { targetRef: string; id: string };
@@ -55,8 +56,8 @@ const question = (id: string, title: Copy, choices: PhoneChoice[], text?: Copy):
 const action = (id: string, title: Copy, place: Copy, instruction: Copy, expected: Copy, refs: string[], sources: string[], extra: Partial<PhoneStep> = {}): PhoneStep => ({ id, kind: 'action', title, place, action: instruction, expected, refs, sources, button: c('I checked this', '確認しました'), ...extra });
 const blocked = (id: string, title: Copy, text: Copy, refs: string[] = [], sources: string[] = []): PhoneStep => ({ id, kind: 'blocked', title, text, refs, sources });
 export const phoneName = (os: Asset['operatingSystem']) => os === 'ios' ? 'iPhone' : os === 'android' ? 'Android' : 'Phone';
-export const phoneAssets = (data: Dataset) => data.assets.filter(a => a.kind === 'device' && ['ios', 'android', 'other', 'unknown'].includes(a.operatingSystem ?? 'unknown'));
-export function phoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] {
+export const phoneAssets = (data: Dataset) => data.assets.filter(a => a.kind === 'device' && !['Computer','Tablet','Router','NAS','External drive','Other hardware'].includes(a.type) && ['ios', 'android', 'other', 'unknown'].includes(a.operatingSystem ?? 'unknown'));
+function basePhoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] {
   const answers = workflow.answers, stage = answers.stage;
   const old = data.assets.find(a => a.id === workflow.oldDeviceRef), fresh = data.assets.find(a => a.id === workflow.newDeviceRef);
   const steps: PhoneStep[] = [question('stage', c('Where are you with your new phone?', 'スマホの買い替えは、どの段階ですか？'), [
@@ -303,4 +304,13 @@ function handoffSteps(old: Asset, fresh: Asset, workflow: PhoneWorkflow): PhoneS
   }
   steps.push(action('handoff-check', c('Check the phone is ready for its next owner', '引き渡し前の状態を確認する'), c(`Previous phone · ${old.name}`, `旧端末 · ${old.name}`), c('Check that your data is no longer shown and that setup does not require your previous account’s activation/device-protection credentials. Remove physical SIM and memory cards. On another device, review the old phone in the account’s device list and remove its trusted access if it remains. Do not create a new account for the recipient using your own identity.', '自分の情報が表示されず、初期設定で自分のアカウントのアクティベーション・端末保護を求められないことを確かめます。物理SIM・メモリーカードを取り出してください。別の端末でアカウントの端末一覧を確認し、旧端末の信頼済みアクセスが残っていれば外します。相手のアカウントを自分の名義で作りません。'), c('The device is erased and released for the next owner, while your new access still works.', '端末内データと所有者のロックが残らず、新しい利用場所でも引き続き使えること。'), refs, old.operatingSystem === 'ios' ? ['appleSale'] : ['pixelReset', 'androidAccount'], { physicalEffect: true, button: c('I checked the handover state', '引き渡せる状態を確認しました') }));
   return steps;
+}
+
+export function phoneStepActors(step:PhoneStep,data?:Dataset) {
+ const app=data?.version===2?data.securityModel.entities.find(e=>e.id===step.cloudContext?.installationRef&&e.kind==='installation'):undefined,vault=data?.version===2&&app?.kind==='installation'?data.securityModel.entities.find(e=>e.id===app.vaultRef&&e.kind==='vault'):undefined;
+ const account=vault?.kind==='vault'&&step.cloudContext&&/^(sign-in|sso-)/.test(step.cloudContext.step.id)?vault.authenticationAccountRef:undefined;
+ return [account,step.nativeContext?.installationRef,step.cloudContext?.installationRef,step.control?.targetRef,...(step.access?[step.access.targetRef]:[]),...(step.authenticatorEffect?[step.authenticatorEffect.installationRef,step.authenticatorEffect.accountRef]:[])].filter((r):r is string=>!!r);
+}
+export function phoneSteps(data:Dataset,workflow:PhoneWorkflow):PhoneStep[] {
+ return basePhoneSteps(data,workflow).map(step=>{const refs=phoneStepActors(step,data),epoch=mapRecordEpoch(data,refs),unavailable=recordedUnavailable(data,refs), life=data.version===2&&unavailable?data.securityModel.lifecycle[unavailable]:undefined, missing=life?.mapRecordLifecycleV1==='v1'&&life.updatedAt===life.mapRecordChangedAt?unavailable:undefined;return {...step,...(epoch.length?{variant:`${step.variant??''}|map-record-v1:${JSON.stringify(epoch)}`} : {}),...(missing?{kind:'blocked' as const,unavailableMapRef:missing,title:c('Review an unavailable required item','必要な項目の利用状態を確認する'),text:c('This item is recorded as unavailable. Keep the work saved and review it in Security Map.','必要な項目を利用できない状態として記録しています。作業を保存したまま、Security Mapで状態を確認してください。')}:{})};});
 }

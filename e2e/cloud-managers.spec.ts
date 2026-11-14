@@ -83,10 +83,10 @@ for (const product of ['proton-pass', 'nordpass'] as const) for (const os of ['i
     await page.getByRole('link', { name: 'Security Map', exact: true }).click();
     await page.locator('.map-node').filter({ has: page.getByText(vault.label, { exact: true }) }).click();
     await expect(page.locator('.access-records')).toContainText('この条件での利用記録あり');
-    await page.getByLabel('失った端末を選ぶ').selectOption('device');
+    await page.getByLabel('使えない項目を選ぶ').selectOption('device');
     await expect(page.locator('.access-records')).toContainText('必要な手段が使えない条件');
     if (os === 'ios') {
-      await page.getByLabel('失った端末を選ぶ').selectOption('');
+      await page.getByLabel('使えない項目を選ぶ').selectOption('');
       const recovery = data.securityModel.entities.find(e => e.kind === 'credential' && typeof e.cloudRecoveryPhase === 'string')!;
       await page.locator('.map-node').filter({ has: page.getByText(recovery.label, { exact: true }) }).click();
       await advance(page, 'この復旧手段を確認する');

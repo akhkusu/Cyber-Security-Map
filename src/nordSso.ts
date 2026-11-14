@@ -13,7 +13,7 @@ function editable(data: Dataset): CurrentDataset {
   return next;
 }
 function write(data: CurrentDataset, store: NordSsoStore): CurrentDataset {
-  return { ...data, securityModel: { ...data.securityModel, revision: 5, nordSsoV1: store } };
+  return { ...data, securityModel: { ...data.securityModel, revision: data.securityModel.revision >= 5 ? data.securityModel.revision : 5, nordSsoV1: store } };
 }
 const empty = () => nordSsoStoreSchema.parse({ version: 1 });
 function writeBinding(data: CurrentDataset, binding: NordSsoBinding): CurrentDataset {

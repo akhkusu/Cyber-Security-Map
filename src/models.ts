@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { emptySecurityModel, securityModelIssues, securityModelSchema } from './securityModel';
 import { nordSsoStoreSchema } from './nordSsoSchemas';
+import { mapRecordStoreSchema } from './mapRecordSchemas';
 import { nordRecoveryStoreSchema } from './nordRecoverySchemas';
 import { phoneWorkflowSchema } from './phoneSchemas';
 import { CONTROL_STATES, controlEvidenceSchema, assessmentAnswerSchema, type AssessmentAnswer, type ControlState } from './recordSchemas';
@@ -109,6 +110,14 @@ export const currentDatasetSchema = z.object({
   securityModel: securityModelSchema.default(emptySecurityModel),
   deviceWorkflows: z.array(phoneWorkflowSchema).default([]),
 }).passthrough().superRefine((data, context) => {
+  for(const session of data.securityModel.entities.filter(e=>e.kind==='session'))if(session.kind==='session'&&(!data.assets.some(a=>a.id===session.accountRef&&a.kind==='account')||(session.deviceRef&&!data.assets.some(a=>a.id===session.deviceRef&&a.kind==='device'))||(session.installationRef&&!data.securityModel.entities.some(e=>e.id===session.installationRef&&e.kind==='installation'))))context.addIssue({code:'custom',path:['securityModel'],message:'invalid-session-reference'});
+  if (data.securityModel.revision < 6 && data.securityModel.entities.some(e => e.kind === 'session')) context.addIssue({ code: 'custom', path: ['securityModel'], message: 'session-requires-revision-6' });
+  if (data.securityModel.revision >= 6 && Object.hasOwn(data.securityModel, 'mapRecordsV1')) {
+    const parsed = mapRecordStoreSchema.safeParse(data.securityModel.mapRecordsV1);
+    const refs = new Set([...data.assets, ...data.securityModel.entities].map(e => e.id));
+    const invalid = !parsed.success || parsed.data.manualRefs.some(ref => !refs.has(ref)) || parsed.data.archivedRefs.some(ref => !refs.has(ref)) || new Set(parsed.data.drafts.map(d => d.id)).size !== parsed.data.drafts.length || parsed.data.drafts.some(d => d.editRef && !refs.has(d.editRef));
+    if (invalid) context.addIssue({ code: 'custom', path: ['securityModel', 'mapRecordsV1'], message: 'invalid-map-record-store' });
+  }
   for (const issue of securityModelIssues(data.securityModel, data.assets)) {
     context.addIssue({ code: 'custom', path: ['securityModel'], message: `${issue.code}: ${issue.recordId}` });
   }
