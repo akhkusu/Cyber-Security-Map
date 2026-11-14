@@ -1,3 +1,4 @@
+import {TwofasGuide} from './TwofasGuide';
 import { useState, type FormEvent } from 'react';
 import { ArrowDownToLine, ArrowRight, Check, Compass, LockKeyhole, Map, Settings, ShieldCheck } from 'lucide-react';
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
@@ -28,10 +29,11 @@ export function Workspace(props: WorkspaceProps) {
   };
   const nav = [{ path: '/guide', icon: Compass, label: tx(language, 'Continue guide', '対策を進める') }, { path: '/map', icon: Map, label: MAP_NAME }, { path: '/settings', icon: Settings, label: tx(language, 'Settings', '設定') }];
   return <div className={`app-shell ${data.settings.theme === 'dark' ? 'theme-dark' : ''}`}><a className="skip-link" href="#main">{tx(language, 'Skip to content', '本文へ移動')}</a>
-    <header className="app-header"><Brand /><nav aria-label={tx(language, 'Main menu', 'メインメニュー')}>{nav.map(({ path, icon: Icon, label }) => <NavLink key={path} to={path} className={({ isActive }) => isActive || (path === '/guide' && (location.pathname.startsWith('/protect/') || location.pathname.startsWith('/keys/') || location.pathname.startsWith('/phone/') || location.pathname.startsWith('/recover/') || location.pathname.startsWith('/nord-connection/'))) ? 'active' : undefined}><Icon size={18} /><span>{label}</span></NavLink>)}</nav><div className="header-actions"><LanguagePicker language={language} onChange={props.onLanguage} /><button className="icon-button" disabled={saving} onClick={props.lock} aria-label={tx(language, isDemo ? 'Exit sample' : 'Lock app', isDemo ? 'サンプルを終了' : 'アプリをロック')}><LockKeyhole size={18} /></button></div></header>
+    <header className="app-header"><Brand /><nav aria-label={tx(language, 'Main menu', 'メインメニュー')}>{nav.map(({ path, icon: Icon, label }) => <NavLink key={path} to={path} className={({ isActive }) => isActive || (path === '/guide' && (location.pathname.startsWith('/protect/') || location.pathname.startsWith('/twofas/') || location.pathname.startsWith('/keys/') || location.pathname.startsWith('/phone/') || location.pathname.startsWith('/recover/') || location.pathname.startsWith('/nord-connection/'))) ? 'active' : undefined}><Icon size={18} /><span>{label}</span></NavLink>)}</nav><div className="header-actions"><LanguagePicker language={language} onChange={props.onLanguage} /><button className="icon-button" disabled={saving} onClick={props.lock} aria-label={tx(language, isDemo ? 'Exit sample' : 'Lock app', isDemo ? 'サンプルを終了' : 'アプリをロック')}><LockKeyhole size={18} /></button></div></header>
     {isDemo && <div className="demo-banner">{tx(language, 'Sample · changes are not saved', 'サンプル · 変更は保存されません')}<button onClick={props.lock}>{tx(language, 'Exit sample', 'サンプルを終了')}</button></div>}
     {notice && <div role={notice.kind === 'error' ? 'alert' : 'status'} className={`notice ${notice.kind}`}>{notice.text}<button aria-label={tx(language, 'Dismiss message', 'メッセージを閉じる')} onClick={() => setNotice(null)}>×</button></div>}
     <main id="main" className="workspace-main"><fieldset disabled={saving} className="workspace-body" aria-busy={saving}><Routes>
+      <Route path="/twofas/:taskId" element={<TwofasGuide data={data} language={language} save={save}/>} />
       <Route path="/guide" element={<Guide data={data} language={language} save={save} />} />
       <Route path="/protect/:taskId" element={<DeviceProtectionGuide data={data} language={language} save={save}/>} />
       <Route path="/protect/account/:taskId" element={<DeviceProtectionAccountGuide data={data} language={language} save={save}/>} />

@@ -1,17 +1,19 @@
+import {createTwofasApp,startTwofasTask} from './twofasEngine';
+import {twofasProfile,twofasPrepared,twofasBackupCurrent,twofasStore,twofasReceiptCurrent,twofasLinkCurrent} from './twofasSchemas';
 import { recordedUnavailable } from './recordAvailability';
 import { makeAsset, upgradeDataset, type Asset, type CurrentDataset, type Dataset } from './models';
 import { securityEntitySchema, type SecurityEntity } from './securityModel';
 import { c, deviceRecipe, type GuideStep, type Recipe, type SourceId } from './guideCatalog';
 
-export const AUTHENTICATORS = { 'google-authenticator': c('Google Authenticator', 'Google 認証システム'), 'microsoft-authenticator': c('Microsoft Authenticator', 'Microsoft Authenticator'), 'bitwarden-authenticator': c('Bitwarden Authenticator (standalone)', 'Bitwarden Authenticator（単独アプリ）') };
+export const AUTHENTICATORS = { '2fas-auth': c('2FAS Auth', '2FAS Auth'), 'google-authenticator': c('Google Authenticator', 'Google 認証システム'), 'microsoft-authenticator': c('Microsoft Authenticator', 'Microsoft Authenticator'), 'bitwarden-authenticator': c('Bitwarden Authenticator (standalone)', 'Bitwarden Authenticator（単独アプリ）') };
 export type AuthenticatorProduct = keyof typeof AUTHENTICATORS;
 export type AuthenticatorInstallation = Extract<SecurityEntity, { kind: 'installation' }>;
-export const authSources = (product: AuthenticatorProduct): SourceId[] => product === 'google-authenticator' ? ['googleAuth', 'googleAuthMenus'] : product === 'microsoft-authenticator' ? ['microsoftAuth', 'microsoftAuthFaq'] : ['bwAuthenticator'];
+export const authSources = (product: AuthenticatorProduct): SourceId[] => product === '2fas-auth' ? ['twofasTutorial','twofasIos','twofasAndroid'] : product === 'google-authenticator' ? ['googleAuth', 'googleAuthMenus'] : product === 'microsoft-authenticator' ? ['microsoftAuth', 'microsoftAuthFaq'] : ['bwAuthenticator'];
 export function authenticator(data: Dataset, id?: string): AuthenticatorInstallation | undefined {
   if (data.version !== 2) return;
   const seen = new Set<string>(); let ref = id;
   while (ref && !seen.has(ref)) {
-    seen.add(ref); const item = data.securityModel.entities.find(e => e.id === ref && e.kind === 'installation' && Object.hasOwn(AUTHENTICATORS, e.productId));
+    seen.add(ref); const item = data.securityModel.entities.find(e => e.id === ref && e.kind === 'installation' && Object.hasOwn(AUTHENTICATORS, e.productId) && (e.productId!=='2fas-auth'||!!twofasProfile(data,e.id)));
     if (item?.kind !== 'installation') return;
     if (!item.mergedIntoRef) return item;
     ref = item.mergedIntoRef as string;
@@ -21,12 +23,13 @@ export const selectedAuthenticator = (data: Dataset, accountId: string) => authe
 export const authenticatorScan = (recipe: string, step: string) => (recipe === 'email-mfa' && ['auth-scan', 'scan'].includes(step)) || (recipe === 'manager' && step === 'auth-scan');
 export const authenticatorConfirmation = (recipe: string, step: string) => (recipe === 'email-mfa' && ['auth-confirm', 'confirm'].includes(step)) || (recipe === 'manager' && step === 'auth-activate');
 export function setAuthCursor(data: Dataset, cursor: string): Dataset { return { ...data, guide: { ...data.guide, cursor, history: [...data.guide.history, data.guide.cursor].slice(-200) } }; }
-export function chooseAuthenticator(data: Dataset, accountId: string, product: AuthenticatorProduct, deviceId: string, returnCursor: string, reuse = true): CurrentDataset {
+export function chooseAuthenticator(data: Dataset, accountId: string, product: AuthenticatorProduct, deviceId: string, returnCursor: string, reuse = true, scopePath = '/guide'): CurrentDataset {
   if (!Object.hasOwn(AUTHENTICATORS, product)) throw new Error('Unsupported authenticator');
-  const next = upgradeDataset(data), device = next.assets.find(a => a.id === deviceId && a.kind === 'device' && ['ios', 'android'].includes(a.operatingSystem ?? ''));
+  let next = upgradeDataset(data); const device = next.assets.find(a => a.id === deviceId && a.kind === 'device' && ['ios', 'android'].includes(a.operatingSystem ?? ''));
   if (!device) throw new Error('Select a supported physical device');
   const candidates = next.securityModel.entities.filter(e => e.kind === 'installation' && !e.mergedIntoRef && e.productId === product && e.deviceRef === deviceId);
   const existing = reuse && candidates.length === 1 ? candidates[0] : undefined;
+  if(product==='2fas-auth'){const made=createTwofasApp(next,deviceId,existing?.id);next=made.data;const result=startTwofasTask(next,{kind:'prepare',appRef:made.appRef,origin:'guide',accountRef:accountId,returnCursor,scopePath});return {...result.data,guide:{...result.data.guide,answers:{...result.data.guide.answers,[`auth:${accountId}:app`]:made.appRef,[`auth:${accountId}:task`]:returnCursor}}};}
   const item = existing ?? securityEntitySchema.parse({ id: crypto.randomUUID(), kind: 'installation', productId: product, deviceRef: device.id, label: `${AUTHENTICATORS[product][next.settings.language]} · ${device.name}`.slice(0, 80), createdAt: new Date().toISOString(), controls: {}, controlEvidence: {} });
   return { ...next, securityModel: { ...next.securityModel, entities: existing ? next.securityModel.entities : [...next.securityModel.entities, item] }, guide: { ...next.guide, answers: { ...next.guide.answers, [`auth:${accountId}:app`]: item.id, [`auth:${accountId}:task`]: returnCursor } } };
 }
@@ -53,13 +56,14 @@ export function authenticatorPrerequisiteRoute(data: Dataset, accountId: string)
   if (!app) return `authenticator-product/${accountId}`;
   const device = data.assets.find(a => a.id === app.deviceRef);
   if (!device || !['ios', 'android'].includes(device.operatingSystem ?? '')) return `authenticator-device/${accountId}`;
+  if(app.productId==='2fas-auth'){if(!twofasPrepared(data,app.id)){const pending=twofasStore(data)?.tasks.filter(t=>t.kind==='prepare'&&t.appRef===app.id&&t.accountRef===accountId&&t.returnCursor===data.guide.answers[`auth:${accountId}:task`]&&t.status!=='cancelled').at(-1);return pending?`twofas/${pending.id}`:`authenticator-twofas-start/${accountId}`;}return;}
   if (!app.codeStorage || (app.productId !== 'google-authenticator' && app.codeStorage !== 'local')) return `authenticator-mode/${accountId}`;
   if (app.codeStorage === 'account' && !data.assets.some(a => a.id === app.syncAccountRef && a.kind === 'account' && a.provider === 'google' && a.purpose === 'personal')) return `authenticator-root/${accountId}`;
 }
 export function authenticatorReady(data: Dataset, install?: AuthenticatorInstallation) {
   const device = data.assets.find(a => a.id === install?.deviceRef);
   const rootOK = install?.codeStorage === 'local' || (install?.productId === 'google-authenticator' && data.assets.some(a => a.id === install.syncAccountRef && a.kind === 'account' && a.provider === 'google' && a.purpose === 'personal'));
-  return !recordedUnavailable(data,[install?.id]) && !!install && rootOK && ['ios', 'android'].includes(device?.operatingSystem ?? '') && install.controls?.opened === 'verified' && install.controls?.storageChecked === 'verified' && ['implemented', 'verified'].includes(device?.controls.screenLock ?? 'unknown') && (install.productId !== 'microsoft-authenticator' || install.controls?.appLock === 'verified');
+  return !recordedUnavailable(data,[install?.id]) && (install?.productId!=='2fas-auth'||twofasPrepared(data,install.id)) && !!install && rootOK && ['ios', 'android'].includes(device?.operatingSystem ?? '') && install.controls?.opened === 'verified' && install.controls?.storageChecked === 'verified' && ['implemented', 'verified'].includes(device?.controls.screenLock ?? 'unknown') && (install.productId !== 'microsoft-authenticator' || install.controls?.appLock === 'verified');
 }
 export function authenticatorSetupRoute(data: Dataset, accountId: string, returnCursor = data.guide.answers[`auth:${accountId}:task`]): string {
   const prerequisite = authenticatorPrerequisiteRoute(data, accountId); if (prerequisite) return prerequisite;
@@ -71,7 +75,7 @@ export function authenticatorSetupRoute(data: Dataset, accountId: string, return
 }
 const step = (id: string, title: GuideStep['title'], place: GuideStep['place'], action: GuideStep['action'], expected: GuideStep['expected'], sources: SourceId[], extra: Partial<GuideStep> = {}): GuideStep => ({ id, title, place, action, expected, sources, button: c('I checked this', '確認しました'), ...extra });
 export function authenticatorSetupRecipe(data: Dataset, account: Asset): Recipe | undefined {
-  const app = selectedAuthenticator(data, account.id); if (!app) return;
+  const app = selectedAuthenticator(data, account.id); if (!app || app.productId==='2fas-auth') return;
   const device = data.assets.find(a => a.id === app.deviceRef); if (!device) return;
   const product = app.productId as AuthenticatorProduct, bw = product === 'bitwarden-authenticator', google = product === 'google-authenticator', ios = device.operatingSystem === 'ios';
   const source = authSources(product), place = c(`${device.name} · ${AUTHENTICATORS[product].en}`, `${device.name} · ${AUTHENTICATORS[product].ja}`);
@@ -88,7 +92,7 @@ export function authenticatorSetupRecipe(data: Dataset, account: Asset): Recipe 
 export function authenticatorScanStep(data: Dataset, account: Asset, original: GuideStep): GuideStep {
   const app = selectedAuthenticator(data, account.id); if (!app) return original;
   const product = app.productId as AuthenticatorProduct, manual = data.guide.answers[`auth:${account.id}:input:${app.id}`] === 'manual';
-  const appAction = product === 'bitwarden-authenticator' ? manual ? c('Tap + → Enter key manually. Enter the account name and the setup key shown by the official service. Keep time-based/default parameters unless the service specifies otherwise. Choose Save here, not Save to Bitwarden.', '「＋」→「Enter key manually」で、今回のアカウント名と、正規サービスに表示された手入力用キーを入れます。時間ベースなどの設定は、サービスの指定がない限り既定のままにし、「Save here」を選んでください。「Save to Bitwarden」は選びません。') : c('Tap + and scan the official service’s QR on the other screen. Choose Save here to keep this new code outside Password Manager.', '「＋」から、別の画面にある正規サービスのQRを読み取り、「Save here」で今回のコードをパスワード保管庫の外へ保存してください。') : product === 'google-authenticator' ? manual ? c('Tap + → Enter a setup key. Enter a distinct account name and the setup key from the official service. Use the time-based option and add it. This setup key is not a recovery code or the changing verification code.', '「＋」→「Enter a setup key」（設定キーの入力）で、区別できるアカウント名と正規サービスの手入力用キーを入れ、時間ベースの設定で追加してください。復旧コードや、一定時間で変わる確認コードを入れる操作ではありません。') : c('Tap + → Scan a QR code. Point the camera at this account’s QR on the other screen. Check that the new entry belongs to the exact account.', '「＋」→「Scan a QR code」（QRの読み取り）で、別の画面にある今回のQRを読み取ります。追加された項目が、別の同名アカウントではないことを確認してください。') : manual ? c('Tap + → Other account → Enter code manually. Enter the account name and setup key from the official service. Do not enter a one-use recovery code. Keep existing accounts.', '「＋」→「Other account」→「Enter code manually」で、正規サービスのアカウント名と手入力用キーを入れてください。一回用の復旧コードではありません。既存の項目は残します。') : c(`Tap + → ${account.provider === 'microsoft' ? 'Personal account → Scan a QR Code' : 'Other account'}. Scan this exact account’s QR on the other screen. Approve camera access only for this operation.`, `「＋」→${account.provider === 'microsoft' ? '「Personal account」→「Scan a QR Code」' : '「Other account」'}から、別の画面にある今回のQRを読み取ります。この操作のためのカメラ利用を許可してください。`);
+  const appAction = product === '2fas-auth' ? manual ? c('Tap +, choose manual entry, and enter the service name and the setup key shown by the official service only in 2FAS. Keep TOTP and the default parameters unless the service specifies otherwise. Save the entry and keep existing codes.','「＋」から手入力を選び、正規サービスに表示されたサービス名と設定キーを2FASだけへ入力します。TOTPなどの詳細は、サービスに指定がない限り既定のまま保存し、既存コードも残してください。') : c('Tap + (top right on iOS, bottom right on Android) and scan this exact account’s QR on the other trusted screen. Confirm the new entry belongs to the intended account; keep existing tokens.','「＋」（iOSは右上、Androidは右下）から、別の信頼できる画面にある今回のQRを読み取ります。新しい項目が今回の正しいアカウントか確かめ、既存コードも残してください。') : product === 'bitwarden-authenticator' ? manual ? c('Tap + → Enter key manually. Enter the account name and the setup key shown by the official service. Keep time-based/default parameters unless the service specifies otherwise. Choose Save here, not Save to Bitwarden.', '「＋」→「Enter key manually」で、今回のアカウント名と、正規サービスに表示された手入力用キーを入れます。時間ベースなどの設定は、サービスの指定がない限り既定のままにし、「Save here」を選んでください。「Save to Bitwarden」は選びません。') : c('Tap + and scan the official service’s QR on the other screen. Choose Save here to keep this new code outside Password Manager.', '「＋」から、別の画面にある正規サービスのQRを読み取り、「Save here」で今回のコードをパスワード保管庫の外へ保存してください。') : product === 'google-authenticator' ? manual ? c('Tap + → Enter a setup key. Enter a distinct account name and the setup key from the official service. Use the time-based option and add it. This setup key is not a recovery code or the changing verification code.', '「＋」→「Enter a setup key」（設定キーの入力）で、区別できるアカウント名と正規サービスの手入力用キーを入れ、時間ベースの設定で追加してください。復旧コードや、一定時間で変わる確認コードを入れる操作ではありません。') : c('Tap + → Scan a QR code. Point the camera at this account’s QR on the other screen. Check that the new entry belongs to the exact account.', '「＋」→「Scan a QR code」（QRの読み取り）で、別の画面にある今回のQRを読み取ります。追加された項目が、別の同名アカウントではないことを確認してください。') : manual ? c('Tap + → Other account → Enter code manually. Enter the account name and setup key from the official service. Do not enter a one-use recovery code. Keep existing accounts.', '「＋」→「Other account」→「Enter code manually」で、正規サービスのアカウント名と手入力用キーを入れてください。一回用の復旧コードではありません。既存の項目は残します。') : c(`Tap + → ${account.provider === 'microsoft' ? 'Personal account → Scan a QR Code' : 'Other account'}. Scan this exact account’s QR on the other screen. Approve camera access only for this operation.`, `「＋」→${account.provider === 'microsoft' ? '「Personal account」→「Scan a QR Code」' : '「Other account」'}から、別の画面にある今回のQRを読み取ります。この操作のためのカメラ利用を許可してください。`);
   return { ...original, title: c('Add this account to the selected app', '選んだアプリへ今回のアカウントを追加する'), place: c(AUTHENTICATORS[product].en, AUTHENTICATORS[product].ja), action: appAction, expected: c('A changing code for the exact intended account appears. The service still needs to accept it next.', '今回の正しいアカウントのコードが表示されること。次に、サービス側で受け付けられるか確認します。'), sources: [...new Set([...original.sources, ...authSources(product)])] };
 }
 
@@ -102,16 +106,24 @@ export function unprotectedAuthenticatorRoot(data: Dataset, accountId: string): 
   while (!visited.has(current)) {
     visited.add(current);
     const app = selectedAuthenticator(data, current);
-    if (app?.productId !== 'google-authenticator' || app.codeStorage !== 'account' || app.controls?.storageChecked !== 'verified') return;
-    const root = data.assets.find(a => a.id === app.syncAccountRef && a.kind === 'account'); if (!root) return;
+    if(!app||app.controls?.storageChecked!=='verified')return;
+    const rootId=app.productId==='google-authenticator'&&app.codeStorage==='account'?app.syncAccountRef:app.productId==='2fas-auth'?twofasSyncRoot(data,app.id):undefined;
+    const root = data.assets.find(a => a.id === rootId && a.kind === 'account'); if (!root) return;
     if (!['mfa', 'recovery'].every(c => ['implemented', 'verified'].includes(root.controls[c]))) return root;
     current = root.id;
   }
 }
 export function requireAuthenticatorRoots(data: Dataset, accountId: string, returnTo: string): Dataset {
+  const selected=selectedAuthenticator(data,accountId);
+  if(selected?.productId==='2fas-auth'&&!twofasBackupCurrent(data,selected.id)){const started=startTwofasTask(data,{kind:'backup',appRef:selected.id,origin:'guide',accountRef:accountId,returnCursor:returnTo,scopePath:'/guide'});return setAuthCursor(started.data,`twofas/${started.id}`);}
   const root = unprotectedAuthenticatorRoot(data, accountId), key = `authenticator-root-security/${accountId}`;
   if (root) return setAuthCursor({ ...data, guide: { ...data.guide, answers: { ...data.guide.answers, [`auth:${accountId}:security-return`]: returnTo } } }, key);
   const step = data.guide.steps[key];
   const next = step?.status === 'later' ? { ...data, guide: { ...data.guide, steps: { ...data.guide.steps, [key]: { ...step, status: 'done' as const, updatedAt: new Date().toISOString() } } } } : data;
   return setAuthCursor(next, returnTo);
+}
+
+export function twofasSyncRoot(data:Dataset,appRef:string):string|undefined{
+  if(data.version!==2)return;const store=twofasStore(data);
+  return store?.clouds.filter(c=>c.appRef===appRef&&twofasReceiptCurrent(store,c.receiptRef)&&data.securityModel.relations.some(r=>r.kind==='synced-via'&&r.fromRef===appRef&&r.toRef===c.rootRef&&r.evidence==='user-confirmed'&&twofasLinkCurrent(data.securityModel,r.id))).at(-1)?.rootRef;
 }

@@ -1,7 +1,8 @@
+import {ownTwofasApp} from './twofasEngine';
 import { makeAsset, type CurrentDataset } from './models';
 import { securityEntitySchema } from './securityModel';
 import { recordControl, undoControl } from './controlRecords';
-import { authenticator, type AuthenticatorProduct } from './authenticatorGuide';
+import { AUTHENTICATORS, authenticator, type AuthenticatorProduct } from './authenticatorGuide';
 import { MOVE_PRODUCTS } from './phoneAuthenticators';
 import type { PhoneWorkflow } from './phoneSchemas';
 import type { PhoneStep } from './phoneCatalog';
@@ -10,9 +11,9 @@ export function answerAuthenticatorQuestion(data: CurrentDataset, workflow: Phon
   let next = data, w = { ...workflow, answers: { ...workflow.answers } };
   const source = (product: AuthenticatorProduct) => {
     const existing = next.securityModel.entities.find(e => e.kind === 'installation' && !e.mergedIntoRef && e.productId === product && e.deviceRef === w.oldDeviceRef);
-    if (existing) return existing.id;
-    const entity = securityEntitySchema.parse({ id: crypto.randomUUID(), kind: 'installation', productId: product, deviceRef: w.oldDeviceRef, label: `${product === 'microsoft-authenticator' ? 'Microsoft Authenticator' : 'Bitwarden Authenticator'} · ${next.assets.find(a => a.id === w.oldDeviceRef)?.name ?? 'Previous phone'}`.slice(0, 80), createdAt: new Date().toISOString(), controls: {}, controlEvidence: {}, createdBy: 'phone-authenticator' });
-    next = { ...next, securityModel: { ...next.securityModel, entities: [...next.securityModel.entities, entity] } }; return entity.id;
+    if (existing) {if(product==='2fas-auth')next=ownTwofasApp(next,existing.id);return existing.id;}
+    const entity = securityEntitySchema.parse({ id: crypto.randomUUID(), kind: 'installation', productId: product, deviceRef: w.oldDeviceRef, label: `${AUTHENTICATORS[product].en} · ${next.assets.find(a => a.id === w.oldDeviceRef)?.name ?? 'Previous phone'}`.slice(0, 80), createdAt: new Date().toISOString(), controls: {}, controlEvidence: {}, createdBy: 'phone-authenticator' });
+    next = { ...next, securityModel: { ...next.securityModel, entities: [...next.securityModel.entities, entity] } }; if(product==='2fas-auth')next=ownTwofasApp(next,entity.id);return entity.id;
   };
   if (step.id === 'authenticator' && Object.hasOwn(MOVE_PRODUCTS, value)) {
     const previous = authenticator(next, w.answers['auth-primary-ref']);

@@ -1,3 +1,4 @@
+import {twofasStore} from './twofasSchemas';
 import { accessPlanStore } from './accessPlanSchemas';
 import {protectionStore} from './deviceProtectionSchemas';
 import {recordedActors} from './recordAvailability';
@@ -13,6 +14,7 @@ export function removeEntry(data: Dataset, id: string): Dataset | undefined {
   if (keyTasks(data).some(t => [t.accountRef,t.deviceRef,t.browserRef,t.vaultRef,...t.keyRefs,...t.registrationRefs,...Object.values(t.records).flatMap(r=>r.refs)].includes(id))) return undefined;
   const protection=protectionStore(data);
   if(protection?.tasks.some(t=>[...recordedActors(data,[t.deviceRef,t.accountRef,t.environmentRef,t.environmentDeviceRef,t.sessionRef,t.lineRef,...t.managementUsedRefs]),...[...Object.values(t.records),...t.recordHistory.map(h=>h.record)].flatMap(r=>[...r.refs,...r.withoutRefs,...Object.keys(r.actorEpochs),...Object.keys(r.actorSignatures)])].includes(id))||protection?.history.some(e=>e.deviceRef===id||e.accountRef===id))return undefined;
+  const twofas=twofasStore(data);if(twofas){const references=(v:unknown):boolean=>typeof v==='string'?v===id:Array.isArray(v)?v.some(references):!!v&&typeof v==='object'&&Object.values(v).some(references);if(references(twofas))return undefined;}
   const store=accessPlanStore(data);
   if(store){const contains=(v:unknown):boolean=>typeof v==='string'?v===id:Array.isArray(v)?v.some(contains):!!v&&typeof v==='object'&&Object.values(v).some(contains);if(contains(store))return undefined;}
   if (!data.assets.some(a => a.id === id)) return data;

@@ -1,3 +1,4 @@
+import {TWOFAS_SOURCES} from './twofasSources';
 import type { Asset, Language } from './models';
 import { CLOUD_SOURCES } from './cloudSources';
 import { privatePassphraseStep } from './passphraseCatalog';
@@ -8,6 +9,7 @@ export const say = (copy: Copy, language: Language) => copy[language];
 export type Source = { title: string; url: string; checked: string; scope: string; reviewMethod: 'official-documentation' | 'official-search-excerpt' };
 const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-13', reviewMethod: 'official-documentation' });
 export const SOURCES = {
+  ...TWOFAS_SOURCES,
   ...CLOUD_SOURCES,
   applePasswords: source('Apple · パスワードアプリ', 'https://support.apple.com/ja-jp/120758', 'iOS / iPadOS 18+ / macOS Sequoia+'),
   appleKeychain: source('Apple · iCloudキーチェーン', 'https://support.apple.com/ja-jp/109016', 'Account / device approval / sync'),

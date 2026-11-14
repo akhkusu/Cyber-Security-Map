@@ -7,6 +7,9 @@ import { nordSsoBinding, nordSsoReady, nordSsoStore } from '../src/nordSsoSchema
 import { answerPhoneQuestion, jumpPhoneStep, startPhoneWorkflow } from '../src/phoneEngine';
 import {startKeyGuide,answerKeyGuide,currentKeyStep} from '../src/hardwareKeys';
 import {keyTasks} from '../src/hardwareKeySchemas';
+import {driveTwofasUI} from './twofas-driver';
+import {chooseAuthenticator,authenticatorSetupRoute} from '../src/authenticatorGuide';
+import {twofasStore} from '../src/twofasSchemas';
 import {driveNestedKey} from './nested-key-driver';
 import {startNordSsoSession,saveNordSsoSession,selectNordSsoAccount,selectNordSsoProvider} from '../src/nordSso';
 import {guideSchema} from '../src/models';
@@ -163,4 +166,15 @@ for (const language of ['ja', 'en'] as const) test(`${language}: mobile keyboard
   await advance(page, language === 'ja' ? 'うまくいかない' : 'Something is different'); await page.locator('.problem-options button').first().click(); await advance(page, language === 'ja' ? 'この案内でも解決しない' : 'This still does not resolve it');
   const prompt = await page.getByLabel(language === 'ja' ? 'AIへの相談文' : 'AI consultation prompt', { exact: true }).inputValue(); expect(prompt).toContain('Apple'); expect(prompt).not.toMatch(/PRIVATE|使っているApple|Nord個人|利用する端末/); expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await mkdir('test-results/nord-sso', { recursive: true }); await page.screenshot({ path: `test-results/nord-sso/nord-sso-${language}.png`, fullPage: true });
+});
+
+test('2FAS setup returns to the same Nord provider detour while keeping the main guide and phone task',async({page})=>{
+  const f=nestedKeyFixture('google'),path=`/nord-connection/${f.session.id}`;
+  let child=chooseAuthenticator({...f.data,guide:{...f.child.guide,cursor:'do/provider/email-mfa/scan'}},'provider','2fas-auth','device','do/provider/email-mfa/scan',true,path);
+  const id=twofasStore(child)!.tasks.at(-1)!.id;child={...child,guide:{...child.guide,cursor:authenticatorSetupRoute(child,'provider')}};
+  const data=saveNordSsoSession(f.data,child,f.session.id) as CurrentDataset;
+  await openNestedKeySession(page,data,f.session.id);await driveTwofasUI(page,id);
+  await expect(page.getByRole('heading',{level:1})).toHaveText('登録用のQRコードは、どの画面にありますか？');
+  const savedData=await saved(page);expect(savedData.guide).toEqual(f.main);expect(savedData.deviceWorkflows).toEqual(f.phone);expect(guideSchema.parse(nordSsoStore(savedData)!.sessions.find(s=>s.id===f.session.id)!.guide).cursor).toBe('authenticator-input/provider');
+  expect(twofasStore(savedData)!.tasks.find(t=>t.id===id)!.scopePath).toBe(path);expect(savedData.assets.find(a=>a.id==='provider')!.controls.mfa).toBe('unknown');
 });

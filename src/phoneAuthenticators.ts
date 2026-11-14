@@ -1,10 +1,12 @@
+import {twofasSnapshot} from './twofasSchemas';
+import {fileTransferSteps} from './phoneFileTransfer';
 import type { Asset, Dataset } from './models';
 import type { PhoneWorkflow } from './phoneSchemas';
 import type { PhoneChoice, PhoneStep } from './phoneCatalog';
 import { AUTHENTICATORS, authenticator, type AuthenticatorInstallation, type AuthenticatorProduct } from './authenticatorGuide';
 import { c, deviceRecipe, type Copy } from './guideCatalog';
 
-export const MOVE_PRODUCTS = { microsoft: 'microsoft-authenticator', bitwarden: 'bitwarden-authenticator' } as const;
+export const MOVE_PRODUCTS = { twofas:'2fas-auth', microsoft: 'microsoft-authenticator', bitwarden: 'bitwarden-authenticator' } as const;
 const choice = (value: string, en: string, ja = en): PhoneChoice => ({ value, label: c(en, ja) });
 const ask = (id: string, title: Copy, choices: PhoneChoice[], text?: Copy, meta?: PhoneStep['authenticatorQuestion']): PhoneStep => ({ id, kind: 'question', title, choices, text, answerKey: id, refs: [], sources: [], authenticatorQuestion: meta });
 const act = (id: string, title: Copy, place: Copy, action: Copy, expected: Copy, refs: string[], sources: string[], extra: Partial<PhoneStep> = {}): PhoneStep => ({ id, kind: 'action', title, place, action, expected, refs, sources, button: c('I checked this', '確認しました'), ...extra });
@@ -30,9 +32,9 @@ export function authenticatorInventory(data: Dataset, w: PhoneWorkflow): { steps
   const steps: PhoneStep[] = [];
   if (Object.hasOwn(MOVE_PRODUCTS, w.answers.authenticator) && !authenticator(data, w.answers['auth-primary-ref'])) { steps.push(blocked('auth-primary-missing', c('Choose the existing app again', '使っているアプリを選び直す'), c('The selected app profile is missing. Keep existing records and review the authenticator selection.', '選んだアプリの登録が見つかりません。既存の記録は残し、認証アプリの選択を確認してください。'), [w.oldDeviceRef!])); return { steps, ready: true }; }
   for (let i = 0; i < 32; i++) {
-    steps.push(ask(`auth-add:${i}`, c('Do you use another authenticator?', 'ほかにも認証アプリを使っていますか？'), [choice('microsoft', 'Microsoft Authenticator'), choice('bitwarden', 'Bitwarden Authenticator (standalone)', 'Bitwarden Authenticator（単独アプリ）'), choice('google', 'Google Authenticator', 'Google 認証システム'), choice('none', 'That is all', 'これですべてです'), choice('other', 'Another product / not sure', '別の製品・分からない')], c('Add only apps you actually use. Each saved profile will be checked separately.', '実際に使うものだけ選んでください。登録済みの保存先も、それぞれ確認します。'), { kind: 'product', index: i }));
+    steps.push(ask(`auth-add:${i}`, c('Do you use another authenticator?', 'ほかにも認証アプリを使っていますか？'), [choice('twofas','2FAS Auth'), choice('microsoft', 'Microsoft Authenticator'), choice('bitwarden', 'Bitwarden Authenticator (standalone)', 'Bitwarden Authenticator（単独アプリ）'), choice('google', 'Google Authenticator', 'Google 認証システム'), choice('none', 'That is all', 'これですべてです'), choice('other', 'Another product / not sure', '別の製品・分からない')], c('Add only apps you actually use. Each saved profile will be checked separately.', '実際に使うものだけ選んでください。登録済みの保存先も、それぞれ確認します。'), { kind: 'product', index: i }));
     const prior = [w.answers.authenticator, ...Array.from({ length: i }, (_, j) => w.answers[`auth-add:${j}`])];
-    steps[steps.length - 1].choices = steps[steps.length - 1].choices?.filter(v => !['google', 'microsoft', 'bitwarden'].includes(v.value) || !prior.includes(v.value));
+    steps[steps.length - 1].choices = steps[steps.length - 1].choices?.filter(v => !['google', 'microsoft', 'bitwarden','twofas'].includes(v.value) || !prior.includes(v.value));
     const value = w.answers[`auth-add:${i}`];
     if (Object.hasOwn(MOVE_PRODUCTS, value) && !authenticator(data, w.answers[`auth-add-ref:${i}`])) { steps.push(blocked(`auth-add-missing:${i}`, c('Choose this app again', 'このアプリを選び直す'), c('Its saved profile is missing. Return to this selection without deleting existing records.', '保存先の登録が見つかりません。既存の記録は消さず、この選択へ戻って確認します。'), [w.oldDeviceRef!])); return { steps, ready: true }; }
     if (!value) return { steps, ready: false };
@@ -54,6 +56,7 @@ export function authenticatorMigrationSteps(data: Dataset, w: PhoneWorkflow, acc
     const askForApp = (...args: Parameters<typeof ask>) => ({ ...ask(...args), context: name });
     const oldPlace = c(`Previous phone · ${name.en}`, `旧端末 · ${name.ja}`), newPlace = c(`New phone · ${name.en}`, `新端末 · ${name.ja}`);
     if (w.answers.availability !== 'available') { steps.push(blocked(`${prefix}:old-unavailable`, c('Use a backup-specific recovery path', 'バックアップからの復旧として進める'), c('This direct-move route needs the old app. Keep existing backups; do not reinstall or overwrite them. Backup-only recovery is a separate unfinished task.', 'この直接移行には旧アプリが必要です。既存バックアップを残し、再インストールや上書きをしないでください。バックアップだけからの復旧は、別の未完了作業として残します。'), ids, sources)); continue; }
+    if(app.productId==='2fas-auth'){steps.push(act(`${prefix}:twofas`,c('Move and test 2FAS on the new phone','新端末で2FASを移し、利用を確認する'),newPlace,c('Follow the separate 2FAS guide. Keep both phones and existing codes; a copy alone does not finish the transfer.','2FASの専用ガイドを進めます。両端末と既存コードを残し、コピーだけでは移行完了にしません。'),c('The intended new codes have been tested in the 2FAS guide.','専用ガイドで、今回の新コードを使って確認できたこと。'),ids,['twofasTransfer','twofasTutorial'],{twofasSourceRef:app.id,requires:['prepare-recovery'],variant:twofasSnapshot(data.securityModel,app.id)}));continue;}
     steps.push(act(`${prefix}:old-open`, c(`Open the existing ${name.en}`, `旧端末で${name.ja}を開く`), oldPlace, c('Open the existing app and review all code groups. Keep every existing code. Identify local entries, synced groups and any work or passwordless registrations.', '今使っているアプリを開き、すべてのグループを確認します。既存コードは残し、端末内の項目・同期のグループ・仕事用やパスワードレスの登録を見分けてください。'), c('The intended existing app is open and its groups can be checked.', '元のアプリで、今回移す項目を確認できること。'), [app.id, old.id], sources, { extraControls: [{ targetRef: app.id, controlId: 'opened' }], authenticatorEffect: { kind: 'open', sourceRef: app.id, installationRef: app.id } }));
     const destKey = `auth-destination:${app.id}`;
     const candidates = data.securityModel.entities.filter(e => e.kind === 'installation' && !e.mergedIntoRef && e.productId === app.productId && e.deviceRef === fresh.id);
@@ -189,19 +192,4 @@ function rootQuestions(data: Dataset, w: PhoneWorkflow, app: AuthenticatorInstal
   }
   if (multiple) steps.push(blocked(`auth:${app.id}:root-limit`, c('Review remaining sync accounts', '残る同期先を確認する'), c('Keep the old app until all actual groups have been identified.', '実際のグループをすべて確認するまで、旧アプリを残してください。'), [app.id]));
   return { steps, refs, ready: true };
-}
-
-function fileTransferSteps(sourceRef: string, old: Asset, fresh: Asset, refs: string[], exported: string, w: PhoneWorkflow) {
-  const steps: PhoneStep[] = [], prefix = `auth:${sourceRef}`, same = old.operatingSystem === fresh.operatingSystem;
-  if (!same) {
-    const key = `${prefix}:cross-share`;
-    steps.push(ask(key, c('Which Android is involved in this direct transfer?', '直接転送に使うAndroidの種類は？'), [choice('pixel', 'Pixel 9 or later, excluding Pixel 9a', 'Pixel 9以降（Pixel 9aを除く）'), choice('prepared', 'The private JSON is already on the new phone', '保護して移したJSONが、すでに新端末にある'), choice('other', 'Another model / not sure', '別の機種・分からない')], c('Direct AirDrop interoperability depends on the Android model. Do not upload the secret file to an unknown transfer service.', 'AirDropと直接やり取りできるかはAndroidの機種で異なります。秘密ファイルを、分からない転送サービスへアップロードしないでください。')));
-    const value = w.answers[key]; if (!value) return { steps, ready: false };
-    if (value === 'other') { steps.push(blocked(`${prefix}:file-transfer-unsupported`, c('Keep this file transfer unfinished', 'この端末間のファイル転送を未完了で残す'), c('A verified direct-transfer recipe for this pair is still needed. Keep the old app and its private export.', 'この組み合わせの直接転送は、確認済み手順の追加が必要です。旧アプリと本人が管理する書き出しを残してください。'), refs, ['quickShare'])); return { steps, ready: true }; }
-    if (value === 'prepared') { steps.push(act(`${prefix}:send`, c('Locate the privately transferred JSON', '本人が保護して移したJSONを確認する'), c('New phone · file picker', '新端末 · ファイル選択画面'), c('Locate the exact JSON privately transferred from this old app. Do not select another vault export or upload it to this app.', 'この旧アプリから本人が保護して移したJSONを選べるか確認します。別の保管庫の書き出しを選んだり、このアプリへアップロードしたりしません。'), c('The intended JSON is available in the new phone’s file picker.', '今回のJSONを、新端末のファイル選択画面で選べること。'), refs, ['bwAuthenticatorExport'], { requires: [exported] })); return { steps, ready: true }; }
-  }
-  const sendIos = old.operatingSystem === 'ios', receiveIos = fresh.operatingSystem === 'ios';
-  steps.push(act(`${prefix}:receive-ready`, c('Prepare the receiving phone', '受け取る端末を準備する'), c('New phone · nearby sharing settings', '新端末 · 近くの端末との共有設定'), c(receiveIos ? 'Keep both phones nearby, with Wi-Fi and Bluetooth on. In iPhone Control Center hold connectivity controls → AirDrop → Everyone for 10 Minutes. Turn off Personal Hotspot if active.' : 'Keep both phones nearby and Bluetooth on. In Android Settings search Quick Share, open it and select Receive. Keep the phone unlocked.', receiveIos ? '2台を近くに置き、Wi-Fi・Bluetoothをオンにします。新iPhoneのコントロールセンターで通信の操作部を長押し→「AirDrop」→「Everyone for 10 Minutes」を選びます。インターネット共有があればオフにします。' : '2台を近くに置き、Bluetoothをオンにします。新Androidの設定で「Quick Share」を検索し、開いて「Receive」にしてください。ロックは解除しておきます。'), c('The intended receiving phone is visible for this transfer.', '今回受け取る自分の端末を、転送先として選べること。'), [fresh.id], [receiveIos ? 'airDrop' : 'quickShare']));
-  steps.push(act(`${prefix}:send`, c('Send the JSON only to your new phone', 'JSONを、自分の新端末だけへ送る'), c('Previous phone · export file → Share', '旧端末 · 書き出したファイル → 共有'), c(sendIos ? 'Select the JSON file → Share → AirDrop → your new phone. On the receiving phone accept the request if shown. If an AirDrop code is requested, obtain it on the receiving phone and enter it only in the sending phone’s AirDrop prompt.' : 'Select the JSON file → Share → Quick Share → your new phone. Check the recipient and accept on the new phone if asked. Wait for completion.', sendIos ? 'JSONを選び、「共有」→「AirDrop」→自分の新端末を選びます。受信側で求められたら承認してください。AirDropコードを求められた場合は、受信側で表示し、送信側のAirDropの入力先だけに入れます。' : 'JSONを選び、「共有」→「Quick Share」→自分の新端末を選びます。相手を確認し、新端末で求められたら承認して、完了まで待ってください。'), c('The intended JSON arrives and is available in the new phone’s Files app.', '今回のJSONが届き、新端末のファイル選択画面から利用できること。'), refs, ['airDrop', 'quickShare'], { requires: [exported, `${prefix}:receive-ready`] }));
-  return { steps, ready: true };
 }

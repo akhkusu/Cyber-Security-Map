@@ -618,6 +618,6 @@ FirefoxではPrimary PasswordとMozilla Accountによる同期を別の役割と
 
 Apple・Google組込みの段階的な実装は、[組込み管理の実装契約](BUILTIN-MANAGERS-GUIDE.md)で管理します。本仕様の全経路を完了した状態とは区別し、公開済みOS・保存方式・機種変更・未対応の復元を明記します。
 
-認証アプリの段階的な実装は、[認証アプリの実装契約](AUTHENTICATOR-GUIDE.md)で管理します。Google・Microsoft・Bitwardenの新規コード登録と、製品別のバックアップ・復元・機種変更は別の対応範囲として管理します。
+認証アプリの段階的な実装は、[認証アプリの実装契約](AUTHENTICATOR-GUIDE.md)で管理します。Google・Microsoft・Bitwarden・2FASの新規コード登録と、製品別のバックアップ・復元・機種変更は別の対応範囲として管理します。2FASの配布版・PIN・暗号化ファイル・同期・実利用の範囲は[専用契約](TWOFAS-AUTH-GUIDE.md)で管理します。
 
 Proton Pass・NordPassの段階的な実装は、[クラウド管理の実装契約](CLOUD-MANAGERS-GUIDE.md)で管理します。個人用の基本設定、復旧、マスターの作成・変更、保存・実利用を扱います。[任意の機種変更](CLOUD-MANAGERS-PHONE-MOVE.md)では、既存の個人保管庫を新端末・別の登録済み端末で使えることを確認します。残るSSO・秘密の紛失・復旧方式は、対応済みの基本経路と区別します。

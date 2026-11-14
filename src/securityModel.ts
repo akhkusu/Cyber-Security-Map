@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {twofasFactCurrent,twofasWithoutEvidence} from './twofasSchemas';
 import { planFactCurrent, planRequirementRefs } from './accessPlanEvidence';
 import {protectionFactCurrent,protectionWithoutEvidence} from './deviceProtectionEvidence';
 import { assessmentAnswerSchema, controlEvidenceSchema, controlStateSchema } from './recordSchemas';
@@ -62,7 +63,8 @@ export const accessFactSchema = z.object({
 }).passthrough();
 export type AccessFact = z.infer<typeof accessFactSchema>;
 const planWithoutEvidence=(fact:AccessFact,model:SecurityModel)=>model.revision>=8&&fact.accessPlanObservationV1==='v1'&&planFactCurrent(model,fact);
-const confirmedWithout = (fact: AccessFact, model: SecurityModel): string[] => (fact.cloudPhoneObservation === 'v1' || (model.revision >= 4 && fact.nordRecoveryEvidence === 'v1' && fact.nordRecoveryPurpose === 'master-read') || (model.revision >= 5 && fact.nordSsoEvidence === 'v1' && ['provider-auth', 'nord-auth'].includes(String(fact.nordSsoPurpose))) || planWithoutEvidence(fact,model) || protectionWithoutEvidence(model,fact)) && Array.isArray(fact.observedWithoutRefs) && fact.observedWithoutRefs.every(ref => typeof ref === 'string') ? fact.observedWithoutRefs : [];
+const legacyConfirmedWithout = (fact: AccessFact, model: SecurityModel): string[] => (fact.cloudPhoneObservation === 'v1' || (model.revision >= 4 && fact.nordRecoveryEvidence === 'v1' && fact.nordRecoveryPurpose === 'master-read') || (model.revision >= 5 && fact.nordSsoEvidence === 'v1' && ['provider-auth', 'nord-auth'].includes(String(fact.nordSsoPurpose))) || planWithoutEvidence(fact,model) || protectionWithoutEvidence(model,fact)) && Array.isArray(fact.observedWithoutRefs) && fact.observedWithoutRefs.every(ref => typeof ref === 'string') ? fact.observedWithoutRefs : [];
+const confirmedWithout=(fact:AccessFact,model:SecurityModel)=>[...legacyConfirmedWithout(fact,model),...twofasWithoutEvidence(model,fact)];
 export const accessRouteSchema = z.object({
   id, label, targetRef: id, purpose: z.enum(['sign-in', 'second-step', 'decrypt', 'local-unlock', 'restore', 'device-management']),
   contexts: z.array(z.enum(ACCESS_CONTEXTS)).min(1).default(['normal']), requirements: accessConditionSchema,
@@ -77,7 +79,7 @@ const controlBaselineSchema = z.object({
   answerKey: id.optional(), answer: assessmentAnswerSchema.optional(),
 }).passthrough();
 export const securityModelSchema = z.object({
-  revision: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10)]), entities: z.array(securityEntitySchema).default([]), relations: z.array(securityRelationSchema).default([]),
+  revision: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10), z.literal(11)]), entities: z.array(securityEntitySchema).default([]), relations: z.array(securityRelationSchema).default([]),
   facts: z.array(accessFactSchema).default([]), routes: z.array(accessRouteSchema).default([]),
   lifecycle: z.record(z.string(), lifecycleSchema).default({}),
   controlBaselines: z.record(z.string(), controlBaselineSchema).default({}),
@@ -161,7 +163,7 @@ export function evaluateAccess(model: SecurityModel, routeId: string, scenario: 
     if (!f) return result('unknown', 'missing-reference', factId);
     if (!f.contexts.includes(scenario.context)) return result('not-applicable', 'outside-context', factId);
     if (f.evidence !== 'user-confirmed') return result('unknown', f.evidence === 'user-reported' ? 'reported-only' : 'unconfirmed', f.id);
-    if(!planFactCurrent(model,f)||!protectionFactCurrent(model,f))return result('unknown','unconfirmed',f.id);
+    if(!planFactCurrent(model,f)||!protectionFactCurrent(model,f)||!twofasFactCurrent(model,f))return result('unknown','unconfirmed',f.id);
     const requiredRefs=planRequirementRefs(model,f);
     const missing = requiredRefs.find(ref => unavailable.has(ref));
     if (missing) return result('unavailable', 'resource-unavailable', missing);
