@@ -1,3 +1,5 @@
+import {hasLineOnPhone} from './lineData';
+import {phoneInventory,phoneProductsReady} from './lineSchemas';
 import {entePhoneSignInRecorded} from './enteEngine';
 import {ENTE_SOURCES} from './enteSources';
 import {PROTECTION_SOURCES} from './deviceProtectionCatalog';
@@ -54,6 +56,7 @@ export type PhoneStep = {
   requires?: string[];
   twofasSourceRef?: string;
   enteSourceRef?: string;
+  productPhoneRef?: string;
   authenticatorEffect?: { kind: 'open' | 'items' | 'sync' | 'backup' | 'export' | 'code' | 'cleanup'; sourceRef: string; installationRef?: string; accountRef?: string; rootRef?: string };
   authenticatorQuestion?: { kind: 'product' | 'destination' | 'root' | 'target'; sourceRef?: string; index?: number; provider?: 'apple' | 'microsoft' | 'bitwarden' };
 };
@@ -98,7 +101,7 @@ function basePhoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] {
     const backup = deviceRecipe(old.operatingSystem ?? 'ios').steps.filter(s => s.id.startsWith('backup-'));
     for (const s of backup) steps.push(action(`old-${s.id}`, s.title, c(`Previous phone · ${old.name}`, `これまでのスマホ · ${old.name}`), s.action, s.expected, [old.id], s.sources, { button: s.button, ...(s.control ? { control: { targetRef: old.id, id: s.control } } : {}) }));
   }
-  if (stage === 'planning') { steps.push({ id: 'planning-ready', kind: 'finish', title: c('Continue when you have the new phone', '新しいスマホを用意したら、続きを進められます'), text: c('Keep the previous phone and your recovery information. When the new phone is ready, change the stage above to continue its setup and checks.', '旧端末と復旧用情報を確保しておいてください。新しいスマホを用意したら、段階を切り替えて設定と利用確認を続けられます。'), refs: [old.id], sources: [] }); return steps; }
+  if (stage === 'planning') { steps.push(action('special-app-move',c('Prepare individual apps before buying','買い替え前に製品ごとの準備を進める'),c('Previous phone · selected apps','旧端末で使っている製品'),c('Prepare only the products you use. No new phone or completed transfer is assumed.','使っている製品だけを準備します。新端末の存在や移行完了を推測しません。'),c('Preparation is saved; continue when the actual new phone is available.','準備を保存し、実際の新端末を用意したら続けられること。'),[old.id],[],{productPhoneRef:workflow.id})); steps.push({ id: 'planning-ready', kind: 'finish', title: c('Continue when you have the new phone', '新しいスマホを用意したら、続きを進められます'), text: c('Keep the previous phone and your recovery information. When the new phone is ready, change the stage above to continue its setup and checks.', '旧端末と復旧用情報を確保しておいてください。新しいスマホを用意したら、段階を切り替えて設定と利用確認を続けられます。'), refs: [old.id], sources: [] }); return steps; }
   steps.push(question('new-device', c(stage === 'release' ? 'Which other phone will keep your access?' : 'Which phone will you use next?', stage === 'release' ? '手放した後、どのスマホを使いますか？' : 'これから使うスマホは？'), [
     ...phoneAssets(data).filter(a => a.id !== old.id).map(a => choice(a.id, a.name, a.name)), choice('add:ios', 'Add the new iPhone', '新しいiPhoneを追加する'), choice('add:android', 'Add the new Android', '新しいAndroidを追加する'),
   ]));
@@ -144,7 +147,7 @@ function basePhoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] {
   if (['other', 'unsure'].includes(answers.authenticator)) steps.push(blocked('other-authenticator', c('This authenticator needs its own transfer steps', '認証アプリごとの移行手順が必要です'), c('Restore conditions differ between products and operating systems. This recipe is not available yet. Keep the previous phone; do not mark its codes as transferred or continue to erasure.', '製品とOSにより復元の条件が異なります。この組み合わせの手順はまだ準備中です。旧端末を残し、コードを移行済みとしたり、消去へ進んだりしないでください。'), [old.id, fresh.id]));
   const authenticatorMoves = authenticatorMigrationSteps(data, workflow, accountSteps); steps.push(...authenticatorMoves.steps); if (!authenticatorMoves.ready) return steps;
   const cloudMoves = cloudPhoneSteps(data, workflow); steps.push(...cloudMoves.steps); if (!cloudMoves.ready) return steps;
-  for (const account of data.assets.filter(a => a.kind === 'account')) {
+  for (const account of data.assets.filter(a => a.kind === 'account' && a.provider !== 'line')) {
     const checkedHere = entePhoneSignInRecorded(data,workflow.id,account.id,fresh.id)||steps.some(s => (s.cloudContext?.completedAccountRef === account.id && s.cloudContext.context !== 'normal') || (s.access?.targetRef === account.id && s.access.purpose === 'sign-in' && (s.authenticatorEffect?.kind === 'code' || s.id.startsWith('auth:'))));
     if (checkedHere) {
       for (const remaining of accountSteps(account, fresh).filter(s => s.access?.purpose === 'decrypt')) if (!steps.some(s => s.access?.targetRef === account.id && s.access.purpose === 'decrypt')) steps.push(remaining);
@@ -212,7 +215,7 @@ function basePhoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] {
     choice('yes', 'Yes / I need to check', '使っている・確認が必要'),
   ], c('Examples: banking apps, transit cards, My Number certificates, LINE, Signal, work certificates and device-bound passkeys.', '例：銀行アプリ、交通系カード、マイナンバーカードの電子証明書、LINE、Signal、仕事用証明書、端末固定のパスキー。')));
   if (!answers['special-apps']) return steps;
-  if (answers['special-apps'] === 'yes') steps.push(blocked('special-app-move', c('Keep the old phone until the individual moves are ready', '個別の引き継ぎが済むまで旧端末を残す'), c('A phone copy does not prove that cards, certificates or message history moved. Some electronic certificates survive a factory reset. Product-specific steps are still being added; keep these items unfinished and do not erase or hand over the phone.', '端末のコピーだけでは、カード・証明書・履歴の移行を確認できません。初期化だけでは消えない電子証明書もあります。製品ごとの手順は追加中です。この項目を未完了で残し、旧端末を消去・譲渡しないでください。'), [old.id, fresh.id]));
+  if ((answers['special-apps'] === 'yes' || phoneInventory(data,workflow.id) || hasLineOnPhone(data,old.id)) && (!phoneProductsReady(data,workflow.id) || workflow.cursor==='special-app-move')) steps.push(action('special-app-move',c('Check the apps that need an individual move','個別の引き継ぎを進める'),c('Selected apps on the old and new phones','旧新端末で使う製品'),c('Open the product list and follow each selected app’s guide. A completed LINE move never completes another product.','製品一覧から、使うアプリの手順を一つずつ進めます。LINEが終わっても、別の製品は完了にしません。'),c('The product list is reviewed and each required move has its own current confirmation.','利用する製品を確認し、それぞれ必要な移行を確認できること。'),[old.id,fresh.id],[],{productPhoneRef:workflow.id}));
   steps.push(question('phone-line', c('Have you moved the phone service?', '電話回線は、新端末で使えますか？'), [choice('working', 'Calls and SMS work on the new phone', '新端末で通話・SMSを利用できる'), choice('no-line', 'I do not use a phone line on these devices', 'これらの端末では電話回線を使わない'), choice('pending', 'Not yet / I need carrier instructions', 'まだ・通信会社の手続きが必要')], c('Activating a replacement SIM/eSIM may deactivate the old one. Secure another sign-in method before making that change. Never enter an eSIM QR or phone number here.', 'SIM・eSIMの切り替えで旧回線が使えなくなる場合があります。切り替え前に別のログイン手段を確保してください。電話番号・eSIMのQRは、このアプリへ入力しません。')));
   if (!answers['phone-line']) return steps;
   if (answers['phone-line'] === 'pending') steps.push(blocked('carrier', c('Finish the carrier-specific activation first', '通信会社ごとの回線手続きを先に済ませる'), c('Carrier, plan, region and device support determine the activation. A verified carrier recipe is not available here yet. Keep the old line until you have another way to authenticate.', '通信会社・契約・地域・端末により手続きが異なります。このアプリの回線別の手順はまだ準備中です。別の認証手段を確保するまでは、旧回線を残してください。'), [old.id, fresh.id]));

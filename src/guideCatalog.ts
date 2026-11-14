@@ -116,11 +116,12 @@ export type Recipe = { id: string; title: Copy; steps: GuideStep[] };
 const next = c('Next', '次へ');
 const checked = c('I checked this', '確認しました');
 const step = (id: string, title: Copy, place: Copy, action: Copy, expected: Copy, sources: SourceId[], extra: Partial<GuideStep> = {}): GuideStep => ({ id, title, place, action, expected, sources, button: next, ...extra });
-export const PROVIDERS = { apple: 'iCloud / Apple Account', google: 'Gmail / Google', microsoft: 'Outlook / Microsoft', proton: 'Proton Mail', fastmail: 'Fastmail', tuta: 'Tuta / Tutanota', zoho: 'Zoho Mail', yahoo: 'Yahoo.com', startmail: 'StartMail', mailcom: 'mail.com', gmx: 'GMX.com', bitwarden: 'Bitwarden', '1password': '1Password', nord: 'Nord Account', ente: 'Ente Account', other: 'Other' };
+export const PROVIDERS = { apple: 'iCloud / Apple Account', google: 'Gmail / Google', microsoft: 'Outlook / Microsoft', proton: 'Proton Mail', fastmail: 'Fastmail', tuta: 'Tuta / Tutanota', zoho: 'Zoho Mail', yahoo: 'Yahoo.com', startmail: 'StartMail', mailcom: 'mail.com', gmx: 'GMX.com', bitwarden: 'Bitwarden', '1password': '1Password', nord: 'Nord Account', ente: 'Ente Account', line: 'LINE', other: 'Other' };
 export const PLATFORMS = { ios: 'iPhone / iPad', macos: 'Mac', android: 'Android', windows: 'Windows', web: 'Web' };
 export type Platform = keyof typeof PLATFORMS;
 
 export function emailRecipe(provider: Asset['provider'], platform: string): Recipe {
+  if (provider === 'line') return { id: 'unsupported-line-mail', title: c('Use the LINE guide', 'LINEのガイドを使う'), steps: [] };
   if (isExtendedMail(provider)) return extendedEmailRecipe(provider);
   const apple = provider === 'apple';
   const google = provider === 'google';

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { lineIssues } from './lineValidation';
 import { emptySecurityModel, securityModelIssues, securityModelSchema } from './securityModel';
 import { accessPlanIssues } from './accessPlanValidation';
 import {protectionIssues} from './deviceProtectionValidation';
@@ -34,7 +35,7 @@ export const assetSchema = z.object({
   controlEvidence: z.record(z.string(), controlEvidenceSchema).default({}),
   operatingSystem: z.enum(OPERATING_SYSTEMS).optional(),
   notes: z.string().max(300).optional(),
-  provider: z.enum(['apple', 'google', 'microsoft', 'proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx', 'bitwarden', '1password', 'nord', 'ente', 'other']).optional(),
+  provider: z.enum(['apple', 'google', 'microsoft', 'proton', 'fastmail', 'tuta', 'zoho', 'yahoo', 'startmail', 'mailcom', 'gmx', 'bitwarden', '1password', 'nord', 'ente', 'line', 'other']).optional(),
   purpose: z.enum(['personal', 'work']).optional(),
   services: z.array(z.enum(['mail', 'cloud', 'manager'])).default([]),
 }).passthrough();
@@ -116,6 +117,7 @@ export const currentDatasetSchema = z.object({
   securityModel: securityModelSchema.default(emptySecurityModel),
   deviceWorkflows: z.array(phoneWorkflowSchema).default([]),
 }).passthrough().superRefine((data, context) => {
+  for(const message of lineIssues(data))context.addIssue({code:'custom',path:['securityModel','linePhoneV1'],message});
   for(const message of enteIssues(data))context.addIssue({code:'custom',path:['securityModel','enteV1'],message});
   for(const message of twofasIssues(data))context.addIssue({code:'custom',path:['securityModel','twofasV1'],message});
   for(const message of nordKeyReturnIssues(data))context.addIssue({code:'custom',path:['securityModel','hardwareKeysV1'],message});

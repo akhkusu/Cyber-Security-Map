@@ -1,3 +1,4 @@
+import {lineFactCurrent} from './lineSchemas';
 import { z } from 'zod';
 import {enteFactCurrent,enteWithoutEvidence} from './enteSchemas';
 import {twofasFactCurrent,twofasWithoutEvidence} from './twofasSchemas';
@@ -80,7 +81,7 @@ const controlBaselineSchema = z.object({
   answerKey: id.optional(), answer: assessmentAnswerSchema.optional(),
 }).passthrough();
 export const securityModelSchema = z.object({
-  revision: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10), z.literal(11), z.literal(12)]), entities: z.array(securityEntitySchema).default([]), relations: z.array(securityRelationSchema).default([]),
+  revision: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9), z.literal(10), z.literal(11), z.literal(12), z.literal(13)]), entities: z.array(securityEntitySchema).default([]), relations: z.array(securityRelationSchema).default([]),
   facts: z.array(accessFactSchema).default([]), routes: z.array(accessRouteSchema).default([]),
   lifecycle: z.record(z.string(), lifecycleSchema).default({}),
   controlBaselines: z.record(z.string(), controlBaselineSchema).default({}),
@@ -164,7 +165,7 @@ export function evaluateAccess(model: SecurityModel, routeId: string, scenario: 
     if (!f) return result('unknown', 'missing-reference', factId);
     if (!f.contexts.includes(scenario.context)) return result('not-applicable', 'outside-context', factId);
     if (f.evidence !== 'user-confirmed') return result('unknown', f.evidence === 'user-reported' ? 'reported-only' : 'unconfirmed', f.id);
-    if(!planFactCurrent(model,f)||!protectionFactCurrent(model,f)||!twofasFactCurrent(model,f)||!enteFactCurrent(model,f))return result('unknown','unconfirmed',f.id);
+    if(!planFactCurrent(model,f)||!protectionFactCurrent(model,f)||!twofasFactCurrent(model,f)||!enteFactCurrent(model,f)||!lineFactCurrent(model,f))return result('unknown','unconfirmed',f.id);
     const requiredRefs=planRequirementRefs(model,f);
     const missing = requiredRefs.find(ref => unavailable.has(ref));
     if (missing) return result('unavailable', 'resource-unavailable', missing);
