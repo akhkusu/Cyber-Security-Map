@@ -19,7 +19,7 @@ function writable(data:Dataset):CurrentDataset{
   if(m.revision>=8&&Object.hasOwn(m,'accessPlansV1')&&!accessPlanStoreSchema.safeParse(m.accessPlansV1).success)throw new DataUpgradeConflict();
   return next;
 }
-function write(data:CurrentDataset,store:AccessPlanStore):CurrentDataset{return currentDatasetSchema.parse({...data,securityModel:{...data.securityModel,revision:8,accessPlansV1:store}});}
+function write(data:CurrentDataset,store:AccessPlanStore):CurrentDataset{return currentDatasetSchema.parse({...data,securityModel:{...data.securityModel,revision:data.securityModel.revision>=8?data.securityModel.revision:8,accessPlansV1:store}});}
 function putDraft(data:CurrentDataset,draft:PlanDraft){const s=accessPlanStore(data)??empty();return write(data,{...s,drafts:[...s.drafts.filter(d=>d.id!==draft.id),draft]});}
 const draftOf=(data:Dataset,id:string)=>accessPlanStore(data)?.drafts.find(d=>d.id===id);
 const planOf=(data:Dataset,id:string)=>accessPlanStore(data)?.plans.find(p=>p.id===id);

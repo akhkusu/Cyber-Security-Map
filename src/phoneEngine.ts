@@ -1,3 +1,4 @@
+import {recordProtectionDisposal,undoProtectionDisposal} from './deviceProtection';
 import { makeAsset, upgradeDataset, type CurrentDataset, type Dataset, type Language } from './models';
 import { recordControl, undoControl } from './controlRecords';
 import { phoneWorkflowSchema, type PhoneWorkflow } from './phoneSchemas';
@@ -126,6 +127,7 @@ export function confirmPhoneStep(data: Dataset, workflowId: string, now = new Da
     const route = { ...next.securityModel.routes.find(r => r.id === routeId), id: routeId, label: fact.label, targetRef: step.access.targetRef, purpose: step.access.purpose, contexts: ['new-device' as const], requirements: { kind: 'fact' as const, factId }, sourceIds: step.sources };
     next = { ...next, securityModel: { ...next.securityModel, facts: [...next.securityModel.facts.filter(f => f.id !== factId), fact], routes: [...next.securityModel.routes.filter(r => r.id !== routeId), route] } };
   }
+  if (step.id === 'sale-theft-off' && workflow.oldDeviceRef) next=recordProtectionDisposal(next,workflow.oldDeviceRef,workflow.id,now);
   if (step.id === 'erase-old' && workflow.oldDeviceRef) next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [workflow.oldDeviceRef]: { ...next.securityModel.lifecycle[workflow.oldDeviceRef], state: 'retired', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now } } } };
   if (step.id === 'handoff-check' && workflow.oldDeviceRef) next = { ...next, securityModel: { ...next.securityModel, lifecycle: { ...next.securityModel.lifecycle, [workflow.oldDeviceRef]: { ...next.securityModel.lifecycle[workflow.oldDeviceRef], state: 'transferred', evidence: 'user-confirmed', updatedAt: now, accessResetAt: next.securityModel.lifecycle[workflow.oldDeviceRef]?.accessResetAt ?? now } } } };
   let roleEffect: PhoneWorkflow['records'][string]['roleEffect'];
@@ -182,6 +184,7 @@ function undoSinglePhoneRecord(data: Dataset, workflowId: string, key: string, n
   let next: CurrentDataset = data;
   if (record.controlId && record.targetRef) next = undoControl(next, key, record.targetRef, record.controlId, { state: 'unknown', evidence: 'not-assessed' }, now) as CurrentDataset;
   for (const effect of record.extraControls ?? []) next = undoControl(next, `${key}#${effect.targetRef}#${effect.controlId}`, effect.targetRef, effect.controlId, { state: 'unknown', evidence: 'not-assessed' }, now) as CurrentDataset;
+  if(record.stepId==='sale-theft-off'&&(record.targetRef??workflow.oldDeviceRef))next=undoProtectionDisposal(next,(record.targetRef??workflow.oldDeviceRef)!,workflow.id,now);
   next = undoNativeObservation(next, key) as CurrentDataset;
   next = undoPhoneAuthenticator(next, key, now);
   next = undoCloudObservation(next, key) as CurrentDataset;

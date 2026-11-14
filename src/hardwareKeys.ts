@@ -1,5 +1,6 @@
-import { DataUpgradeConflict, makeAsset, upgradeDataset, type CurrentDataset, type Dataset, type Language } from './models';
+import { DataUpgradeConflict, guideSchema, makeAsset, upgradeDataset, type CurrentDataset, type Dataset, type Language } from './models';
 import { c } from './guideCatalog';
+import { protectionTasks, protectionStore } from './deviceProtectionSchemas';
 import { beginRecipe, currentTask, move } from './guideEngine';
 import { keyRegistrationCandidates, keySourceIds, keySteps, KEY_SOURCES, type KeyStep } from './hardwareKeyCatalog';
 import { keyStoreSchema, keyTaskSchema, keyTasks, type KeyTask } from './hardwareKeySchemas';
@@ -22,11 +23,13 @@ function put(data: CurrentDataset, task: KeyTask): CurrentDataset {
   const parsed=keyStoreSchema.safeParse(data.securityModel.hardwareKeysV1),store=parsed.success?parsed.data:{version:1 as const,tasks:[]};
   return {...data,securityModel:{...data.securityModel,revision:data.securityModel.revision>=7?data.securityModel.revision:7,hardwareKeysV1:{...store,tasks:[...store.tasks.filter(t=>t.id!==task.id),task]}}};
 }
-export function startKeyGuide(data: Dataset, accountRef: string, returnTo: '/guide'|'/map' = '/map', now=nowString(), forceNew=false): {data: CurrentDataset; id: string} {
+export function startKeyGuide(data: Dataset, accountRef: string, returnTo: '/guide'|'/map' = '/map', now=nowString(), forceNew=false, protectionParentRef?:string): {data: CurrentDataset; id: string} {
   const next=writable(data);
   if(!keyAccountSupported(next,accountRef))throw new Error('unsupported-key-account');
-  const pending=forceNew?undefined:keyTasks(next).find(t=>t.accountRef===accountRef&&['active','deferred'].includes(t.status));
-  const task=pending?{...pending,status:'active' as const}:keyTaskSchema.parse({id:crypto.randomUUID(),accountRef,returnTo,originGuideCursor:data.guide.cursor,createdAt:now,updatedAt:now});
+  const parent=protectionParentRef?protectionTasks(next).find(t=>t.id===protectionParentRef&&t.accountRef===accountRef&&t.childGuide):undefined;
+  if(protectionParentRef&&!parent)throw new Error('invalid-protection-key-parent');
+  const pending=forceNew?undefined:keyTasks(next).find(t=>t.accountRef===accountRef&&keyProtectionParent(t,next)===protectionParentRef&&['active','deferred'].includes(t.status));
+  const task=pending?{...pending,status:'active' as const}:keyTaskSchema.parse({id:crypto.randomUUID(),accountRef,returnTo:parent?'/map':returnTo,originGuideCursor:parent?guideSchema.parse(parent.childGuide).cursor:data.guide.cursor,createdAt:now,updatedAt:now,...(parent?{deviceProtectionKeyReturnV1:{version:1,taskRef:parent.id}}:{})});
   return {data:put(next,task),id:task.id};
 }
 export function keyRecordValid(data: Dataset, task: KeyTask, id: string, visiting = new Set<string>()): boolean {
@@ -184,14 +187,29 @@ export function navigateKeyGuide(data: Dataset,id:string,operation:'back'|'defer
   if(operation!=='back')return put(data,{...task,status:operation==='defer'?'deferred':'cancelled',updatedAt:now});
   const history=[...task.history],cursor=history.pop();return cursor?put(data,{...task,cursor,history,status:'active',updatedAt:now}):data;
 }
-export function returnFromKeyGuide(data: Dataset,id:string):Dataset {
-  const task=keyTasks(data).find(t=>t.id===id);if(!task||task.status!=='completed'||task.returnTo!=='/guide'||data.guide.cursor!==task.originGuideCursor)return data;
+export function keyProtectionParent(task:KeyTask,data:Dataset):string|undefined {
+  if(data.version!==2||data.securityModel.revision<9)return;
+  const v=task.deviceProtectionKeyReturnV1;return v&&typeof v==='object'&&'version' in v&&v.version===1&&'taskRef' in v&&typeof v.taskRef==='string'?v.taskRef:undefined;
+}
+export const keyReturnPath=(task:KeyTask,data:Dataset)=>keyProtectionParent(task,data)?`/protect/account/${encodeURIComponent(keyProtectionParent(task,data)!)}`:task.returnTo==='/map'?`/map?item=${encodeURIComponent(task.accountRef)}`:task.returnTo;
+function returnKeyToGuide(data:Dataset,task:KeyTask):Dataset {
+  if(task.status!=='completed'||task.returnTo!=='/guide'||data.guide.cursor!==task.originGuideCursor)return data;
   const current=currentTask(data),account=data.assets.find(a=>a.id===task.accountRef);
   if(current?.asset.id!==task.accountRef||!account)return data;
   if(current.recipe.id==='email-mfa'&&task.mode!=='bitwarden-login')return beginRecipe(data,account.id,'recovery');
   // The launcher only substitutes for the manager's MFA section after setup.
   if(current.recipe.id==='manager'&&task.mode==='bitwarden-second-step'&&['auth-ready','auth-open','auth-scan','auth-activate','auth-test','recovery'].includes(current.step.id))return data.guide.accountId?beginRecipe(data,data.guide.accountId,'password'):move(data,'device-select');
   return data;
+}
+export function returnFromKeyGuide(data:Dataset,id:string):Dataset {
+  const task=keyTasks(data).find(t=>t.id===id);if(!task)return data;
+  const parentRef=data.version===2&&data.securityModel.revision>=9?keyProtectionParent(task,data):undefined;
+  if(!parentRef)return returnKeyToGuide(data,task);
+  const store=protectionStore(data),parent=store?.tasks.find(t=>t.id===parentRef&&t.accountRef===task.accountRef);
+  if(data.version!==2||!store||!parent?.childGuide)return data;
+  const child=returnKeyToGuide({...data,guide:guideSchema.parse(parent.childGuide)},{...task,returnTo:'/guide'});
+  if(child.version!==2)return data;
+  return {...child,guide:data.guide,securityModel:{...child.securityModel,deviceProtectionV1:{...store,tasks:store.tasks.map(t=>t.id===parent.id?{...t,childGuide:child.guide}:t)}}};
 }
 export function keyHelpPrompt(data: Dataset,task:KeyTask,problem:number,language:Language):string {
   const step=currentKeyStep(data,task),account=data.assets.find(a=>a.id===task.accountRef),device=data.assets.find(a=>a.id===task.deviceRef);

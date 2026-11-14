@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ACCESS_CONTEXTS, type AccessContext } from './securityModel';
+import { ACCESS_CONTEXTS, type AccessContext, type AccessRoute } from './securityModel';
 import type { Dataset } from './models';
 
 const ref=z.string().min(1),time=z.string().datetime({offset:true});
@@ -25,7 +25,7 @@ export const accessPlanStoreSchema=z.object({version:z.literal(1),plans:z.array(
 export type AccessPlanStore=z.infer<typeof accessPlanStoreSchema>;
 export function accessPlanStore(data:Dataset):AccessPlanStore|undefined{if(data.version!==2||data.securityModel.revision<8)return;const p=accessPlanStoreSchema.safeParse(data.securityModel.accessPlansV1);return p.success?p.data:undefined;}
 export const planContextLabel=(context:AccessContext,language:'ja'|'en')=>({normal:['Everyday use','普段の利用'],enrollment:['At registration','登録時の受け付け'],'new-device':['On a new device','初めて使う端末'],'after-restart':['After restarting the device','端末を再起動した後'],'no-existing-session':['Without a previous signed-in session','以前のログイン済み状態を使わない'],'all-devices-lost':['Without any previously trusted device','以前の信頼済み端末を一切使わない']})[context][language==='ja'?1:0];
-export const planPurposeLabel=(purpose:AccessPlan['purpose'],language:'ja'|'en')=>({'sign-in':['Sign in','ログイン'],'second-step':['Complete additional authentication','追加の認証'],'decrypt':['Read encrypted contents','暗号化された内容を読む'],'local-unlock':['Unlock on this device','端末内の解除'],'restore':['Recover or restore','復旧・復元']})[purpose][language==='ja'?1:0];
+export const planPurposeLabel=(purpose:AccessRoute['purpose'],language:'ja'|'en')=>({'sign-in':['Sign in','ログイン'],'second-step':['Complete additional authentication','追加の認証'],'decrypt':['Read encrypted contents','暗号化された内容を読む'],'local-unlock':['Unlock on this device','端末内の解除'],'restore':['Recover or restore','復旧・復元'],'device-management':['Open device management','端末の管理画面を開く']})[purpose][language==='ja'?1:0];
 
 export function definitionNodes(definition:PlanDefinition):PlanNode[]{
   const out:PlanNode[]=[],seen=new Set<string>(),queue=[{id:definition.rootRef,depth:0}];

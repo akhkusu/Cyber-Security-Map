@@ -11,10 +11,18 @@ function fixture(oldOs: 'ios' | 'android' = 'ios', newOs: 'ios' | 'android' = 'i
   const fresh = { ...makeAsset({ kind: 'device', type: 'Smartphone', name: 'New phone', importance: 'critical', operatingSystem: newOs }), id: 'fresh' };
   data.assets = [old, fresh]; data.guide.cursor = 'device-select'; data.guide.history = ['start'];
   const next = startPhoneWorkflow(data, '/guide', 'old', 'workflow', now);
-  Object.assign(next.deviceWorkflows[0], { oldDeviceRef: 'old', newDeviceRef: 'fresh', answers: { stage: 'new', availability: 'available', ownership: 'personal', setup, authenticator: 'none', 'special-apps': 'none', 'phone-line': 'no-line', 'old-fate': 'sell', 'ios-generation': '18', 'android-maker': 'pixel' } });
+  Object.assign(next.deviceWorkflows[0], { oldDeviceRef: 'old', newDeviceRef: 'fresh', answers: { stage: 'new', availability: 'available', ownership: 'personal', setup, authenticator: 'none', 'special-apps': 'none', 'phone-line': 'no-line', 'old-fate': 'sell', 'ios-generation': '18', 'sale-theft-menu':'older', 'android-maker': 'pixel' } });
   return next;
 }
 const current = (data: CurrentDataset) => currentPhoneStep(data, data.deviceWorkflows[0]);
+it('blocks sale until native theft protection and its delay are finished, while retained phones keep their protection',()=>{
+  let d=fixture();d.deviceWorkflows[0].answers['sale-theft-menu']='face';d.deviceWorkflows[0].answers['sale-theft-present']='yes';
+  d=confirmBefore(d,'handoff-gate');for(const id of ['handoff-gate','sync-warning','apple-unpair-check','sale-theft-settings','sale-theft-passcode','sale-theft-open'])d=confirmAt(d,id);
+  const waiting=deferPhoneStep({...d,deviceWorkflows:d.deviceWorkflows.map(w=>({...w,cursor:'sale-theft-off'}))},'workflow',now) as CurrentDataset;
+  const denied=confirmAt(waiting,'apple-signout');expect(Object.values(denied.deviceWorkflows[0].records).some(r=>r.stepId==='apple-signout')).toBe(false);
+  const finished=confirmAt(waiting,'sale-theft-off'),allowed=confirmAt(finished,'apple-signout');expect(Object.values(allowed.deviceWorkflows[0].records).some(r=>r.stepId==='apple-signout'&&r.status==='confirmed')).toBe(true);
+  d.deviceWorkflows[0].answers['old-fate']='spare';expect(phoneSteps(d,d.deviceWorkflows[0]).some(s=>s.id.startsWith('sale-theft-'))).toBe(false);
+});
 function confirmAt(data: CurrentDataset, stepId: string): CurrentDataset {
   const selected = { ...data, deviceWorkflows: data.deviceWorkflows.map(w => ({ ...w, cursor: stepId })) };
   return confirmPhoneStep(selected, 'workflow', now) as CurrentDataset;
@@ -110,7 +118,7 @@ describe('optional personal phone change', () => {
 
   it('does not revive old access when a real erasure record is corrected', () => {
     let data = confirmBefore(fixture(), 'handoff-gate');
-    data = confirmAt(data, 'handoff-gate'); data = confirmAt(data, 'sync-warning'); data = confirmAt(data, 'apple-unpair-check'); data = confirmAt(data, 'apple-signout'); data = confirmAt(data, 'erase-old');
+    data = confirmAt(data, 'handoff-gate'); data = confirmAt(data, 'sync-warning'); data = confirmAt(data, 'apple-unpair-check'); data = confirmAt(data, 'sale-theft-settings'); data = confirmAt(data, 'apple-signout'); data = confirmAt(data, 'erase-old');
     expect(data.securityModel.lifecycle.old.state).toBe('retired');
     const key = Object.entries(data.deviceWorkflows[0].records).find(([, r]) => r.stepId === 'erase-old')![0];
     const corrected = undoPhoneRecord(data, 'workflow', key, now) as CurrentDataset;
@@ -185,7 +193,7 @@ it('rechecks a code used elsewhere when either its method or new phone changes',
 
 it('corrects a historical erasure on its original phone after another old phone is selected', () => {
   let data = confirmBefore(fixture(), 'handoff-gate');
-  for (const id of ['handoff-gate', 'sync-warning', 'apple-unpair-check', 'apple-signout', 'erase-old']) data = confirmAt(data, id);
+  for (const id of ['handoff-gate', 'sync-warning', 'apple-unpair-check', 'sale-theft-settings', 'apple-signout', 'erase-old']) data = confirmAt(data, id);
   const key = Object.entries(data.deviceWorkflows[0].records).find(([, r]) => r.stepId === 'erase-old')![0];
   expect(data.deviceWorkflows[0].records[key].targetRef).toBe('old');
   data.assets.push({ ...data.assets[0], id: 'different-old' }); data.deviceWorkflows[0].oldDeviceRef = 'different-old';

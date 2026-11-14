@@ -8,6 +8,7 @@ import { tx } from './ui';
 import { keyTasks } from './hardwareKeySchemas';
 import { HardwareKeyLauncher } from './HardwareKeyGuide';
 import { NordRecoveryLauncher } from './NordRecoveryGuide';
+import {DeviceProtectionLauncher} from './DeviceProtectionGuide';
 import { PhoneLauncher } from './PhoneGuide';
 import { AuthenticatorQuestions } from './AuthenticatorQuestions';
 import { authenticatorScan, requireAuthenticatorRoots, selectedAuthenticator } from './authenticatorGuide';
@@ -17,10 +18,10 @@ import { cloudInstallation, cloudSetupRoute, cloudVault, CLOUD_NAMES, CLOUD_PROD
 import { guideSubject } from './subjects';
 import { managerReady, nativeSetupRoute, nativeVault, NATIVE_NAMES, NATIVE_PRODUCTS } from './nativeManagers';
 
-type Props = { data: Dataset; language: Language; save: (data: Dataset) => Promise<boolean> };
+type Props = { data: Dataset; language: Language; save: (data: Dataset) => Promise<boolean>; protectionParentRef?: string };
 const isManager = (a: Asset) => a.type === 'Password manager' || a.services.includes('manager');
 const titleFor = (a: Asset) => a.name;
-export function Guide({ data, language, save }: Props) {
+export function Guide({ data, language, save, protectionParentRef }: Props) {
   const task = currentTask(data), cursor = data.guide.cursor;
   const [help, setHelp] = useState(false);
   const heading = useRef<HTMLDivElement>(null);
@@ -75,7 +76,8 @@ export function Guide({ data, language, save }: Props) {
       <span className="eyebrow">{say(recipe.title, language)}</span><h1>{say(step.title, language)}</h1>
       <div className="where"><span>{tx(language, 'WHERE', '操作する場所')}</span><strong>{say(step.place, language)}</strong></div>
       <p className="instruction">{say(step.action, language)}</p>
-      {(recipe.id === 'email-mfa' || (recipe.id === 'manager' && ['auth-ready','auth-open','auth-scan','auth-activate','auth-test','recovery'].includes(step.id))) && <HardwareKeyLauncher data={data} language={language} save={save} accountRef={asset.id} returnTo="/guide" />}
+      {(recipe.id === 'email-mfa' || (recipe.id === 'manager' && ['auth-ready','auth-open','auth-scan','auth-activate','auth-test','recovery'].includes(step.id))) && <HardwareKeyLauncher data={data} language={language} save={save} accountRef={asset.id} returnTo={protectionParentRef ? "/map" : "/guide"} protectionParentRef={protectionParentRef} />}
+      {recipe.id === 'device' && !protectionParentRef && <DeviceProtectionLauncher data={data} language={language} save={save} deviceRef={asset.id} returnTo="guide"/>}
       {step.setupHelp && <details className="technical"><summary>{say(step.setupHelp.title, language)}</summary><p>{say(step.setupHelp.action, language)}</p>{step.setupHelp.url && <a className="button secondary external" href={step.setupHelp.url} target="_blank" rel="noopener noreferrer">{tx(language, 'Open the official download', '正規のダウンロード画面を開く')}<ExternalLink size={17} /></a>}</details>}
       {step.download && <div><a className="button secondary" href={`${import.meta.env.BASE_URL}${step.download.path}`} download={step.download.filename}>{say(step.download.label, language)}</a><p className="subtle">{say(step.download.attribution, language)}</p></div>}
       {step.url && <a className="button secondary external" href={step.url} target="_blank" rel="noopener noreferrer">{tx(language, 'Open official settings / app', '公式の設定・アプリを開く')}<ExternalLink size={17} /><span className="sr-only">{tx(language, '(new tab)', '（別のタブ）')}</span></a>}

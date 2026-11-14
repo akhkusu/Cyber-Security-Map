@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { planFactCurrent, planRequirementRefs } from './accessPlanEvidence';
+import {protectionFactCurrent,protectionWithoutEvidence} from './deviceProtectionEvidence';
 import { assessmentAnswerSchema, controlEvidenceSchema, controlStateSchema } from './recordSchemas';
 
 const id = z.string().min(1);
@@ -61,9 +62,9 @@ export const accessFactSchema = z.object({
 }).passthrough();
 export type AccessFact = z.infer<typeof accessFactSchema>;
 const planWithoutEvidence=(fact:AccessFact,model:SecurityModel)=>model.revision>=8&&fact.accessPlanObservationV1==='v1'&&planFactCurrent(model,fact);
-const confirmedWithout = (fact: AccessFact, model: SecurityModel): string[] => (fact.cloudPhoneObservation === 'v1' || (model.revision >= 4 && fact.nordRecoveryEvidence === 'v1' && fact.nordRecoveryPurpose === 'master-read') || (model.revision >= 5 && fact.nordSsoEvidence === 'v1' && ['provider-auth', 'nord-auth'].includes(String(fact.nordSsoPurpose))) || planWithoutEvidence(fact,model)) && Array.isArray(fact.observedWithoutRefs) && fact.observedWithoutRefs.every(ref => typeof ref === 'string') ? fact.observedWithoutRefs : [];
+const confirmedWithout = (fact: AccessFact, model: SecurityModel): string[] => (fact.cloudPhoneObservation === 'v1' || (model.revision >= 4 && fact.nordRecoveryEvidence === 'v1' && fact.nordRecoveryPurpose === 'master-read') || (model.revision >= 5 && fact.nordSsoEvidence === 'v1' && ['provider-auth', 'nord-auth'].includes(String(fact.nordSsoPurpose))) || planWithoutEvidence(fact,model) || protectionWithoutEvidence(model,fact)) && Array.isArray(fact.observedWithoutRefs) && fact.observedWithoutRefs.every(ref => typeof ref === 'string') ? fact.observedWithoutRefs : [];
 export const accessRouteSchema = z.object({
-  id, label, targetRef: id, purpose: z.enum(['sign-in', 'second-step', 'decrypt', 'local-unlock', 'restore']),
+  id, label, targetRef: id, purpose: z.enum(['sign-in', 'second-step', 'decrypt', 'local-unlock', 'restore', 'device-management']),
   contexts: z.array(z.enum(ACCESS_CONTEXTS)).min(1).default(['normal']), requirements: accessConditionSchema,
   sourceIds: z.array(id).default([]),
 }).passthrough();
@@ -76,7 +77,7 @@ const controlBaselineSchema = z.object({
   answerKey: id.optional(), answer: assessmentAnswerSchema.optional(),
 }).passthrough();
 export const securityModelSchema = z.object({
-  revision: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8)]), entities: z.array(securityEntitySchema).default([]), relations: z.array(securityRelationSchema).default([]),
+  revision: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8), z.literal(9)]), entities: z.array(securityEntitySchema).default([]), relations: z.array(securityRelationSchema).default([]),
   facts: z.array(accessFactSchema).default([]), routes: z.array(accessRouteSchema).default([]),
   lifecycle: z.record(z.string(), lifecycleSchema).default({}),
   controlBaselines: z.record(z.string(), controlBaselineSchema).default({}),
@@ -89,7 +90,7 @@ export function entityIndex(model: SecurityModel, legacy: readonly LegacyEntity[
   return new Map([...legacy.map(e => ({ id: e.id, label: e.name, kind: e.kind, legacy: true })), ...model.entities.map(e => ({ id: e.id, label: e.label, kind: e.kind, legacy: false }))].map(e => [e.id, e]));
 }
 
-export type ModelIssue = { code: 'duplicate-id' | 'missing-entity' | 'missing-fact' | 'missing-route' | 'condition-limit' | 'invalid-alias'; recordId: string; referenceId: string };
+export type ModelIssue = { code: 'duplicate-id' | 'missing-entity' | 'missing-fact' | 'missing-route' | 'condition-limit' | 'invalid-alias' | 'invalid-purpose'; recordId: string; referenceId: string };
 export function securityModelIssues(model: SecurityModel, legacy: readonly LegacyEntity[]): ModelIssue[] {
   const issues: ModelIssue[] = [], ids = new Set<string>();
   for (const item of [...legacy, ...model.entities, ...model.relations, ...model.facts, ...model.routes]) {
@@ -137,7 +138,7 @@ export function securityModelIssues(model: SecurityModel, legacy: readonly Legac
     if (condition.kind === 'route' && !routes.has(condition.routeId)) issues.push({ code: 'missing-route', recordId, referenceId: condition.routeId });
     if (condition.kind === 'all' || condition.kind === 'any') condition.conditions.forEach(c => checkCondition(c, recordId, depth + 1));
   };
-  for (const route of model.routes) { check(route.id, route.targetRef); checkCondition(route.requirements, route.id); }
+  for (const route of model.routes) { check(route.id, route.targetRef); checkCondition(route.requirements, route.id); if(route.purpose==='device-management'&&(model.revision<9||!legacy.some(e=>e.id===route.targetRef&&e.kind==='device')))issues.push({code:'invalid-purpose',recordId:route.id,referenceId:route.targetRef}); }
   return issues;
 }
 
@@ -160,7 +161,7 @@ export function evaluateAccess(model: SecurityModel, routeId: string, scenario: 
     if (!f) return result('unknown', 'missing-reference', factId);
     if (!f.contexts.includes(scenario.context)) return result('not-applicable', 'outside-context', factId);
     if (f.evidence !== 'user-confirmed') return result('unknown', f.evidence === 'user-reported' ? 'reported-only' : 'unconfirmed', f.id);
-    if(!planFactCurrent(model,f))return result('unknown','unconfirmed',f.id);
+    if(!planFactCurrent(model,f)||!protectionFactCurrent(model,f))return result('unknown','unconfirmed',f.id);
     const requiredRefs=planRequirementRefs(model,f);
     const missing = requiredRefs.find(ref => unavailable.has(ref));
     if (missing) return result('unavailable', 'resource-unavailable', missing);
@@ -197,7 +198,9 @@ export function evaluateAccess(model: SecurityModel, routeId: string, scenario: 
     if (!route) return result('unknown', 'missing-reference', ref);
     if (path.has(ref)) return result('unknown', 'cycle', ref);
     if (!route.contexts.includes(scenario.context)) return result('not-applicable', 'outside-context', ref);
-    if (unavailable.has(route.targetRef)) return result('unavailable', 'resource-unavailable', route.targetRef);
+    const managesDevice=model.revision>=9&&route.purpose==='device-management';
+    const targetLife=model.lifecycle[route.targetRef];
+    if ((unavailable.has(route.targetRef)&&!managesDevice)||(managesDevice&&targetLife?.evidence==='user-confirmed'&&['transferred','retired','revoked','deleted'].includes(targetLife.state))) return result('unavailable', 'resource-unavailable', route.targetRef);
     const constraint=constrained(route.targetRef);if(constraint)return constraint;
     return conditionResult(route.requirements, new Set([...path, ref]), depth + 1);
   };

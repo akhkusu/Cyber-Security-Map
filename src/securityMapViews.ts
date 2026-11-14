@@ -1,3 +1,4 @@
+import {protectionBindingCurrent} from './deviceProtectionEvidence';
 import { accessPlanStore } from './accessPlanSchemas';
 import { planMapItems, planMapConnections, planReferences } from './accessPlanViews';
 import type { Asset, Dataset, Language, RecoveryDependency } from './models';
@@ -21,7 +22,7 @@ export function mapItems(data: Dataset, language: Language): MapItem[] {
 export function mapConnections(data: Dataset): MapConnection[] {
   if (data.version !== 2) return data.dependencies;
   const known = new Map<string, MapConnection>();
-  for (const r of data.securityModel.relations.filter(r => r.evidence === 'user-confirmed')) {
+  for (const r of data.securityModel.relations.filter(r => r.evidence === 'user-confirmed' && protectionBindingCurrent(data.securityModel,r))) {
     const key = JSON.stringify([r.fromRef, r.toRef, r.kind]);
     if (!known.has(key)) known.set(key, { id: r.id, assetId: r.toRef, recoveryAssetId: r.fromRef, relation: r.kind, createdAt: r.checkedAt, typed: true });
   }
@@ -40,7 +41,7 @@ export function typedMapStatus(data: Dataset, node: MapItem, language: Language)
   if (entity?.kind === 'grant' && entity.nordSsoGrant === 'v1' && data.version === 2 && data.securityModel.revision >= 5) {
     const binding = nordSsoStore(data)?.bindings.find(b => b.id === entity.nordSsoBindingRef), life = data.securityModel.lifecycle[entity.id];
     const revoked = life?.evidence === 'user-confirmed' && ['revoked', 'deleted', 'retired', 'transferred'].includes(life.state);
-    const connected = !revoked && binding?.grantRef === entity.id && !!binding.records.connection && data.securityModel.relations.some(r => r.nordSsoEvidence === 'v1' && r.nordSsoBindingRef === binding.id && r.evidence === 'user-confirmed');
+    const connected = !revoked && binding?.grantRef === entity.id && !!binding.records.connection && data.securityModel.relations.some(r => r.nordSsoEvidence === 'v1' && r.nordSsoBindingRef === binding.id && r.evidence === 'user-confirmed' && protectionBindingCurrent(data.securityModel,r));
     const used = connected && data.securityModel.routes.some(r => r.targetRef === binding?.rootRef && r.requirements.kind === 'fact' && data.securityModel.facts.some(f => f.id === (r.requirements.kind === 'fact' ? r.requirements.factId : '') && f.nordSsoEvidence === 'v1' && f.requiredRefs.includes(entity.id)) && evaluateAccess(data.securityModel, r.id, { context: r.contexts.includes('new-device') ? 'new-device' : 'normal', now: new Date().toISOString() }).state === 'available');
     return { tone: used ? 'recorded' : 'unknown', label: yes ? revoked ? '接続権限の失効を記録' : used ? '接続ログインの利用記録あり' : connected ? '接続済み・ログイン試験は別' : '接続の確認待ち' : revoked ? 'Permission revoked' : used ? 'Connected sign-in used' : connected ? 'Connected; sign-in check separate' : 'Connection unconfirmed', reason: yes ? '実際の提供元・接続先と、設定・利用の記録を区別' : 'Exact provider, destination, configuration and use are separate' };
   }
@@ -67,7 +68,7 @@ export function typedMapStatus(data: Dataset, node: MapItem, language: Language)
     const missing = completeOnOneDevice ? [] : required.filter(c => node.controls[c] !== 'verified').concat(['device-context']);
     return { tone: missing.length ? 'unknown' : 'recorded', label: yes ? missing.length ? '利用確認待ち' : '利用の記録あり' : missing.length ? 'Use check needed' : 'Use recorded', reason: yes ? entity.kind === 'vault' ? missing.length ? 'アプリと保存情報の利用を確認する' : '少なくとも1台で利用を確認した記録' : missing.length ? 'この端末での設定・ログインを確認する' : 'この端末で保存情報を利用した記録' : entity.kind === 'vault' ? 'Checks for at least one device; see each app separately' : 'Checks for this device only' };
   }
-  const confirmed = data.version === 2 && data.securityModel.relations.some(r => (r.fromRef === node.id || r.toRef === node.id) && r.evidence === 'user-confirmed');
+  const confirmed = data.version === 2 && data.securityModel.relations.some(r => (r.fromRef === node.id || r.toRef === node.id) && r.evidence === 'user-confirmed' && protectionBindingCurrent(data.securityModel,r));
   return { tone: confirmed ? 'recorded' : 'unknown', label: yes ? confirmed ? 'つながりの記録あり' : '関係は未確認' : confirmed ? 'Connection recorded' : 'Connection unconfirmed', reason: node.type };
 }
 
@@ -81,10 +82,10 @@ export function mapAffectedItems(data: Dataset, missing: string | readonly strin
     const reverse = new Set(['installed-on','stored-in','synced-via','restores-from']);
     const forward = new Set(['authenticates-to','unlocks','decrypts','session-for','grants-access-to','delegated-to','recovers','requires-for-restore','backs-up','hosts','routes','manages-domain']);
     let expanded=true;
-    while(expanded){expanded=false;for(const relation of data.securityModel.relations){if(relation.evidence!=='user-confirmed')continue;const from=reverse.has(relation.kind)?relation.toRef:relation.fromRef,to=reverse.has(relation.kind)?relation.fromRef:relation.toRef;if((reverse.has(relation.kind)||forward.has(relation.kind))&&affected.has(from)&&!affected.has(to)){affected.add(to);expanded=true;}}for(const edge of data.dependencies)if(affected.has(edge.recoveryAssetId)&&!affected.has(edge.assetId)){affected.add(edge.assetId);expanded=true;}}
+    while(expanded){expanded=false;for(const relation of data.securityModel.relations){if(relation.evidence!=='user-confirmed'||!protectionBindingCurrent(data.securityModel,relation))continue;const from=reverse.has(relation.kind)?relation.toRef:relation.fromRef,to=reverse.has(relation.kind)?relation.fromRef:relation.toRef;if((reverse.has(relation.kind)||forward.has(relation.kind))&&affected.has(from)&&!affected.has(to)){affected.add(to);expanded=true;}}for(const edge of data.dependencies)if(affected.has(edge.recoveryAssetId)&&!affected.has(edge.assetId)){affected.add(edge.assetId);expanded=true;}}
     const now = new Date().toISOString();
     for (const r of data.securityModel.routes) {
-      const context = r.contexts.includes('enrollment') ? 'enrollment' : r.contexts.includes('new-device') ? 'new-device' : 'normal';
+      const context = r.purpose==='device-management'?r.contexts[0]:r.contexts.includes('enrollment') ? 'enrollment' : r.contexts.includes('new-device') ? 'new-device' : 'normal';
       const before = evaluateAccess(data.securityModel, r.id, { context, now });
       const after = evaluateAccess(data.securityModel, r.id, { context, now, unavailableRefs: missingRefs });
       if (before.state === 'available' && after.state !== 'available') affected.add(r.targetRef);
