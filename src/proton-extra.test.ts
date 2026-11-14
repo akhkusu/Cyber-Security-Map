@@ -141,7 +141,9 @@ describe('optional Proton Pass extra password', () => {
     data.assets.push({ ...data.assets[0], id: 'other-root' });
     const vault = data.securityModel.entities.find(e => e.id === f.vaultId)!;
     data.securityModel.entities.push({ ...app, id: 'same-root-profile', profileLabel: 'Another profile' }, { ...vault, id: 'other-vault', authenticationAccountRef: 'other-root' }, { ...app, id: 'other-root-app', vaultRef: 'other-vault', profileLabel: 'Other Account' });
+    data.securityModel.lifecycle['same-root-profile'] = { state: 'retired', evidence: 'user-confirmed', updatedAt: '2026-11-13T00:00:00Z', opaqueRole: 'keep' };
     data = finish(choose(inspect(data, f.appId), f.appId, 'enable'));
+    expect(data.securityModel.lifecycle['same-root-profile']).toMatchObject({ state: 'retired', opaqueRole: 'keep' });
     expect(data.securityModel.lifecycle['same-root-profile']?.accessResetAt).toBeTruthy();
     expect(data.securityModel.lifecycle['other-root-app']?.accessResetAt).toBeUndefined();
     expect(data.securityModel.lifecycle['other-vault']?.accessResetAt).toBeUndefined();

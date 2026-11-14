@@ -43,6 +43,10 @@ export function recordProtonExtra(data: Dataset, key: string, appId: string, rec
   const rootRef = vault.authenticationAccountRef;
   const model = data.securityModel, entities = [...model.entities], facts = [...model.facts], routes = [...model.routes], relations = [...model.relations], lifecycle = { ...model.lifecycle };
   const cycle = recipeId.split(':')[1];
+  const resetAccess = (ref: string, revoke = false) => {
+    const previous = lifecycle[ref], preserve = !revoke || ['deleted', 'retired', 'transferred'].includes(previous?.state ?? '');
+    lifecycle[ref] = { ...previous, state: preserve ? previous?.state ?? 'unknown' : 'revoked', evidence: preserve ? previous?.evidence ?? 'unknown' : 'user-confirmed', updatedAt: now, accessResetAt: now };
+  };
   const stamp = { checkedAt: now, sourceIds: ['protonPassExtra'], observationActionId: key, requiredGuideSteps, protonPassExtraEvidence: 'v1', extraRootRef: rootRef };
   const putFact = (suffix: string, value: Record<string, unknown>) => {
     const id = `${key}:proton-extra:${suffix}`, previous = facts.find(f => f.id === id);
@@ -75,15 +79,15 @@ export function recordProtonExtra(data: Dataset, key: string, appId: string, rec
     const previous = extraSetting(data, vault.id)?.extraState, current = stepId === 'verify-off' ? 'disabled' : 'enabled';
     if (previous && previous !== current) {
       const stores = new Set(entities.filter(e => e.kind === 'vault' && e.productId === 'proton-pass' && e.authenticationAccountRef === rootRef).map(e => e.id));
-      for (const item of entities) if (stores.has(item.id) || (item.kind === 'installation' && item.vaultRef && stores.has(item.vaultRef))) lifecycle[item.id] = { ...lifecycle[item.id], state: 'in-use', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now };
+      for (const item of entities) if (stores.has(item.id) || (item.kind === 'installation' && item.vaultRef && stores.has(item.vaultRef))) resetAccess(item.id);
     }
-    if (current === 'disabled') for (const item of entities) if (item.kind === 'credential' && item.protonPassExtraCredential === 'v1' && item.protonPassExtraAccount === rootRef) lifecycle[item.id] = { ...lifecycle[item.id], state: 'revoked', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now };
+    if (current === 'disabled') for (const item of entities) if (item.kind === 'credential' && item.protonPassExtraCredential === 'v1' && item.protonPassExtraAccount === rootRef) resetAccess(item.id, true);
   }
   if (recipeId.startsWith('cloud-extra-enable:') && stepId === 'apply') {
     const already = facts.some(f => f.protonPassExtraMutation === key);
     if (!already) {
       const stores = new Set(entities.filter(e => e.kind === 'vault' && e.productId === 'proton-pass' && e.authenticationAccountRef === rootRef).map(e => e.id));
-      for (const item of entities) if (stores.has(item.id) || (item.kind === 'installation' && item.vaultRef && stores.has(item.vaultRef)) || (item.kind === 'credential' && item.protonPassExtraCredential === 'v1' && item.protonPassExtraAccount === rootRef && item.protonPassExtraCycle && item.protonPassExtraCycle !== cycle)) lifecycle[item.id] = { ...lifecycle[item.id], state: item.kind === 'credential' ? 'revoked' : 'in-use', evidence: 'user-confirmed', updatedAt: now, accessResetAt: now };
+      for (const item of entities) if (stores.has(item.id) || (item.kind === 'installation' && item.vaultRef && stores.has(item.vaultRef)) || (item.kind === 'credential' && item.protonPassExtraCredential === 'v1' && item.protonPassExtraAccount === rootRef && item.protonPassExtraCycle && item.protonPassExtraCycle !== cycle)) resetAccess(item.id, item.kind === 'credential');
     }
     putFact('applied', { label: 'Extra password configured; fresh sign-in not yet checked', extraVaultRef: vault.id, extraState: 'enabled', extraCredentialRef: credential().id, protonPassExtraMutation: key });
   }
