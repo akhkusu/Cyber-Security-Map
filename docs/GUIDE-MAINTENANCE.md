@@ -131,3 +131,5 @@ Accountの認証、保管庫の復号、保存したパスワードの利用を�
 [専用契約](PROTON-PASS-EXTRA-PASSWORD.md)を保守します。設定選択で完了にせず、Accountの認証、追加Pass秘密の受け付け、保管庫の読取り、保存したサービス用パスワードを別の観測にします。変更は同じ実際のAccountのPass全体へ適用し、他のAccountやAccountのMFAは変更しません。全Passのサインアウトを確定前に説明し、Pass外の秘密・MFA・復旧を先に用意します。最低8文字と十分な無作為の長さの推奨を混同しません。
 
 `protonPassExtraCatalog.ts`のOS別表示、`protonPassExtra.ts`の要求と物理変更の時点、古い設定への誤った復帰の抑止を合わせて検証します。`GuideStep.explanation`は折りたたみの技術説明です。追加パスワードの設定だけをMFAや保存パスワード利用に数えません。完了記録から準備も取り消せます。資料にない追加パスワードの紛失復旧をAccountリセットで代用しません。
+
+NordPassの個人用マスター復旧はnordRecoveryCatalog.tsの説明とnordRecovery.tsの進行・観測を分ける。CLOUD_SOURCESのnordForgotMaster / nordForgotCode / nordBiometricExtension / nordDestructiveResetと既存nordRecoveryが一次根拠。法人・MSPの回復仕様を個人用へ流用しない。環境差、破壊的な全体リセットとの境界、設定済み生体認証、コード発行前後、新マスターの実利用、現在の控え、途中再開、取り消し後の物理変更保持を対にして確認する。

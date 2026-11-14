@@ -6,7 +6,7 @@ import { cloudPasswordRecipe } from './cloudPasswordCatalog';
 import { cloudMasterRecipe } from './cloudMasterCatalog';
 import { protonExtraRecipe } from './protonPassExtraCatalog';
 import { extraApplied, extraTaskRedirect } from './protonPassExtra';
-import { cloudAnswer, cloudEnvironmentReady, cloudInstallation, cloudManagerReady, cloudMasterRecipeId, cloudSetupRoute, cloudVault } from './cloudManagers';
+import { cloudAnswer, cloudEnvironmentReady, cloudInstallation, cloudManagerReady, cloudMasterRecipeId, cloudMasterChanged, cloudSetupRoute, cloudVault } from './cloudManagers';
 
 export function cloudRecipeFor(data: Dataset, asset: Asset, recipeId: string): Recipe | undefined {
   if (recipeId.startsWith('cloud-password:')) return cloudPasswordRecipe(data, asset, recipeId.slice('cloud-password:'.length));
@@ -35,6 +35,7 @@ export function cloudTaskRedirect(data: Dataset, asset: Asset, recipe: Recipe, s
   const extraRedirect = extraTaskRedirect(data, app.id, recipe, step);
   if (extraRedirect) return extraRedirect;
   if (recipe.id !== 'cloud-onboard' && !['opened', 'storageChecked'].every(c => app.controls?.[c] === 'verified')) return `do/${app.id}/cloud-onboard/open`;
+  if (recipe.id.startsWith('cloud-master-change:') && cloudMasterChanged(data, vault.id)) return cloudSetupRoute(context, vault.id);
   if (recipe.id.startsWith('cloud-master-change:') && (recipe.id !== cloudMasterRecipeId(data, vault.id) || cloudAnswer(data, vault.id, 'master') !== 'change' || !['recovery', 'independentRoot'].every(c => vault.controls?.[c] === 'verified') || !['mfa', 'recovery'].every(c => root.controls[c] === 'verified'))) return cloudSetupRoute(context, vault.id);
   const choice = recipe.id === 'cloud-recovery' ? ['recovery', vault.id] : ['cloud-phrase', 'cloud-file', 'cloud-reset'].includes(recipe.id) ? [recipe.id.slice('cloud-'.length), root.id] : undefined;
   if (choice) {

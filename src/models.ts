@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { emptySecurityModel, securityModelIssues, securityModelSchema } from './securityModel';
+import { nordRecoveryStoreSchema } from './nordRecoverySchemas';
 import { phoneWorkflowSchema } from './phoneSchemas';
 import { CONTROL_STATES, controlEvidenceSchema, assessmentAnswerSchema, type AssessmentAnswer, type ControlState } from './recordSchemas';
 export { CONTROL_STATES, controlEvidenceSchema, assessmentAnswerSchema, type AssessmentAnswer, type ControlState, type ControlEvidence } from './recordSchemas';
@@ -109,6 +110,23 @@ export const currentDatasetSchema = z.object({
 }).passthrough().superRefine((data, context) => {
   for (const issue of securityModelIssues(data.securityModel, data.assets)) {
     context.addIssue({ code: 'custom', path: ['securityModel'], message: `${issue.code}: ${issue.recordId}` });
+  }
+  if (data.securityModel.revision >= 4 && Object.hasOwn(data.securityModel, 'nordRecoveryV1')) {
+    const store = nordRecoveryStoreSchema.safeParse(data.securityModel.nordRecoveryV1);
+    if (!store.success) context.addIssue({ code: 'custom', path: ['securityModel', 'nordRecoveryV1'], message: 'invalid-nord-recovery-store' });
+    else {
+      const taskIds = new Set<string>();
+      for (const task of store.data.tasks) {
+        const vault = data.securityModel.entities.find(e => e.id === task.vaultRef && e.kind === 'vault');
+        const app = data.securityModel.entities.find(e => e.id === task.targetRef && e.kind === 'installation');
+        if (taskIds.has(task.id) || !vault || vault.productId !== 'nordpass' || vault.authenticationAccountRef !== task.rootRef || !app || app.vaultRef !== vault.id || !data.assets.some(a => a.id === task.rootRef)) context.addIssue({ code: 'custom', path: ['securityModel', 'nordRecoveryV1'], message: 'invalid-nord-recovery-reference' });
+        const refs = new Set([...data.assets, ...data.securityModel.entities].map(e => e.id));
+        const linked = [task.sourceRef, task.sourceDeviceRef, task.initialCodeRef, task.currentCodeRef, task.usedCodeRef, task.masterRef, task.masterPaperRef, ...Object.values(task.records).flatMap(r => [...r.refs, ...r.controls.map(c => c.targetRef)]), ...Object.values(task.mutations).flatMap(m => [m.ref, m.sourceRef])];
+        const source = task.sourceRef ? data.securityModel.entities.find(e => e.id === task.sourceRef && e.kind === 'installation') : undefined;
+        if (linked.some(ref => ref && !refs.has(ref)) || (task.sourceRef && (!source || source.vaultRef !== task.vaultRef || source.deviceRef !== task.sourceDeviceRef)) || (task.sourceDeviceRef && !data.assets.some(a => a.id === task.sourceDeviceRef && a.kind === 'device')) || (task.originPhone && !data.deviceWorkflows.some(w => w.id === task.originPhone!.id))) context.addIssue({ code: 'custom', path: ['securityModel', 'nordRecoveryV1'], message: 'missing-nord-recovery-reference' });
+        taskIds.add(task.id);
+      }
+    }
   }
   const ids = new Set<string>();
   for (const workflow of data.deviceWorkflows) {

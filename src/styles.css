@@ -29,3 +29,7 @@
 .choice > span:only-of-type { flex: 1; min-width: 0; }
 :lang(ja) .choice strong { line-break: strict; overflow-wrap: break-word; }
 :lang(ja) .guide-card h1 { text-wrap: balance; line-break: strict; }
+.completed-record { display: flex; gap: .7rem; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); padding-block: .5rem; font-size: .85rem; }
+.completed-record > span { min-width: 0; overflow-wrap: anywhere; }
+.completed-record > button { flex-shrink: 0; }
+.prompt-preview { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .85rem; }

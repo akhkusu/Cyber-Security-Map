@@ -1,6 +1,10 @@
 import type { Source } from './guideCatalog';
 const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-13', reviewMethod: 'official-documentation' });
 export const CLOUD_SOURCES = {
+  nordForgotMaster: { ...source('NordPass · Forgotten Master Password', 'https://support.nordpass.com/hc/en-us/articles/360002376657-What-if-I-forgot-my-NordPass-Master-Password', 'Personal vault / current 24-symbol code / separate account sign-in'), checked: '2026-11-14' },
+  nordForgotCode: { ...source('NordPass · Existing biometric recovery', 'https://support.nordpass.com/hc/en-us/articles/360002378758-Forgot-your-NordPass-Master-password-and-no-recovery-code', 'Previously enabled biometrics / native desktop, mobile and extension'), checked: '2026-11-14' },
+  nordBiometricExtension: { ...source('NordPass · Extension biometric support', 'https://support.nordpass.com/hc/en-us/articles/360005811298-How-to-enable-biometric-unlock-in-the-NordPass-Extension', 'Windows Hello / Touch ID / excludes Safari / reinstall removes biometrics'), checked: '2026-11-14' },
+  nordDestructiveReset: { ...source('NordPass · Full account reset deletes items', 'https://support.nordpass.com/hc/en-us/articles/5388857973905-How-to-reset-NordPass-account', 'Destructive reset is not recovery of the existing vault'), checked: '2026-11-14' },
   protonPassExtension: source('Proton · Browser extension', 'https://proton.me/support/pass-browser-extension', 'Personal Proton Account / browser extension / create, save and fill'),
   protonPassIos: source('Proton · iPhone / iPad setup', 'https://proton.me/support/pass-setup-ios', 'iOS / iPadOS / official app and autofill'),
   protonPassAndroid: source('Proton · Android', 'https://proton.me/support/use-pass-android', 'Android / manufacturer differences / create and fill'),

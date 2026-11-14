@@ -10,7 +10,7 @@ export function startProtonExtra(data: Dataset, appId: string): Dataset {
   if (data.securityModel.revision < 3 && Object.keys(data.guide.answers).some(key => key.startsWith(`${appId}:proton-extra-`))) throw new DataUpgradeConflict();
   const pending = data.guide.answers[`${appId}:proton-extra-pending`], cycle = crypto.randomUUID();
   const cursor = pending ?? `do/${app.id}/cloud-extra-inspect:${cycle}/open`;
-  return { ...data, securityModel: { ...data.securityModel, revision: 3 }, guide: { ...data.guide, managerId: vault.id, history: [...data.guide.history, data.guide.cursor], cursor, answers: { ...data.guide.answers, [`${vault.id}:installation`]: app.id, ...(!pending ? { [`${appId}:proton-extra-cycle`]: cycle, [`${appId}:proton-extra-pending`]: cursor } : {}) } } };
+  return { ...data, securityModel: { ...data.securityModel, revision: data.securityModel.revision >= 3 ? data.securityModel.revision : 3 }, guide: { ...data.guide, managerId: vault.id, history: [...data.guide.history, data.guide.cursor], cursor, answers: { ...data.guide.answers, [`${vault.id}:installation`]: app.id, ...(!pending ? { [`${appId}:proton-extra-cycle`]: cycle, [`${appId}:proton-extra-pending`]: cursor } : {}) } } };
 }
 export function extraSetting(data: Dataset, vaultId: string) {
   if (data.version !== 2) return;
@@ -21,7 +21,7 @@ export const extraApplied = (data: Dataset, appId: string, recipeId: string) => 
 export function extraTaskRedirect(data: Dataset, appId: string, recipe: Recipe, step: GuideStep): string | undefined {
   if (!recipe.id.startsWith('cloud-extra-')) return;
   const app = cloudInstallation(data, appId), vault = cloudVault(data, app?.vaultRef);
-  if (data.version !== 2 || data.securityModel.revision !== 3 || vault?.productId !== 'proton-pass' || !app) return 'manager-select';
+  if (data.version !== 2 || data.securityModel.revision < 3 || vault?.productId !== 'proton-pass' || !app) return 'manager-select';
   const [name, cycle] = recipe.id.split(':');
   if (cycle !== extraCycle(data, appId)) return `cloud-extra-state/${appId}`;
   if (name === 'cloud-extra-inspect') return;
@@ -102,5 +102,5 @@ export function recordProtonExtra(data: Dataset, key: string, appId: string, rec
     if (stepId === 'extra') { edge('accepted', c.id, vault.id, 'authenticates-to'); observeAccess('extra-use', vault.id, 'sign-in', [app.id, app.deviceRef, vault.id, c.id], 'Fresh sign-in accepted the Proton Pass extra password'); }
     if (stepId === 'read') { observeAccess('read', vault.id, 'decrypt', [app.id, app.deviceRef, vault.id, c.id], 'Read existing Pass items after fresh extra-password sign-in'); putFact('setting', { extraVaultRef: vault.id, extraState: 'enabled', extraCredentialRef: c.id }); }
   }
-  return { ...data, securityModel: { ...model, revision: 3, entities, relations, facts, routes, lifecycle } };
+  return { ...data, securityModel: { ...model, revision: model.revision >= 3 ? model.revision : 3, entities, relations, facts, routes, lifecycle } };
 }

@@ -1,4 +1,5 @@
 import { makeAsset, type Asset, type Dataset, type Language, type OperatingSystem } from './models';
+import { nordRecoveryMasterConfirmed, nordRecoveryPending } from './nordRecoverySchemas';
 import { securityEntitySchema } from './securityModel';
 import { addPasswordRoot, configurePasswordRoot, makePasswordVault, passwordInstallation, passwordVault, type StoreProduct } from './passwordStoreIdentity';
 
@@ -41,7 +42,7 @@ export function setCloudAnswer(data: Dataset, ref: string, key: string, answer: 
     const previous = app.cloudSettings && typeof app.cloudSettings === 'object' && !Array.isArray(app.cloudSettings) ? app.cloudSettings : {};
     return { ...data, securityModel: { ...data.securityModel, entities: data.securityModel.entities.map(e => e.id === app.id ? { ...e, cloudSettings: { ...previous, [key]: answer } } : e) } };
   }
-  return { ...data, guide: { ...data.guide, answers: { ...data.guide.answers, ...(key === 'master' && answer === 'change' && cloudAnswer(data, ref, key) !== 'change' ? { [`${ref}:cloud-master-request`]: crypto.randomUUID() } : {}), [`${ref}:cloud-${key}`]: answer } } };
+  return { ...data, guide: { ...data.guide, answers: { ...data.guide.answers, ...(key === 'master' && answer === 'change' && (cloudAnswer(data, ref, key) !== 'change' || cloudMasterChanged(data, ref)) ? { [`${ref}:cloud-master-request`]: crypto.randomUUID() } : {}), [`${ref}:cloud-${key}`]: answer } } };
 }
 export const cloudAnswer = (data: Dataset, ref: string, key: string): string | undefined => {
   const app = cloudInstallation(data, ref), settings = app?.cloudSettings;
@@ -56,7 +57,7 @@ export function cloudSubject(data: Dataset, id: string): Asset | undefined {
 const recorded = (a: { controls?: Asset['controls'] } | undefined, key: string) => ['verified', 'implemented'].includes(a?.controls?.[key] ?? 'unknown');
 export function cloudEnvironmentReady(data: Dataset, appId: string): boolean {
   const app = cloudInstallation(data, appId), vault = cloudVault(data, app?.vaultRef), os = data.assets.find(a => a.id === app?.deviceRef)?.operatingSystem;
-  if (!app || !vault) return false;
+  if (!app || !vault || (data.version === 2 && data.securityModel.revision >= 4 && app.nordRecoverySurface === 'native-v1' && !['ios', 'android'].includes(os ?? ''))) return false;
   if (os === 'ios') return ['ios18plus', ...(vault.productId === 'proton-pass' ? ['ios17'] : [])].includes(cloudAnswer(data, app.id, 'ios') ?? '');
   if (os === 'android') return vault.productId === 'proton-pass' || cloudAnswer(data, app.id, 'android') === 'android9plus';
   const browser = cloudAnswer(data, app.id, 'browser') ?? '';
@@ -65,12 +66,12 @@ export function cloudEnvironmentReady(data: Dataset, appId: string): boolean {
 export const cloudMasterRecipeId = (data: Dataset, vaultId: string) => `cloud-master-change:${cloudAnswer(data, vaultId, 'master-request') ?? 'initial'}`;
 export function cloudMasterChanged(data: Dataset, vaultId: string): boolean {
   const vault = cloudVault(data, vaultId), recipe = cloudMasterRecipeId(data, vaultId);
-  return !!vault && recorded(vault, 'masterChanged') && data.actions.some(a => a.targetId === vault.id && a.controlId === 'masterChanged' && a.status === 'completed' && a.parentId?.includes(`/${recipe}/test`) && Array.isArray(a.requiredGuideSteps) && a.requiredGuideSteps.every(key => typeof key === 'string' && data.guide.steps[key]?.status === 'done'));
+  return nordRecoveryMasterConfirmed(data, vaultId, cloudAnswer(data, vaultId, 'master-request')) || !!vault && recorded(vault, 'masterChanged') && data.actions.some(a => a.targetId === vault.id && a.controlId === 'masterChanged' && a.status === 'completed' && a.parentId?.includes(`/${recipe}/test`) && Array.isArray(a.requiredGuideSteps) && a.requiredGuideSteps.every(key => typeof key === 'string' && data.guide.steps[key]?.status === 'done'));
 }
 export function cloudManagerReady(data: Dataset, vaultId: string, installationId?: string): boolean {
   const vault = cloudVault(data, vaultId), app = installationId ? cloudInstallation(data, installationId) : selectedCloudInstallation(data, vaultId);
   const root = data.assets.find(a => a.id === vault?.authenticationAccountRef), device = data.assets.find(a => a.id === app?.deviceRef);
-  if (data.version !== 2 || data.securityModel.revision < 2 || !vault || !app || app.vaultRef !== vault.id || !cloudEnvironmentReady(data, app.id) || root?.purpose !== 'personal' || (vault.productId === 'nordpass' && cloudAnswer(data, root.id, 'method') !== 'direct')) return false;
+  if (nordRecoveryPending(data, vaultId) || data.version !== 2 || data.securityModel.revision < 2 || !vault || !app || app.vaultRef !== vault.id || !cloudEnvironmentReady(data, app.id) || root?.purpose !== 'personal' || (vault.productId === 'nordpass' && cloudAnswer(data, root.id, 'method') !== 'direct')) return false;
   const master = cloudAnswer(data, vault.id, 'master');
   const masterReady = vault.productId !== 'nordpass' || master === 'keep' || (master === 'change' ? cloudMasterChanged(data, vault.id) : recorded(vault, 'masterStrength'));
   return masterReady && ['opened', 'storageChecked', 'autofill'].every(c => recorded(app, c)) && recorded(device, 'screenLock') && ['mfa', 'recovery'].every(c => recorded(root, c)) && (vault.productId === 'nordpass' ? ['recovery', 'independentRoot'].every(c => recorded(vault, c)) : ['dataRecovery', 'passwordResetRecovery', 'recoveryFile'].every(c => recorded(root, c)));
@@ -78,6 +79,7 @@ export function cloudManagerReady(data: Dataset, vaultId: string, installationId
 export function cloudSetupRoute(data: Dataset, vaultId: string): string {
   const vault = cloudVault(data, vaultId); if (!vault) return 'manager-select';
   const root = data.assets.find(a => a.id === vault.authenticationAccountRef), app = selectedCloudInstallation(data, vault.id);
+  if (nordRecoveryPending(data, vault.id)) return `cloud-recovery-pending/${vault.id}`;
   if (!root) return `cloud-root/${vault.id}`;
   if (!root.purpose) return `cloud-purpose/${vault.id}`;
   if (root.purpose === 'work') return `cloud-managed/${vault.id}`;
@@ -87,6 +89,7 @@ export function cloudSetupRoute(data: Dataset, vaultId: string): string {
   if (!app) return `cloud-device/${vault.id}`;
   const device = data.assets.find(a => a.id === app.deviceRef);
   if (!device?.operatingSystem || !['ios', 'android', 'macos', 'windows', 'ubuntu', 'chromeos'].includes(device.operatingSystem)) return `cloud-device-os/${vault.id}`;
+  if (data.version === 2 && data.securityModel.revision >= 4 && app.nordRecoverySurface === 'native-v1' && !['ios', 'android'].includes(device.operatingSystem)) return `cloud-device/${vault.id}`;
   if (!['ios', 'android'].includes(device.operatingSystem) && !['chrome', 'firefox', 'edge', 'safari', 'brave', 'opera', 'other'].includes(cloudAnswer(data, app.id, 'browser') ?? '')) return `cloud-browser/${vault.id}`;
   if (!['ios', 'android'].includes(device.operatingSystem) && cloudAnswer(data, app.id, 'browser') !== 'other' && !app.profileLabel) return `cloud-profile/${vault.id}`;
   if (device.operatingSystem === 'ios' && !['ios18plus', ...(vault.productId === 'proton-pass' ? ['ios17'] : []), 'other'].includes(cloudAnswer(data, app.id, 'ios') ?? '')) return `cloud-ios/${vault.id}`;

@@ -4,6 +4,7 @@ import { makeAsset, type Asset, type Dataset, type Language } from './models';
 import { c, PLATFORMS, PROVIDERS, say, SOURCES, TECHNICAL, isExtendedMail, type Platform } from './guideCatalog';
 import { addRelation, afterRecipe, back, beginRecipe, completeStep, currentTask, deferStep, helpPrompt, isRecorded, move, selectAccount, undoStep } from './guideEngine';
 import { tx } from './ui';
+import { NordRecoveryLauncher } from './NordRecoveryGuide';
 import { PhoneLauncher } from './PhoneGuide';
 import { AuthenticatorQuestions } from './AuthenticatorQuestions';
 import { authenticatorScan, requireAuthenticatorRoots, selectedAuthenticator } from './authenticatorGuide';
@@ -59,7 +60,7 @@ export function Guide({ data, language, save }: Props) {
     const [cloudRoute, cloudId, cloudDetail] = (task?.redirectTo ?? cursor).split('/');
     content = <CloudManagerQuestions key={task?.redirectTo ?? cursor} data={data} language={language} save={save} route={cloudRoute} id={cloudId} detail={cloudDetail} trouble={<Trouble data={data} language={language} save={save} close={() => go('manager-select')} />} />;
   } else if (task?.redirectTo?.startsWith('do/')) {
-    content = <><h1>{tx(language, 'Complete the required preparation first', '先に必要な準備を進める')}</h1>{button(tx(language, 'Continue setup', '準備を続ける'), () => go(task.redirectTo!))}</>;
+    content = <><h1>{tx(language, 'Complete the required preparation first', '先に必要な準備を進める')}</h1>{button(tx(language, 'Continue setup', '準備を続ける'), () => go(task.redirectTo!))}{cloudTaskApp && <NordRecoveryLauncher data={data} language={language} save={save} appId={cloudTaskApp.id} />}</>;
   } else if (task?.redirectTo?.startsWith('native-')) { const [nativeRoute, nativeId] = task.redirectTo.split('/'); content = <NativeManagerQuestions key={task.redirectTo} data={data} language={language} save={save} route={nativeRoute} id={nativeId} />;
   } else if (task && !task.needsPrerequisites) {
     const { asset, recipe, step, index } = task;
@@ -79,6 +80,7 @@ export function Guide({ data, language, save }: Props) {
       {recorded && <p className="subtle">{tx(language, 'This step is already recorded. You can review it without erasing the record.', 'この手順は記録済みです。記録を残したまま見直せます。')}</p>}
       <div className="primary-actions">{step.choices ? step.choices.map(choice => button(say(choice.label, language), () => void save(completeStep(data, choice.next)), true)) : button(say(step.button ?? c('Next', '次へ'), language), () => void save(completeStep(data)))}</div>
       <div className="step-tools"><button className="text-button" onClick={() => setHelp(!help)}><CircleHelp size={17} />{tx(language, 'Something is different', 'うまくいかない')}</button><button className="text-button" onClick={() => void save(deferStep(data))}>{tx(language, 'Do this later', 'この作業を後回しにする')}</button></div>
+      {cloudTaskApp && <NordRecoveryLauncher data={data} language={language} save={save} appId={cloudTaskApp.id} />}
       {cloudTaskApp && <button className="text-button" onClick={() => {
         const next = deferStep(data);
         void save(move({ ...next, guide: { ...next.guide, managerId: cloudTaskApp.vaultRef, answers: { ...next.guide.answers, [`${cloudTaskApp.vaultRef}:installation`]: cloudTaskApp.id } } }, `cloud-device/${cloudTaskApp.vaultRef}`));

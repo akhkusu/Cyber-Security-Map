@@ -27,7 +27,7 @@ export function makePasswordVault(data: Dataset, product: StoreProduct, language
   const next = upgradeDataset(data), now = new Date().toISOString();
   const count = next.securityModel.entities.filter(e => e.kind === 'vault' && e.productId === product.id).length;
   const vault = securityEntitySchema.parse({ id: crypto.randomUUID(), kind: 'vault', productId: product.id, label: `${product.names[language]} ${count + 1}`, createdAt: now, controls: {}, controlEvidence: {}, ...(!product.local ? { storageMode: 'account' } : {}), ...(product.revision ? { storeScope: 'personal-account-store' } : {}) });
-  return { ...next, securityModel: { ...next.securityModel, revision: next.securityModel.revision === 3 ? 3 : product.revision ?? next.securityModel.revision, entities: [...next.securityModel.entities, vault] }, guide: { ...next.guide, managerId: vault.id } };
+  return { ...next, securityModel: { ...next.securityModel, revision: next.securityModel.revision >= 3 ? next.securityModel.revision : product.revision ?? next.securityModel.revision, entities: [...next.securityModel.entities, vault] }, guide: { ...next.guide, managerId: vault.id } };
 }
 export function choosePasswordDevice(data: Dataset, vaultId: string, deviceId: string, products: readonly StoreProduct[]): Dataset {
   const vault = passwordVault(data, vaultId, products), device = data.assets.find(a => a.id === deviceId && a.kind === 'device');

@@ -23,7 +23,7 @@ export function oldCloudVaults(data: Dataset, oldDeviceRef?: string) {
 export function answerCloudPhoneQuestion(data: CurrentDataset, w: PhoneWorkflow, step: PhoneStep, value: string, previous: PhoneWorkflow): { data: CurrentDataset; workflow: PhoneWorkflow } {
   const meta = step.cloudQuestion;
   if (!meta || !w.newDeviceRef) return { data, workflow: w };
-  let next: CurrentDataset = { ...data, securityModel: { ...data.securityModel, revision: data.securityModel.revision === 3 ? 3 : 2 } }, workflow = w;
+  let next: CurrentDataset = { ...data, securityModel: { ...data.securityModel, revision: data.securityModel.revision >= 3 ? data.securityModel.revision : 2 } }, workflow = w;
   if (meta.kind === 'destination') {
     const vault = cloudVault(data, meta.vaultRef); if (!vault) return { data, workflow: w };
     const oldApp = cloudInstallation(data, previous.answers[step.answerKey!]);

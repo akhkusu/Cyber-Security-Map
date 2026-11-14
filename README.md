@@ -85,3 +85,5 @@ docker run --rm --shm-size=1g cyber-security-map:browser-tests npm run test:page
 Apple・Google組込み管理の対応OS・保存方式・機種変更と残る範囲は、[組込み管理の実装契約](docs/BUILTIN-MANAGERS-GUIDE.md)を参照してください。
 
 認証アプリ3製品の新規登録は[認証アプリの実装契約](docs/AUTHENTICATOR-GUIDE.md)、Microsoft・Bitwardenの確認済みの移行／復元は[認証アプリの機種変更](docs/AUTHENTICATOR-PHONE-MOVE.md)にまとめています。新端末の既存コード・実際の保存先・対象Accountを確認し、コードの表示だけでログイン済みにはしません。
+
+NordPassの[忘れたマスターの復旧](docs/NORDPASS-RECOVERY.md)では、現在の保管庫用コードか、設定済みの生体認証を使って既存項目を開ける状態へ戻します。機種変更中も通常ガイドを維持し、全体リセットによる項目の削除とは分けて案内します。
