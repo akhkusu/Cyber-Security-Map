@@ -33,6 +33,22 @@ function finishSetup(data: CurrentDataset, installId: string): CurrentDataset {
 function confirmAt(data: CurrentDataset, id: string, recipe: string, step: string): CurrentDataset { const at=move(data, `do/${id}/${recipe}/${step}`); return completeStep(at,currentTask(at)?.step.choices?.find(c=>c.record!==false)?.next) as CurrentDataset; }
 
 describe('built-in password stores', () => {
+  it('never borrows another selected standard manager’s protection for an explicit account', () => {
+    const data = newDataset();
+    const first = { ...makeAsset({ kind: 'account', type: 'Password manager', name: 'Personal Bitwarden', importance: 'critical' }), provider: 'bitwarden' as const };
+    const second = { ...makeAsset({ kind: 'account', type: 'Password manager', name: 'Work Bitwarden', importance: 'critical' }), provider: 'bitwarden' as const };
+    first.controls.mfa = 'verified';
+    data.assets = [first, second]; data.guide.managerId = first.id;
+    const original = structuredClone(data);
+    expect(managerReady(data)).toBe(true);
+    expect(managerReady(data, second.id)).toBe(false);
+    expect(managerReady(data, 'missing')).toBe(false);
+    data.guide.managerId = second.id;
+    expect(managerReady(data)).toBe(false);
+    expect(managerReady(data, first.id)).toBe(true);
+    expect(data.assets).toEqual(original.assets);
+    expect(data.guide.steps).toEqual(original.guide.steps);
+  });
   it('keeps one canonical account and device, with separate vault and installation records', async () => {
     const { data, rootId, deviceId, vaultId, installId } = fixture();
     expect(data.assets).toHaveLength(2); expect(nativeVault(data, vaultId)?.authenticationAccountRef).toBe(rootId);

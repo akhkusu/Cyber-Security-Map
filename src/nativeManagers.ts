@@ -26,7 +26,7 @@ export function managerReady(data: Dataset, vaultId = data.guide.managerId, inst
   if(recordedUnavailable(data,[vaultId]))return false;
   if (cloudVault(data, vaultId)) return cloudManagerReady(data, vaultId!, installationId);
   const vault = nativeVault(data, vaultId);
-  if (!vault) return ['implemented', 'verified'].includes(data.assets.find(a => a.id === data.guide.managerId)?.controls.mfa ?? 'unknown');
+  if (!vault) return ['implemented', 'verified'].includes(data.assets.find(a => a.id === vaultId)?.controls.mfa ?? 'unknown');
   const installation = installationId ? nativeInstallation(data, installationId) : selectedNativeInstallation(data, vault.id);
   const device = data.assets.find(a => a.id === installation?.deviceRef);
   if (recordedUnavailable(data,[installation?.id,vault?.id]))return false;

@@ -3,6 +3,22 @@ import {makeAsset,newDataset,type Language} from '../src/models';
 import {saveStandardManagerIdentity,saveStandardManagerPurpose,standardManagerAddress} from '../src/standardManagerAccounts';
 import {openTwofasData,readTwofasData} from './twofas-driver';
 import {advance,createWorkspace,passphrase,readSavedVault} from './helpers';
+for(const language of ['ja','en'] as const)test(`manager identity ${language}: interrupted records never default an unknown product to Bitwarden`,async({page})=>{
+ for(const invalid of ['missing','mail','missing-account'] as const)await test.step(invalid,async()=>{
+  const f=fixture();f.data.settings.language=language;
+  f.data.guide.cursor=invalid==='missing-account'?'manager-purpose/no-such-account':'manager-identity';
+  f.data.guide.pendingProvider=invalid==='mail'?'google':invalid==='missing-account'?'bitwarden':undefined;
+  const before=structuredClone(f.data);
+  await openTwofasData(page,f.data);
+  await expect(page.locator('.guide-card h1')).toHaveText(word(language,'使うパスワードマネージャーを選んでください','Choose your password manager'));
+  await expect(page.getByLabel(word(language,'このアカウントのメールアドレス（任意）','Account email address (optional)'),{exact:true})).toHaveCount(0);
+  const displayed=await readTwofasData(page);expect(displayed.assets).toEqual(before.assets);expect(displayed.guide).toEqual(before.guide);
+  await advance(page,word(language,'製品を選ぶ','Choose a product'));
+  await page.getByRole('button',{name:/^1Password/}).click();
+  await expect(page.locator('.guide-card h1')).toContainText('1Password');
+  const chosen=await readTwofasData(page);expect(chosen.assets).toEqual(before.assets);expect(chosen.guide.steps).toEqual(before.guide.steps);expect(chosen.guide.pendingProvider).toBe('1password');
+ });
+});
 const word=(language:Language,ja:string,en:string)=>language==='ja'?ja:en;
 async function details(page:Page,language:Language,address:string,label:string){
  await page.getByLabel(word(language,'このアカウントのメールアドレス（任意）','Account email address (optional)'),{exact:true}).fill(address);
