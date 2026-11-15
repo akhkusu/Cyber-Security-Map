@@ -3,6 +3,8 @@ import {guideProgress} from './guideProgress';
 import {BitwardenServerCheck} from './BitwardenServerCheck';
 import {bitwardenRegion,bitwardenWebURL,openBitwardenServerCheck} from './bitwardenServer';
 import {hasSavedPasswordCandidate} from './passwordContext';
+import {StandardManagerAccounts} from './StandardManagerAccounts';
+import {isStandardManager,standardManagerAddress} from './standardManagerAccounts';
 import {resumeAfterRecoveryContact} from './recoveryContacts';
 import {PrivateBrowserHelp} from './PrivateBrowserHelp';
 import {MailAccounts} from './MailAccounts';
@@ -68,17 +70,17 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
       const device = makeAsset({ kind: 'device', type: platform === 'ios' || platform === 'android' ? 'Smartphone' : 'Computer', name: `${PLATFORMS[platform]} ${data.assets.filter(a => a.kind === 'device').length + 1}`, importance: 'critical', operatingSystem: platform });
       next = { ...next, assets: [...next.assets, device] }; deviceId = device.id;
     }
-    next = { ...next, guide: { ...next.guide, ...(deviceId ? { deviceId } : {}), answers: { ...next.guide.answers, [`${target.id}:platform`]: platform } } };
+    next = { ...next, guide: { ...next.guide, ...(deviceId ? { deviceId } : {}), answers: { ...next.guide.answers, [`${target.id}:platform`]: platform,...(isStandardManager(target)&&deviceId?{[`${target.id}:deviceRef`]:deviceId}:{}) } } };
     if (route === 'auth-device') {
       next = addRelation(next, target.id, deviceId!, 'authentication');
       void save(afterAuthentication(next, target)); return;
     }
     if (target.kind === 'device') { void save(beginRecipe(next, target.id, 'device')); return; }
-    if (isManager(target) && !canBeMailAccount(target)) { void save(beginRecipe(next, target.id, 'manager')); return; }
+    if (isStandardManager(target) || isManager(target) && !canBeMailAccount(target)) { void save(beginRecipe(next, target.id, 'manager')); return; }
     void save(beginRecipe(next, target.id, recipeId ?? 'email-mfa'));
   };
   const afterAuthentication = (next: Dataset, target: Asset) => {
-    if (isManager(target) && !canBeMailAccount(target)) {
+    if (isStandardManager(target) || isManager(target) && !canBeMailAccount(target)) {
       const email = next.assets.find(a => a.id === next.guide.accountId);
       return email && isRecorded(email, 'recovery') && managerReady(next) ? beginRecipe(next, email.id, 'password') : move(next, 'password-prerequisite');
     }
@@ -101,6 +103,10 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
   } else if (task?.redirectTo?.startsWith('cloud-') || route.startsWith('cloud-')) {
     const [cloudRoute, cloudId, cloudDetail] = (task?.redirectTo ?? cursor).split('/');
     content = <CloudManagerQuestions key={task?.redirectTo ?? cursor} data={data} language={language} save={save} route={cloudRoute} id={cloudId} detail={cloudDetail} trouble={<Trouble data={data} language={language} save={save} close={() => go('manager-select')} />} />;
+  } else if(task?.redirectTo?.startsWith('manager-purpose/')||task?.redirectTo?.startsWith('manager-managed/')){
+    const [identityRoute,identityId]=task.redirectTo.split('/'),target=data.assets.find(item=>item.id===identityId);
+    displaysTaskContext=true;
+    content=isStandardManager(target)?<StandardManagerAccounts key={task.redirectTo} data={data} language={language} save={save} product={target.provider} mode={identityRoute==='manager-managed'?'managed':'purpose'} accountRef={identityId}/>:null;
   } else if(task?.redirectTo?.startsWith('standard-server/')||route==='standard-server'||route==='region'){
     displaysTaskContext=true;
     content=<BitwardenServerCheck data={data} language={language} save={save} accountRef={(task?.redirectTo??cursor).split('/')[1]}/>;
@@ -120,7 +126,7 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
     displaysTaskContext = true;
     const {completed:completedSteps,total:progressTotal}=guideProgress(recipe,index,done);
     content = <>
-      <div className="task-context"><span>{titleFor(asset)}{mailboxAddress(asset)&&mailboxAddress(asset)!==asset.name&&<small className="mail-address">{mailboxAddress(asset)}</small>}{asset.services.includes('mail')&&asset.purpose&&<small>{mailPurposeLabel(asset,language)}</small>}</span><span>{tx(language,`${completedSteps} ${completedSteps===1?'step':'steps'} completed`,`${completedSteps}件の操作を完了`)}</span></div>
+      <div className="task-context"><span>{titleFor(asset)}{(mailboxAddress(asset)||standardManagerAddress(asset))&&(mailboxAddress(asset)||standardManagerAddress(asset))!==asset.name&&<small className="mail-address">{mailboxAddress(asset)||standardManagerAddress(asset)}</small>}{(asset.services.includes('mail')||isStandardManager(asset))&&asset.purpose&&<small>{mailPurposeLabel(asset,language)}</small>}</span><span>{tx(language,`${completedSteps} ${completedSteps===1?'step':'steps'} completed`,`${completedSteps}件の操作を完了`)}</span></div>
       <progress className="guide-step-progress" value={completedSteps} max={progressTotal} aria-label={tx(language,'Progress for this setting','この設定の進み具合')}/>
 
       <span className="eyebrow">{say(recipe.title, language)}</span><h1>{say(step.title, language)}</h1>
@@ -193,14 +199,10 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
     content = <><h1>{tx(language, 'Record where the backup is kept', '予備の手段の場所を記録する')}</h1><p>{tx(language, 'Record only the type and connection. No phone number or recovery code is needed.', '種類とつながりだけを記録します。電話番号や復旧コードは入力しません。')}</p><div className="choices">{asset.provider !== 'google' && option(tx(language, 'A separate phone / phone number', '独立した予備の電話・電話番号'), () => addOffline(asset, 'phone'))}{(asset.provider === 'google' || isExtendedMail(asset.provider)) && option(tx(language, 'Printed recovery codes', '紙で保管した復旧コード'), () => addOffline(asset, 'paper'))}{asset.provider === 'microsoft' && data.assets.filter(a => a.id !== asset.id && canBeMailAccount(a)).map(a => option(`${a.name} ${tx(language, '(recovery email)', '（復旧用メール）')}`, () => void save(requireAuthenticatorRoots(addRelation(data, asset.id, a.id, 'recovery-email'), asset.id, 'manager-select'))))}{option(tx(language, 'Do not record a connection', 'つながりは記録しない'), () => void save(requireAuthenticatorRoots(data, asset.id, 'manager-select')))}</div></>;
   } else if (route === 'manager-select') {
     content = <><span className="hero-step"><LockKeyhole /></span><h1>{tx(language, 'Which password manager will you use?', 'どのパスワードマネージャーを使いますか？')}</h1><p>{tx(language, 'We’ll guide you through recovery, two-factor authentication, and saving and using an important login.', '導入だけでなく、復旧の備え・マネージャー自体の認証・重要なログイン情報の保存と利用まで進めます。')}</p><div className="choices">{(['bitwarden', '1password'] as const).map(product => option(PROVIDERS[product], () => void save(move({ ...data, guide: { ...data.guide, pendingProvider: product } }, 'manager-identity')), product === 'bitwarden' ? tx(language, 'Free plan available; US / EU servers', '無料プランあり・米国／EUのサーバー') : tx(language, 'Paid subscription; individual / family account', '有料プラン・個人／家族アカウント')))}{CLOUD_PRODUCTS.map(product => option(CLOUD_NAMES[product][language], () => go(`cloud-choice/${product}`), tx(language, product === 'proton-pass' ? 'Use your Proton Account; no separate master by default' : 'Nord Account sign-in and vault Master Password are separate', product === 'proton-pass' ? 'Proton Accountを使用・専用マスターは通常不要' : 'Nord Accountのログインと保管庫のマスターは別')))}{NATIVE_PRODUCTS.map(product => option(NATIVE_NAMES[product][language], () => go(`native-choice/${product}`), tx(language, 'Built-in / no separate master password', '組込み機能・専用マスターパスワードは不要')))}{option(tx(language, 'Another product / decide later', '別の製品を使う・後で決める'), () => void save(deferStep(data)))}</div></>;
-  } else if (route === 'manager-identity') {
-    const provider = data.guide.pendingProvider ?? 'bitwarden';
-    const createManager = (existing?: Asset) => {
-      const a = existing ? { ...existing, provider, services: [...new Set([...existing.services, 'manager' as const])] } : { ...makeAsset({ kind: 'account', type: 'Password manager', name: PROVIDERS[provider], importance: 'critical' }), provider, purpose: 'personal' as const, services: ['manager' as const] };
-      const next = { ...data, assets: existing ? data.assets.map(x => x.id === a.id ? a : x) : [...data.assets, a], guide: { ...data.guide, managerId: a.id } };
-      void save(move(next, `platform/${a.id}/manager`));
-    };
-    content = <><h1>{tx(language, 'Reuse an existing entry?', '登録済みの項目を使いますか？')}</h1><p>{PROVIDERS[provider]}</p><div className="choices">{data.assets.filter(a => isManager(a) && (!a.provider || a.provider === provider)).map(a => option(a.name, () => createManager(a)))}{option(tx(language, 'Add this manager', 'このマネージャーを追加する'), () => createManager())}</div></>;
+  } else if (route === 'manager-identity'||route==='manager-purpose') {
+    const product=route==='manager-purpose'&&isStandardManager(asset)?asset.provider:data.guide.pendingProvider==='1password'?'1password':'bitwarden';
+    displaysTaskContext=true;
+    content=<StandardManagerAccounts key={`${cursor}:${product}`} data={data} language={language} save={save} product={product} mode={route==='manager-purpose'?'purpose':'identity'} accountRef={route==='manager-purpose'?id:undefined}/>;
   } else if (route === 'password-prerequisite' || task?.needsPrerequisites) {
     const cloud = cloudVault(data, manager?.id);
     const pendingApp = task?.recipe.id.startsWith('cloud-password:') ? task.recipe.id.slice('cloud-password:'.length) : data.guide.answers['cloud-password:installation'];
@@ -225,7 +227,7 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
     content = <><h1>{tx(language, 'Where is this device backed up?', 'この端末のバックアップ先は？')}</h1><p>{tx(language, 'Choose the account or disk you confirmed in the backup settings.', 'バックアップ画面で確認したアカウントやディスクを選んでください。')}</p><div className="choices">{data.assets.filter(a => a.kind === 'account' && !isManager(a)).map(a => option(a.name, () => void save(move(addRelation(data, asset.id, a.id, 'backup'), 'finish'))))}{option(tx(language, 'A separate backup disk', '別のバックアップ用ディスク'), () => addOffline(asset, 'disk'))}{option(tx(language, 'Leave the connection unconfirmed', 'つながりは未確認のままにする'), () => go('finish'))}</div></>;
   } else if (route === 'managed' || route === 'unsupported') {
     content = <><h1>{tx(language, route === 'managed' ? 'Check your organization’s rules first' : 'Find the right instructions for this environment', route === 'managed' ? '仕事・学校の管理ルールを確認する' : 'この環境に合う手順を確認する')}</h1><p>{tx(language, route === 'managed' ? 'Work and school settings may be controlled by an administrator. Confirm which authentication methods you are allowed to use. Do not bypass a restriction.' : 'This environment does not have a verified recipe in this guide yet. We will keep this task unfinished.', route === 'managed' ? '仕事や学校の設定は、管理者が制御している場合があります。利用できる認証方法を確認してください。制限を回避する操作は案内しません。' : 'この環境で確認済みの手順は、まだ用意できていません。この作業は未完了のまま残します。')}</p>
-      {route === 'managed' && asset?.provider !== 'other' && button(tx(language, 'I am allowed to use personal-account settings', '個人アカウント向けの設定を使えると確認した'), () => { const allowed = { ...data, guide: { ...data.guide, answers: { ...data.guide.answers, [`${id}:managedAllowed`]: 'yes' } } }; void save(scopePath === '/guide' && plan?.accountRefs.includes(id) ? beginMailboxChecks(allowed, id, language) : beginRecipe(allowed, id, 'email-mfa')); })}
+      {route === 'managed' && asset?.provider !== 'other' && button(tx(language, 'I am allowed to use personal-account settings', '個人アカウント向けの設定を使えると確認した'), () => { const allowed = { ...data, guide: { ...data.guide, answers: { ...data.guide.answers, [`${id}:managedAllowed`]: 'yes' } } }; void save(scopePath === '/guide' && plan?.accountRefs.includes(id) ? beginMailboxChecks(allowed, id, language) : beginRecipe(allowed, id, data.guide.answers[`${id}:managedRecipe`]??(isStandardManager(asset)?'manager':'email-mfa'))); })}
       <Trouble data={data} language={language} save={save} close={() => go('manager-select')} />{button(tx(language, 'Continue with another task', '別の対策へ進む'), () => go('manager-select'), true)}</>;
   } else {
     content = <><span className="hero-step"><Check /></span><h1>{tx(language, 'Your work is saved', 'ここまでの作業を保存しました')}</h1><p>{tx(language, 'Review your Security Map or continue with another account or device. Unfinished tasks stay unfinished.', 'Security Mapでつながりを確認したり、別のアカウントや端末の対策を続けたりできます。未完了の作業は、そのまま残っています。')}</p><div className="choices">{option(tx(language, 'Protect another account', '別のアカウントを対策する'), () => go('start'))}{option(tx(language, 'Protect another device', '別の端末を対策する'), () => go('device-select'))}{option(tx(language, 'Set up a password manager', 'パスワードマネージャーを設定する'), () => go('manager-select'))}</div></>;

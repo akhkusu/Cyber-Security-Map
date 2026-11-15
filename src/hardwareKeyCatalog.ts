@@ -1,9 +1,12 @@
 import type { Dataset } from './models';
+import {bitwardenRegion,bitwardenWebURL,serverCheckSupported} from './bitwardenServer';
+import {BITWARDEN_SERVER_SOURCES,BITWARDEN_SERVER_SCREENS} from './bitwardenServerCatalog';
 import { c, type Copy, type Source, type Recipe } from './guideCatalog';
 import { keyTasks, type KeyTask } from './hardwareKeySchemas';
 
 const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-14', reviewMethod: 'official-documentation' });
 export const KEY_SOURCES = {
+  ...BITWARDEN_SERVER_SOURCES,
   googleKey: source('Google · Security keys', 'https://support.google.com/accounts/answer/6103523?co=GENIE.Platform%3DDesktop&hl=ja', 'Personal Account / physical second step / USB computer'),
   googlePasskey: source('Google · Passkeys', 'https://support.google.com/accounts/answer/13548313', 'Personal Account / FIDO2 key / desktop browser'),
   appleKey: source('Apple · Account security keys', 'https://support.apple.com/ja-jp/102637', 'iOS/iPadOS 16.3+ / macOS 13.2+ / two physical keys'),
@@ -37,7 +40,7 @@ export const keyModeTitle = (mode?: string) => ({
 export function keySourceIds(t: KeyTask, provider?: string): KeySource[] {
   if(!t.mode&&provider==='google')return ['googleKey','googlePasskey'];
   if(!t.mode&&provider==='apple')return ['appleKey','appleUse'];
-  return t.mode === 'apple-keys' ? ['appleKey', 'appleUse'] : t.mode === 'google-passkey' ? ['googlePasskey', 'googleKey'] : t.mode === 'google-second-step' ? ['googleKey'] : t.mode === 'bitwarden-login' ? ['bwLogin', 'bwRecovery'] : ['bwKey', 'bwRecovery'];
+  return t.mode === 'apple-keys' ? ['appleKey', 'appleUse'] : t.mode === 'google-passkey' ? ['googlePasskey', 'googleKey'] : t.mode === 'google-second-step' ? ['googleKey'] : t.mode === 'bitwarden-login' ? ['bwServer', 'bwLogin', 'bwRecovery'] : ['bwServer', 'bwKey', 'bwRecovery'];
 }
 export function keyRegistrationCandidates(data: Dataset, task: KeyTask, index: number) {
   const passkey = ['google-passkey', 'bitwarden-login'].includes(task.mode ?? '');
@@ -69,9 +72,14 @@ export function keySteps(data: Dataset, t: KeyTask): KeyStep[] {
     if (a.protection === 'advanced') return blocked('advanced', c('Keep your existing protection', '現在の保護を残してください'), c('Do not remove any key or passkey. Advanced Protection has different enrollment and recovery rules; this standard recipe must not replace them.', 'キーやパスキーを削除しません。高度な保護には別の登録・復旧条件があるため、通常のアカウント用の操作で置き換えません。'));
   }
   if (bw) {
-    const region=data.guide.answers[`${t.accountRef}:region`]??account?.hardwareKeyServer;
-    question('server', c('Where is this Bitwarden account hosted?', 'このBitwardenアカウントのサーバーは？'), [...(!region||region==='us'?[option('us','United States · vault.bitwarden.com','米国 · vault.bitwarden.com')]:[]),...(!region||region==='eu'?[option('eu','European Union · vault.bitwarden.eu','欧州 · vault.bitwarden.eu')]:[]),option('other','Self-hosted, unknown, or the recorded server is wrong','自己ホスト・分からない・記録と違う')]);
+    const region=bitwardenRegion(data,t.accountRef);
+    if(!serverCheckSupported(data,t.accountRef))return blocked('server-format',c('This server record needs a newer app','このサーバー記録に対応する新しい版が必要です'),c('Keep your encrypted backup.','暗号化バックアップを保管してください。'));
+    if(region&&a.server&&a.server!=='other'&&a.server!==region||account&&Object.hasOwn(account,'bitwardenServerV1')&&!region)return blocked('server-conflict',c('Check the account and server again','アカウントとサーバーを確認し直す'),c('The recorded server differs from this key task. Keep existing registrations. Check the intended account in Security Map before starting a separate task for it.','記録したサーバーと、このキーの作業のサーバーが一致しません。既存の登録は残し、Security Mapで対象のアカウントを確認してから、そのアカウントの作業を別に始めてください。'));
+
+    if(a['server-source']!=='account')question('server', c('Where is this Bitwarden account hosted?', 'このBitwardenアカウントのサーバーは？'), [...(!region||region==='us'?[option('us','United States · vault.bitwarden.com','米国 · vault.bitwarden.com')]:[]),...(!region||region==='eu'?[option('eu','European Union · vault.bitwarden.eu','欧州 · vault.bitwarden.eu')]:[]),option('other','Self-hosted, unknown, or the recorded server is wrong','自己ホスト・分からない・記録と違う')],BITWARDEN_SERVER_SCREENS.web.action);
     if (a.server === 'other') return blocked('server-blocked', c('Confirm the actual server first', '先に実際のサーバーを確認します'), c('Keep the configured server. US and EU accounts are separate; do not create a replacement account. Self-hosted domains and organization policies need their own verified recipe.', '設定中のサーバーを残します。米国と欧州のアカウントは別なので、代わりのアカウントを作りません。自己ホストのドメインや組織の方針は、別の確認済み手順が必要です。'));
+    if(!a.server)return steps;
+    if(!bitwardenWebURL(a.server))return blocked('server-blocked',c('Confirm the actual server first','先に実際のサーバーを確認します'),c('Keep the existing account and check the actual server in Security Map.','既存のアカウントを残し、Security Mapで実際のサーバーを確認してください。'));
     const vaults = data.version === 2 ? data.securityModel.entities.filter(e => e.kind === 'vault' && e.productId === 'bitwarden' && e.authenticationAccountRef === t.accountRef && e.storageMode === 'account') : [];
     question('vault', c('Which personal vault will you open?', '開く個人用保管庫はどれですか？'), [...vaults.map(v => named(v.id, v.label)), option('new','Record this account’s existing personal vault','このアカウントの既存の個人用保管庫を記録する')], c('Reuse the same vault. This records it in the map; it does not create a Bitwarden account or move organization data.', '同じ保管庫は再利用します。Mapへの記録であり、Bitwardenの新規登録や組織データの移動は行いません。'));
   }
@@ -98,7 +106,7 @@ export function keySteps(data: Dataset, t: KeyTask): KeyStep[] {
     question('old-factor', c('Is two-step login already enabled?', 'すでに2段階ログインを有効にしていますか？'), [option('yes','Yes','はい'),option('no','No, this will be my first method','いいえ、今回が最初です')]);
     if (a['old-factor']==='yes') operation('recovery-before', c('Store the current recovery code first', '先に現在の復旧コードを保管する'), c('Bitwarden · Settings → Security → Two-step login', 'Bitwarden · Settings → Security → Two-step login'), c('Select View recovery code. Confirm the master password on Bitwarden, then print or privately copy the current code to locked storage outside the vault and key. Do not submit it to the recovery page for a test; using it disables two-step methods.', '「View recovery code」を選び、Bitwardenだけにマスターを入力します。現在のコードを印刷するなどして、保管庫・キーの外の施錠できる場所に保管します。テストのために復旧画面へ送信しません。実際に使うと2段階認証の方法が解除されます。'), c('The current code can be retrieved without this vault or key.', 'この保管庫やキーを使わず、現在のコードを取り出せること。'));
   } else if (!apple) operation('recovery-before', c('Keep another way into Google', 'Googleへ入る別の方法を先に確保する'), c('Your current Google sign-in and recovery settings', '現在のGoogleログイン・復旧設定'), c('Keep another existing second step or passkey and your recovery information accessible without this key. If this is your only working method, stop here and return to the account recovery guide first. An old pre-May-2023 key must not be deleted just to convert it to a passkey.', '別の既存の2つ目の手順かパスキーと、復旧用情報を、このキーなしで使えるようにします。唯一の使える方法なら、ここで止めてアカウントの復旧手順を先に進めてください。2023年5月以前のキーをパスキーへ変換するためだけに削除しません。'), c('A different usable method and recovery information remain available.', '今回のキーとは別の使える方法と復旧用情報を残してあること。'));
-  const site = bw ? a.server === 'eu' ? 'https://vault.bitwarden.eu/' : 'https://vault.bitwarden.com/' : 'https://myaccount.google.com/signinoptions/passkeys';
+  const site = bw ? bitwardenWebURL(a.server) : 'https://myaccount.google.com/signinoptions/passkeys';
   const settings = apple ? c('Settings / System Settings · Apple Account', '設定／システム設定 · Apple Account') : c(bw?'Bitwarden web app':'Google Account',bw?'BitwardenのWebアプリ':'Google アカウント');
   operation('open-settings', c('Open the key settings', 'キーの設定画面を開く'), settings, apple ? appleMobile?c('Open Settings → your name → Sign-In & Security → Two-Factor Authentication → Security Keys.','「設定」→自分の名前→「サインインとセキュリティ」→「2ファクタ認証」→「セキュリティキー」を開きます。'):c('Open Apple menu → System Settings → your name → Sign-In & Security → Two-Factor Authentication.','Appleメニュー→「システム設定」→自分の名前→「サインインとセキュリティ」→「2ファクタ認証」を開きます。') : bw ? c(login?'In the correct web vault open Settings → Security → Master password. Find Log in with passkey.':'In the correct web vault open Settings → Security → Two-step login. Find Passkey → Manage. Confirm the master password only on Bitwarden.',login?'正しいサーバーのWeb版で「Settings」→「Security」→「Master password」を開き、「Log in with passkey」を探します。':'正しいサーバーのWeb版で「Settings」→「Security」→「Two-step login」を開き、「Passkey」→「Manage」を選びます。マスターはBitwardenだけに入力します。') : c('Open the official settings below and verify the intended account. The passkey screen is for key passkeys; the second-step link opens the security-key registration settings.', '下の公式設定を開き、意図したアカウントか確認します。パスキー用と、2段階認証のキー登録用では開く画面を分けています。'), c('The intended account’s key settings are open.', '意図したアカウントのキー設定が開いたこと。'), apple ? {} : { url: bw ? site : gpk ? site : 'https://myaccount.google.com/signinoptions/two-step-verification?flow=sk&opendialog=addsk' });
   for(let i=0;i<(apple?2:1);i++){

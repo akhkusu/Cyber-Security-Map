@@ -7,10 +7,11 @@ export const bitwardenWebURL=(region?:string):string|undefined=>region==='us'?'h
 const serverSchema=z.object({version:z.literal(1),region:z.enum(['us','eu']),evidence:z.enum(['user-confirmed','selected-for-new']),checkedAt:z.string()}).passthrough();
 export function bitwardenServerConfirmation(data:Dataset,accountRef:string){const parsed=serverSchema.safeParse(data.assets.find(a=>a.id===accountRef)?.bitwardenServerV1);return parsed.success?parsed.data:undefined;}
 export function bitwardenRegion(data:Dataset,accountRef:string):BitwardenRegion|undefined{
- const value=data.guide.answers[`${accountRef}:region`];
+ const selected=data.guide.answers[`${accountRef}:region`];
  const account=data.assets.find(a=>a.id===accountRef),stored=account&&Object.hasOwn(account,'bitwardenServerV1')?serverSchema.safeParse(account.bitwardenServerV1):undefined;
  if(stored&&!stored.success)return undefined;
- if(stored?.success&&stored.data.region!==value)return undefined;
+ if(stored?.success){if(selected!==undefined&&stored.data.region!==selected)return undefined;return stored.data.region;}
+ const value=selected===undefined?account?.hardwareKeyServer:selected;
  return value==='us'||value==='eu'?value:undefined;
 }
 const checkSchema=z.object({version:z.literal(1),accountRef:z.string(),returnCursor:z.string(),mode:z.enum(['existing','new','unknown']),stage:z.enum(['mode','where','read','choose','different','problem']),where:z.enum(['web','ios','android','login']).optional(),selected:z.enum(['us','eu']).optional(),problem:z.enum(['screen','self-hosted','unknown']).optional()}).passthrough();

@@ -4,7 +4,7 @@ import {beginRecipe,completeStep,currentTask,move,taskCursor,undoStep} from './g
 import {createEncryptedVault,decryptVault} from './crypto';
 function fixture(product:'bitwarden'|'1password'){
   let d=newDataset('ja');const account={...makeAsset({kind:'account',type:'Primary email',name:'Mail',importance:'critical'}),provider:'google' as const,purpose:'personal' as const};account.controls.uniquePassword='unknown';account.controls.mfa='verified';account.controls.recovery='verified';
-  const manager={...makeAsset({kind:'account',type:'Password manager',name:product,importance:'critical'}),provider:product};manager.controls.mfa='verified';
+  const manager={...makeAsset({kind:'account',type:'Password manager',name:product,importance:'critical'}),provider:product,purpose:'personal' as const};manager.controls.mfa='verified';
   d={...d,assets:[account,manager],guide:{...d.guide,accountId:account.id,managerId:manager.id}};d.guide.answers[`${manager.id}:platform`]='windows';if(product==='bitwarden')d.guide.answers[`${manager.id}:region`]='us';return beginRecipe(d,account.id,'password');
 }
 for(const product of ['bitwarden','1password'] as const)describe(`${product}: existing passwords and actual saved-password use`,()=>{

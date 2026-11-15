@@ -56,7 +56,7 @@ test('resume exact step, back, different-screen branch, safe manual AI help, def
 test('a new user can finish Bitwarden, save a generated important password and continue', async ({ page }) => {
   await createWorkspace(page); await chooseApple(page); await mfaState(page); await advance(page, 'すでに有効になっている');
   await advance(page, '分からない・つながりを記録しない'); await advance(page); await advance(page, '予備の手段を確保しました'); await advance(page, '独立した予備の電話・電話番号');
-  await page.getByRole('button', { name: /^Bitwarden/ }).click(); await advance(page, 'このマネージャーを追加する');
+  await page.getByRole('button', { name: /^Bitwarden/ }).click(); await advance(page, '次へ'); await advance(page, '個人用');
   await page.getByRole('button', { name: /登録済みの端末/ }).click();
   await expect(page.getByRole('link', { name: /公式の設定・アプリを開く/ })).toHaveAttribute('href', 'https://bitwarden.com/download/');
   await advance(page); await advance(page, '初めて作る');
@@ -171,7 +171,7 @@ for (const provider of ['Gmail / Google', 'Outlook / Microsoft', 'Proton Mail', 
 
 test('1Password keeps emergency recovery before authenticator activation', async ({ page }) => {
   await createWorkspace(page); await advance(page, 'メールを使っていない・後で進める');
-  await page.getByRole('button', { name: /^1Password/ }).click(); await advance(page, 'このマネージャーを追加する'); await advance(page, 'iPhone / iPad を追加');
+  await page.getByRole('button', { name: /^1Password/ }).click(); await advance(page, '次へ'); await advance(page, '個人用'); await advance(page, 'iPhone / iPad を追加');
   await advance(page); await advance(page, '初めて作る'); await advance(page, '専用の語句を用意しました'); await advance(page); await advance(page, '安全な場所へ保管しました');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('アカウントの復旧コードを保管する');
   await advance(page, '確認しました'); await advance(page, '確認しました'); await advance(page, 'これから設定する');

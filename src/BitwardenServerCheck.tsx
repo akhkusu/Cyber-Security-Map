@@ -5,6 +5,7 @@ import {beginRecipe,deferStep,move} from './guideEngine';
 import {bitwardenRegion,bitwardenServerCheck,bitwardenServerHelp,chooseBitwardenServer,serverCheckSupported,updateBitwardenServerCheck,type BitwardenRegion} from './bitwardenServer';
 import {tx} from './ui';
 import {BITWARDEN_SERVER_SCREENS,BITWARDEN_SERVER_SOURCES} from './bitwardenServerCatalog';
+import {StandardManagerSummary} from './StandardManagerAccounts';
 type Props={data:Dataset;language:Language;save:(data:Dataset)=>Promise<boolean>;accountRef:string};
 export function BitwardenServerCheck({data,language,save,accountRef}:Props){
  const check=bitwardenServerCheck(data,accountRef),account=data.assets.find(a=>a.id===accountRef),heading=useRef<HTMLDivElement>(null);
@@ -19,7 +20,7 @@ export function BitwardenServerCheck({data,language,save,accountRef}:Props){
  if(!account||account.provider!=='bitwarden')return <h1>{tx(language,'This Bitwarden account was not found','このBitwardenアカウントが見つかりません')}</h1>;
  if(!serverCheckSupported(data,accountRef))return <><h1>{tx(language,'This saved check needs a newer app','この確認記録に対応する新しい版が必要です')}</h1><p>{tx(language,'Keep your encrypted backup and reopen it in a compatible version.','暗号化バックアップを保管し、対応する版で開いてください。')}</p></>;
  return <div ref={heading} tabIndex={-1} className="bitwarden-server-check">
-  <div className="task-context"><span>{account.name==='Bitwarden'?account.name:`Bitwarden · ${account.name}`}</span></div>
+  <div className="task-context"><StandardManagerSummary account={account} language={language} product/></div>
   {check.stage!=='mode'&&check.stage!=='where'&&!(check.mode==='new'&&check.stage==='choose')&&<button className="text-button" onClick={back}><ArrowLeft size={17}/>{tx(language,'Back','戻る')}</button>}
   {check.stage==='mode'&&<><h1>{tx(language,'Do you already use this Bitwarden account?','このBitwardenアカウントを、すでに使っていますか？')}</h1><div className="choices">{option(tx(language,'I already use it','すでに使っている'),()=>change({mode:'existing',stage:'where'}))}{option(tx(language,'I will create it','これから作る'),()=>change({mode:'new',stage:'choose'}))}</div></>}
   {check.stage==='where'&&<><h1>{tx(language,'Where can you check this account?','このアカウントを、どの画面で確認しますか？')}</h1><div className="choices">{(['web','ios','android','login'] as const).map(where=>option(where==='web'?tx(language,'The web vault I normally use','いつも使うWeb画面'):where==='login'?tx(language,'Its login screen','このアカウントのログイン画面'):where==='ios'?'iPhone / iPad':'Android',()=>change({where,stage:'read'})))}{option(tx(language,'Another screen / I cannot open it','ほかの画面・開けない'),()=>change({stage:'problem',problem:'screen'}))}</div></>}

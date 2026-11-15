@@ -1,5 +1,6 @@
 import { DataUpgradeConflict, guideSchema, makeAsset, upgradeDataset, type CurrentDataset, type Dataset, type Language } from './models';
 import { c } from './guideCatalog';
+import {bitwardenRegion} from './bitwardenServer';
 import { protectionTasks, protectionStore } from './deviceProtectionSchemas';
 import {createNordKeyOrigin,keyNordOrigin} from './nordKeyReturn';
 import {cloudSetupRoute} from './cloudManagers';
@@ -39,7 +40,8 @@ export function startKeyGuide(data: Dataset, accountRef: string, returnTo: '/gui
   const nordParent=nordOrigin?nordSsoStore(next)?.sessions.find(s=>s.id===nordOrigin.sessionRef):undefined;
   const pending=forceNew?undefined:keyTasks(next).find(t=>t.accountRef===accountRef&&keyProtectionParent(t,next)===protectionParentRef&&keyNordOrigin(next,t)?.sessionRef===nordOrigin?.sessionRef&&keyNordOrigin(next,t)?.bindingRef===nordOrigin?.bindingRef&&['active','deferred'].includes(t.status));
   if(nordOrigin&&!pending)next={...next,securityModel:{...next.securityModel,revision:next.securityModel.revision>=10?next.securityModel.revision:10}};
-  const task=pending?{...pending,status:'active' as const}:keyTaskSchema.parse({id:crypto.randomUUID(),accountRef,returnTo:parent||nordParent?'/map':returnTo,originGuideCursor:parent?guideSchema.parse(parent.childGuide).cursor:nordParent?guideSchema.parse(nordParent.guide).cursor:data.guide.cursor,createdAt:now,updatedAt:now,...(parent?{deviceProtectionKeyReturnV1:{version:1,taskRef:parent.id}}:{}),...(nordOrigin?{nordSsoKeyReturnV1:nordOrigin}:{})});
+  const server=next.assets.find(account=>account.id===accountRef)?.provider==='bitwarden'?bitwardenRegion(next,accountRef):undefined;
+  const task=pending?{...pending,status:'active' as const}:keyTaskSchema.parse({id:crypto.randomUUID(),accountRef,returnTo:parent||nordParent?'/map':returnTo,originGuideCursor:parent?guideSchema.parse(parent.childGuide).cursor:nordParent?guideSchema.parse(nordParent.guide).cursor:data.guide.cursor,createdAt:now,updatedAt:now,...(server?{answers:{server,'server-source':'account'}}:{}),...(parent?{deviceProtectionKeyReturnV1:{version:1,taskRef:parent.id}}:{}),...(nordOrigin?{nordSsoKeyReturnV1:nordOrigin}:{})});
   return {data:put(next,task),id:task.id};
 }
 export function keyRecordValid(data: Dataset, task: KeyTask, id: string, visiting = new Set<string>()): boolean {

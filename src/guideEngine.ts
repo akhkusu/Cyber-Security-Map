@@ -2,6 +2,7 @@ import { nativePasswordAccepted, nativePasswordRedirect, nativePasswordStepMetad
 import { nativeRootCopyReady, nativeRootCopyState } from './nativeRootCopy';
 import {hasSavedPasswordCandidate,standardPasswordScope} from './passwordContext';
 import {bitwardenRegion,confirmBitwardenServerUse,openBitwardenServerCheck,serverCheckSupported} from './bitwardenServer';
+import {isStandardManager} from './standardManagerAccounts';
 import { recordedUnavailable } from './recordAvailability';
 import { recordProtonExtra } from './protonPassExtra';
 import { AUTHENTICATORS, authSources, authenticatorPrerequisiteRoute, authenticatorConfirmation, authenticatorScan, authenticatorScanStep, authenticatorSetupRecipe, authenticatorSetupRoute, requireAuthenticatorRoots, selectedAuthenticator, type AuthenticatorProduct } from './authenticatorGuide';
@@ -87,6 +88,9 @@ export function currentTask(data: Dataset): { asset: Asset; recipe: Recipe; step
   const updatingOwnCopy = nativeRootCopyPendingAllowed(data, assetId, recipeId, stepId);
   const needsPrerequisites = (recipeId === 'password' || recipeId.startsWith('native-password:')) && (!isRecorded(asset, 'recovery') || !managerReady(data, bound?.vaultRef, bound?.id, { allowPendingRootCopy: updatingOwnCopy }));
   const standardManager=recipe.id==='password'?data.assets.find(a=>a.id===data.guide.managerId):undefined;
+  const identityAccount=recipe.id==='manager'&&!['install','existing'].includes(stepId)&&isStandardManager(asset)?asset:isStandardManager(standardManager)?standardManager:undefined;
+  if(identityAccount&&!identityAccount.purpose)return {asset,recipe,step:recipe.steps[index],index,redirectTo:`manager-purpose/${identityAccount.id}`};
+  if(identityAccount?.purpose==='work'&&data.guide.answers[`${identityAccount.id}:managedAllowed`]!=='yes')return {asset,recipe,step:recipe.steps[index],index,redirectTo:`manager-managed/${identityAccount.id}`};
   const serverAccount=recipe.id==='manager'&&asset.provider==='bitwarden'&& !['install','existing','master'].includes(stepId)?asset:standardManager?.provider==='bitwarden'?standardManager:undefined;
   if(serverAccount&&(!serverCheckSupported(data,serverAccount.id)||!bitwardenRegion(data,serverAccount.id)))return {asset,recipe,step:recipe.steps[index],index,redirectTo:`standard-server/${serverAccount.id}`};
   if(standardManager?.provider==='1password'&&!needsPrerequisites&&!['ios','android','macos','windows'].includes(data.guide.answers[`${standardManager.id}:platform`]??''))return {asset,recipe,step:recipe.steps[index],index,redirectTo:`password-manager-device/${standardManager.id}/${asset.id}`};
@@ -128,7 +132,7 @@ export function beginRecipe(data: Dataset, assetId: string, recipeId: string, re
   if (recipeId === 'password' && cloudVault(data, data.guide.managerId)) { const app = selectedCloudInstallation(data, data.guide.managerId!); return app ? move(data, `cloud-password-choice/${app.id}/${assetId}`) : move(data, cloudSetupRoute(data, data.guide.managerId!)); }
   if (recipeId === 'password' && nativeVault(data, data.guide.managerId)) { const install = selectedNativeInstallation(data, data.guide.managerId!); return install ? beginRecipe(data, assetId, `native-password:${install.id}`, revisit) : move(data, nativeSetupRoute(data, data.guide.managerId!)); }
   if (recipeId === 'builtin-manager') { const install = nativeInstallation(data, assetId); if (!install) return move(data, 'manager-select'); const setup = nativeSetupRoute(data, install.vaultRef!, assetId); if (!setup.startsWith('do/') || setup.endsWith('/independent-root')) return move(data, setup); }
-  if (asset.purpose === 'work' && data.guide.answers[`${asset.id}:managedAllowed`] !== 'yes') return move(data, `managed/${asset.id}`);
+  if (asset.purpose === 'work' && data.guide.answers[`${asset.id}:managedAllowed`] !== 'yes') return move({...data,guide:{...data.guide,answers:{...data.guide.answers,[`${asset.id}:managedRecipe`]:recipeId}}}, `managed/${asset.id}`);
   if (recipeId === 'device' && asset.operatingSystem === 'windows' && data.guide.answers[`${asset.id}:version`] !== 'windows11') return move(data, `device-version/${asset.id}`);
   if (recipeId === 'device' && asset.operatingSystem === 'macos' && data.guide.answers[`${asset.id}:version`] !== 'mac13plus') return move(data, `device-version/${asset.id}`);
   if (recipeId === 'recovery' && !isRecorded(asset, 'mfa')) return beginRecipe(data, assetId, 'email-mfa', revisit);
@@ -197,6 +201,7 @@ export function afterRecipe(data: Dataset, asset: Asset, recipeId: string): Data
 export function completeStep(data: Dataset, jump?: string): Dataset {
   const task = currentTask(data);
   if (!task) return data;
+  if(task.redirectTo?.startsWith('manager-purpose/')||task.redirectTo?.startsWith('manager-managed/'))return data;
   if (task.redirectTo) return task.redirectTo.startsWith('standard-server/')?openBitwardenServerCheck(data,task.redirectTo.split('/')[1]):move(data, task.redirectTo);
   if (task.needsPrerequisites) return move(data, 'password-prerequisite');
   const { asset, recipe, step, index } = task;
