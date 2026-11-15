@@ -10,7 +10,7 @@ import {openTwofasData,readTwofasData} from './twofas-driver';
 import {checkStandardContext} from './standard-driver';
 import {advance,passphrase} from './helpers';
 for(const language of ['ja','en'] as const)for(const [product,method] of [['bitwarden','password'],['1password','password'],['1password','sso'],['1password','passkey-beta']] as const){
- test(`new phone ${language} ${product} ${method}: actual target, saved-password use and independent recovery preserve main guide`,async({page})=>{
+ test(`new phone ${language} ${product} ${method}: actual target, saved-password use and independent recovery preserve main guide`,async({page},testInfo)=>{
   test.setTimeout(150000);await page.setViewportSize({width:390,height:844});const word=(ja:string,en:string)=>language==='ja'?ja:en;
   let d=newDataset(language);d.assets=[{...makeAsset({kind:'account',type:'Password manager',name:'Manager',importance:'critical'}),id:'manager',provider:product,purpose:'personal',services:['manager']},...(['old','fresh'] as const).map(id=>({...makeAsset({kind:'device',type:'Smartphone',name:id==='old'?'Old phone':'New phone',importance:'critical',operatingSystem:id==='old'?'ios':'android'}),id})),{...makeAsset({kind:'account',type:'Primary email',name:'Mail',importance:'critical'}),id:'mail',provider:'google',purpose:'personal'}];
   d.guide={...d.guide,managerId:'manager',accountId:'mail',cursor:'do/mail/recovery/test',history:['start'],answers:{'manager:region':'eu','manager:platform':'ios',opaque:'retain main guide'}};d.assets[0].controls.mfa='verified';d.assets[0].controls.recovery='verified';
@@ -36,7 +36,7 @@ for(const language of ['ja','en'] as const)for(const [product,method] of [['bitw
    }
    if(task.step.id==='std-phone-recovery'){
     expect(standardPhoneReady(saved,'phone','manager')).toBe(false);
-    await page.screenshot({path:`/workspace/work/review/standard-phone-${language}-${product}-${method}.png`,fullPage:true});
+    await page.screenshot({path:testInfo.outputPath(`standard-phone-${language}-${product}-${method}.png`),fullPage:true});
    }
    const choice=task.step.choices?.find(c=>c.next==='op-source')??task.step.choices?.find(c=>c.record!==false);
    await advance(page,choice?.label[language]??word('次へ','Next'));

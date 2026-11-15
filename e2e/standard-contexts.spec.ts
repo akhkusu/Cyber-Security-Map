@@ -23,7 +23,7 @@ function methodFixture(method:'sso'|'passkey-beta',language:Language,linux=false
  return {data:d,source:original.app};
 }
 for(const language of ['ja','en'] as const){
- test(`standard context ${language}: a legacy MFA record asks for the actual vault and client, then resumes without new protection`,async({page})=>{
+ test(`standard context ${language}: a legacy MFA record asks for the actual vault and client, then resumes without new protection`,async({page},testInfo)=>{
   await page.setViewportSize({width:390,height:844});const input=fixture('bitwarden',language),before=structuredClone(input.guide);
   await openTwofasData(page,input);await expect(page.locator('.guide-card h1')).toHaveText(word(language,'実際に使う保管庫はどれですか？','Which vault will you actually use?'));
   expect((await readTwofasData(page)).guide).toEqual(before);
@@ -31,7 +31,7 @@ for(const language of ['ja','en'] as const){
   expect(context.app.deviceRef).toBe('computer');expect(context.vault.authenticationAccountRef).toBe('manager');expect(saved.assets[0].id).toBe('manager');expect(saved.assets[0].controls).toEqual(input.assets[0].controls);expect(saved.guide.cursor).toBe(before.cursor);expect(saved.guide.steps).toEqual(before.steps);
   await expect(page.locator('.guide-card h1')).toHaveText(word(language,'このアカウントの保存項目を探す','Find this account in your password manager'));expect(standardContextReady(saved,'manager','web',true)).toBe(true);
   expect(JSON.stringify(await readSavedVault(page))).not.toContain('PRIVATE');expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await page.screenshot({path:`/workspace/work/review/standard-context-${language}.png`,fullPage:true});
+  await page.screenshot({path:testInfo.outputPath(`standard-context-${language}.png`),fullPage:true});
  });
  test(`1Password host ${language}: exact address, encrypted interrupted helper, actual contract type and no master completion`,async({page})=>{
   const input=fixture('1password',language);await page.setViewportSize({width:390,height:844});await openTwofasData(page,input);
@@ -44,16 +44,16 @@ for(const language of ['ja','en'] as const){
   await host.fill('my.1password.ca');await advance(page,word(language,'次へ','Next'));await advance(page,word(language,'家族','Families'));await advance(page,word(language,'アカウントパスワードとSecret Key','Account password and Secret Key'));
   await checkStandardContext(page,language,'This computer');const d=await readTwofasData(page);expect(onePasswordAccount(d,'manager')).toMatchObject({host:'my.1password.ca',kind:'family',method:'password'});expect(d.guide.cursor).toBe(input.guide.cursor);expect(d.guide.steps).toEqual(input.guide.steps);expect(d.assets[0].controls.mfa).toBe('verified');expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
  });
- test(`SSO ${language}: source, IdP, authorization, vault reading and administrator recovery stay separate`,async({page})=>{
+ test(`SSO ${language}: source, IdP, authorization, vault reading and administrator recovery stay separate`,async({page},testInfo)=>{
   test.setTimeout(60000);const f=methodFixture('sso',language);await page.setViewportSize({width:390,height:844});await openTwofasData(page,f.data);
   await advance(page,word(language,'新しい利用場所として追加する','Add this as a new location'));await advance(page,f.source.label);
   let d=await readTwofasData(page);expect(onePasswordMethodReady(d,'manager')).toBe(false);expect(standardStore(d)?.observations.some(o=>o.appRef===selectedStandardContext(d,'manager')?.app.id&&o.kind==='opened')).toBe(false);
-  await page.screenshot({path:`/workspace/work/review/standard-sso-source-${language}.png`,fullPage:true});await advance(page,word(language,'次へ','Next'));await advance(page,word(language,'次へ','Next'));await advance(page,word(language,'承認元がない・待機・拒否された','No source / waiting / rejected'));expect(onePasswordMethodReady(await readTwofasData(page),'manager')).toBe(false);
+  await page.screenshot({path:testInfo.outputPath(`standard-sso-source-${language}.png`),fullPage:true});await advance(page,word(language,'次へ','Next'));await advance(page,word(language,'次へ','Next'));await advance(page,word(language,'承認元がない・待機・拒否された','No source / waiting / rejected'));expect(onePasswordMethodReady(await readTwofasData(page),'manager')).toBe(false);
   await advance(page,word(language,'新しい利用場所のログインを再確認する','Retry the new target’s sign-in'));await advance(page,word(language,'次へ','Next'));await advance(page,word(language,'承認が受け付けられました','Authorization was accepted'));
   d=await readTwofasData(page);expect(onePasswordMethodReady(d,'manager')).toBe(false);expect(d.securityModel.routes.some(r=>r.standardObservationV1===standardStore(d)!.observations.find(o=>o.kind==='sso-link')?.id)).toBe(false);
   for(let i=0;i<4;i++)await advance(page,word(language,'次へ','Next'));await advance(page,word(language,'確認しました','I checked this'));
   d=await readTwofasData(page);expect(onePasswordMethodReady(d,'manager')).toBe(true);expect(d.assets[0].controls.mfa).toBe('unknown');expect(Object.keys(d.guide.steps).some(k=>/\/(master|paper|auth-secret)$/.test(k))).toBe(false);expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await page.screenshot({path:`/workspace/work/review/standard-sso-${language}.png`,fullPage:true});
+  await page.screenshot({path:testInfo.outputPath(`standard-sso-${language}.png`),fullPage:true});
  });
  test(`passkey beta ${language}: existing account on unsupported Linux remains unfinished`,async({page})=>{
   const f=methodFixture('passkey-beta',language,true);await openTwofasData(page,f.data);await advance(page,word(language,'この利用場所は、すでに利用できている','This location is already linked'));
