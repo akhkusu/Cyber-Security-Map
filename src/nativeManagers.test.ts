@@ -1,3 +1,4 @@
+import {withStandardContext} from '../e2e/standard-fixture';
 import { describe, expect, it } from 'vitest';
 import { createEncryptedVault, decryptVault } from './crypto';
 import { currentDatasetSchema, makeAsset, newDataset, type CurrentDataset } from './models';
@@ -38,7 +39,7 @@ describe('built-in password stores', () => {
     const first = { ...makeAsset({ kind: 'account', type: 'Password manager', name: 'Personal Bitwarden', importance: 'critical' }), provider: 'bitwarden' as const };
     const second = { ...makeAsset({ kind: 'account', type: 'Password manager', name: 'Work Bitwarden', importance: 'critical' }), provider: 'bitwarden' as const };
     first.controls.mfa = 'verified';
-    data.assets = [first, second]; data.guide.managerId = first.id;
+    data.assets = [first, second]; data.guide.managerId = first.id;first.controls.recovery='verified';data.guide.answers[`${first.id}:region`]='us';Object.assign(data,withStandardContext(data,first.id));
     const original = structuredClone(data);
     expect(managerReady(data)).toBe(true);
     expect(managerReady(data, second.id)).toBe(false);

@@ -1,8 +1,17 @@
+import {selectedStandardContext} from './standardContexts';
+import {standardPhoneStepCurrent} from './standardPhone';
+import {StandardPhoneTargetCheck} from './StandardPhoneTargetCheck';
+import { OnePasswordCheck } from './OnePasswordCheck';
+import { OnePasswordSourceCheck } from './OnePasswordSourceCheck';
+import { StandardContextCheck } from './StandardContextCheck';
+import { onePasswordSite,openOnePasswordCheck } from './onePasswordAccount';
+import { onePasswordRecordCurrent } from './onePasswordRecipes';
 import { nativePasswordUseCurrent } from './nativePasswordContext';
+import { standardMasterStepCurrent } from './standardMaster';
 import {guideProgress} from './guideProgress';
 import {BitwardenServerCheck} from './BitwardenServerCheck';
 import {bitwardenRegion,bitwardenWebURL,openBitwardenServerCheck} from './bitwardenServer';
-import {hasSavedPasswordCandidate} from './passwordContext';
+import {hasSavedPasswordCandidate,standardPasswordRecordCurrent,confirmStandardPasswordResult} from './passwordContext';
 import {StandardManagerAccounts} from './StandardManagerAccounts';
 import {isStandardManager,standardManagerAddress} from './standardManagerAccounts';
 import {resumeAfterRecoveryContact} from './recoveryContacts';
@@ -107,6 +116,18 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
     const [identityRoute,identityId]=task.redirectTo.split('/'),target=data.assets.find(item=>item.id===identityId);
     displaysTaskContext=true;
     content=isStandardManager(target)?<StandardManagerAccounts key={task.redirectTo} data={data} language={language} save={save} product={target.provider} mode={identityRoute==='manager-managed'?'managed':'purpose'} accountRef={identityId}/>:null;
+  } else if(task?.redirectTo?.startsWith('standard-password-result/')||route==='standard-password-result'){
+    const ref=(task?.redirectTo??cursor).split('/')[1];displaysTaskContext=true;
+    content=<><h1>{tx(language,'Locate the password already accepted by the service','サービスが受け付けた変更後の値を確認する')}</h1><p>{tx(language,'An accepted change is recorded in an earlier or different storage context. Keep the original records and both copies. Do not generate or change the password again. Check the official result and retrieve the accepted value from this selected account, vault and app.','以前の保存先で、変更が受け付けられた記録があります。元の記録と両方の控えを残し、生成・変更を繰り返さないでください。正規サービスの結果と、今回選んだアカウント・保管庫・アプリから変更後の値を取り出せるか確認します。')}</p>{button(tx(language,'I retrieved the accepted value here','受け付けられた値を、ここで取り出せました'),()=>void save(confirmStandardPasswordResult(data,ref)))}<p>{tx(language,'If the result or saved value is unknown, keep this unfinished and use the service’s recovery help.','結果や保存した値が分からなければ未完了で残し、サービスの復旧手順を確認してください。')}</p>{button(tx(language,'Do this later','この作業を後回しにする'),()=>void save(deferStep(data)),true)}</>;
+  } else if(task?.redirectTo?.startsWith('onepassword-check/')||route==='onepassword-check'){
+    displaysTaskContext=true;content=<OnePasswordCheck key={task?.redirectTo??cursor} data={data} language={language} save={save} accountRef={(task?.redirectTo??cursor).split('/')[1]}/>;
+  } else if(task?.redirectTo?.startsWith('standard-phone-target/')){
+    displaysTaskContext=true;content=<StandardPhoneTargetCheck data={data} language={language} save={save} accountRef={task.redirectTo.split('/')[1]}/>;
+  } else if(task?.redirectTo?.startsWith('onepassword-source/')){
+    displaysTaskContext=true;content=<OnePasswordSourceCheck data={data} language={language} save={save} accountRef={task.redirectTo.split('/')[1]}/>;
+  } else if(task?.redirectTo?.startsWith('standard-context/')||route==='standard-context'){
+    const [,ref,client,access,mode]=(task?.redirectTo??cursor).split('/');displaysTaskContext=true;
+    content=<StandardContextCheck key={`${task?.redirectTo??cursor}:${JSON.stringify(data.guide.standardContextChecksV1)}`} data={data} language={language} save={save} accountRef={ref} client={client==='app'?'app':client==='extension'?'extension':'web'} write={access==='write'} selectionOnly={mode==='select'}/>;
   } else if(task?.redirectTo?.startsWith('standard-server/')||route==='standard-server'||route==='region'){
     displaysTaskContext=true;
     content=<BitwardenServerCheck data={data} language={language} save={save} accountRef={(task?.redirectTo??cursor).split('/')[1]}/>;
@@ -120,14 +141,16 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
     const data = presentation.data, cursor = data.guide.cursor;
     const { asset, recipe, step, index } = task;
     const selected=selectedAuthenticator(data,asset.id);
-    const done=(s:typeof step)=>{const record=data.guide.steps[taskCursor(asset.id,cursor.split('/')[2]??recipe.id,s.id)];return record?.status==='done'&&(!(recipe.id==='password'&&s.id==='save-candidate')||hasSavedPasswordCandidate(data,asset.id))&&(!(recipe.id.startsWith('native-password:')&&s.id==='test')||nativePasswordUseCurrent(data,asset.id,recipe.id))&&(!(authenticatorScan(recipe.id,s.id)||authenticatorConfirmation(recipe.id,s.id))||record.authenticatorRef===selected?.id);};
+    const done=(s:typeof step)=>{const record=data.guide.steps[taskCursor(asset.id,cursor.split('/')[2]??recipe.id,s.id)];return record?.status==='done'&&(!(recipe.id==='manager'&&s.id.startsWith('std-phone-')&&s.id!=='std-phone-install')||standardPhoneStepCurrent(data,asset.id,s.id))&&(!(recipe.id==='manager'&&asset.provider==='1password'&&s.id.startsWith('op-'))||onePasswordRecordCurrent(data,asset.id,s.id))&&(!(recipe.id==='manager'&&s.id.startsWith('master-'))||standardMasterStepCurrent(data,asset.id,s.id))&&(recipe.id!=='password'||standardPasswordRecordCurrent(data,asset.id,s.id))&&(!(recipe.id==='password'&&s.id==='save-candidate')||hasSavedPasswordCandidate(data,asset.id))&&(!(recipe.id.startsWith('native-password:')&&s.id==='test')||nativePasswordUseCurrent(data,asset.id,recipe.id))&&(!(authenticatorScan(recipe.id,s.id)||authenticatorConfirmation(recipe.id,s.id))||record.authenticatorRef===selected?.id);};
     const recorded = done(step);
-    const browserHelpURL=step.url??(asset.provider==='bitwarden'?bitwardenWebURL(bitwardenRegion(data,asset.id)):asset.provider==='1password'?'https://start.1password.com/':asset.provider==='nord'?'https://nordaccount.com/':(['apple','google','microsoft'].includes(asset.provider??'')||isExtendedMail(asset.provider))?emailRecipe(asset.provider,'web').steps.find(s=>s.url)?.url:undefined);
+    const storageContext=selectedStandardContext(data,recipe.id==='manager'?asset.id:recipe.id==='password'?data.guide.managerId??'':'');
+    const browserHelpURL=step.url??(asset.provider==='bitwarden'?bitwardenWebURL(bitwardenRegion(data,asset.id)):asset.provider==='1password'?onePasswordSite(data,asset.id):asset.provider==='nord'?'https://nordaccount.com/':(['apple','google','microsoft'].includes(asset.provider??'')||isExtendedMail(asset.provider))?emailRecipe(asset.provider,'web').steps.find(s=>s.url)?.url:undefined);
     displaysTaskContext = true;
     const {completed:completedSteps,total:progressTotal}=guideProgress(recipe,index,done);
     content = <>
       <div className="task-context"><span>{titleFor(asset)}{(mailboxAddress(asset)||standardManagerAddress(asset))&&(mailboxAddress(asset)||standardManagerAddress(asset))!==asset.name&&<small className="mail-address">{mailboxAddress(asset)||standardManagerAddress(asset)}</small>}{(asset.services.includes('mail')||isStandardManager(asset))&&asset.purpose&&<small>{mailPurposeLabel(asset,language)}</small>}</span><span>{tx(language,`${completedSteps} ${completedSteps===1?'step':'steps'} completed`,`${completedSteps}件の操作を完了`)}</span></div>
       <progress className="guide-step-progress" value={completedSteps} max={progressTotal} aria-label={tx(language,'Progress for this setting','この設定の進み具合')}/>
+      {storageContext&&<p className="subtle standard-store-context">{tx(language,'Vault and app: ','使う保管庫・アプリ：')}{storageContext.vault.label} · {storageContext.app.label}</p>}
 
       <span className="eyebrow">{say(recipe.title, language)}</span><h1>{say(step.title, language)}</h1>
       {!step.question && <div className="where"><span>{tx(language, 'WHERE', '操作する場所')}</span><strong>{say(step.place, language)}</strong></div>}
@@ -145,6 +168,7 @@ export function Guide({ data: storedData, language, save: saveData, protectionPa
       <div className="primary-actions">{step.choices ? step.choices.map(choice => button(say(choice.label, language), () => void save(completeStep(data, choice.next)), true)) : button(say(step.button ?? c('Next', '次へ'), language), () => void save(completeStep(data)))}</div>
       <div className="step-tools"><button className="text-button" onClick={() => setHelp(!help)}><CircleHelp size={17} />{tx(language, 'Something is different', 'うまくいかない')}</button><button className="text-button" onClick={() => void save(deferStep(data))}>{tx(language, 'Do this later', 'この作業を後回しにする')}</button></div>
       {(recipe.id==='manager'&&asset.provider==='bitwarden'||recipe.id==='password'&&manager?.provider==='bitwarden')&&<button className="text-button" onClick={()=>void save(openBitwardenServerCheck(data,recipe.id==='manager'?asset.id:manager!.id))}>{tx(language,'Review the Bitwarden server','Bitwardenのサーバーを確認し直す')}</button>}
+      {(recipe.id==='manager'&&asset.provider==='1password'||recipe.id==='password'&&manager?.provider==='1password')&&<button className="text-button" onClick={()=>void save(openOnePasswordCheck(data,recipe.id==='manager'?asset.id:manager!.id))}>{tx(language,'Review the 1Password sign-in address and method','1Passwordのログイン先・認証方式を確認し直す')}</button>}
       {cloudTaskApp && <NordRecoveryLauncher data={storedData} language={language} save={save} appId={cloudTaskApp.id} />}
       {cloudTaskApp && <button className="text-button" onClick={() => {
         const next = deferStep(data);

@@ -1,0 +1,7 @@
+import type {Dataset,Language} from './models';
+import {tx} from './ui';
+import {completeStep,deferStep} from './guideEngine';
+export function StandardPhoneTargetCheck({data,language,save,accountRef}:{data:Dataset;language:Language;save:(d:Dataset)=>Promise<boolean>;accountRef:string}){
+ const accounts=data.assets.filter(a=>a.kind==='account'&&a.id!==accountRef&&!a.services.includes('manager')&&a.type!=='Password manager');
+ return <div><h1>{tx(language,'Which saved password will you actually use?','どの保存パスワードを実際に使いますか？')}</h1><p>{tx(language,'Choose only an account whose current login is in this exact vault. No new account or password is created. Open its official sign-in on the new phone yourself.','今回の保管庫に、現在のログイン情報を実際に保存しているアカウントを選んでください。アカウントやパスワードを新しく作らず、正規のログインを新端末で自分で開きます。')}</p><div className="choices">{accounts.map(a=><button className="choice" key={a.id} onClick={()=>{const next={...data,guide:{...data.guide,answers:{...data.guide.answers,[`std-phone-target:${accountRef}`]:a.id}}};void save(completeStep(next));}}>{a.name}</button>)}</div>{!accounts.length&&<p>{tx(language,'Register the actual service account in Map before checking its saved password here. Keep this move unfinished.','実際のサービスのアカウントをMapへ登録してから、その保存パスワードを確認してください。この移行は未完了で残します。')}</p>}<button className="text-button" onClick={()=>void save(deferStep(data))}>{tx(language,'Do this later','この作業を後回しにする')}</button></div>;
+}

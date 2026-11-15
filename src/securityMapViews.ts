@@ -1,3 +1,5 @@
+import { standardMapStatus } from './standardViews';
+import { standardObservationValid } from './standardContexts';
 import {lineLinkCurrent,lineDependencyCurrent} from './lineSchemas';
 import {lineMapStatus} from './lineViews';
 import {enteStore,enteProfile,entePrepared,enteFileCurrent,enteLinkCurrent,enteDependencyCurrent} from './enteSchemas';
@@ -30,7 +32,8 @@ export function mapConnections(data: Dataset): MapConnection[] {
   const known = new Map<string, MapConnection>();
   for (const r of data.securityModel.relations.filter(r => r.evidence === 'user-confirmed' && protectionBindingCurrent(data.securityModel,r) && twofasLinkCurrent(data.securityModel,r.id) && enteLinkCurrent(data.securityModel,r.id) && lineLinkCurrent(data.securityModel,r.id))) {
     const key = JSON.stringify([r.fromRef, r.toRef, r.kind]);
-    if (!known.has(key)) known.set(key, { id: r.id, assetId: r.toRef, recoveryAssetId: r.fromRef, relation: r.kind, createdAt: r.checkedAt, typed: true, historical:!lineDependencyCurrent(data.securityModel,r.id)||(twofasStore(data)?.links.some(l=>l.relationRef===r.id&&l.historical)??false)||(enteStore(data)?.links.some(l=>l.relationRef===r.id&&l.historical)??false) });
+    const candidate:MapConnection={ id: r.id, assetId: r.toRef, recoveryAssetId: r.fromRef, relation: r.kind, createdAt: r.checkedAt, typed: true, historical:!!r.standardObservationV1&&!standardObservationValid(data,String(r.standardObservationV1))||!lineDependencyCurrent(data.securityModel,r.id)||(twofasStore(data)?.links.some(l=>l.relationRef===r.id&&l.historical)??false)||(enteStore(data)?.links.some(l=>l.relationRef===r.id&&l.historical)??false) };
+    if(!known.has(key)||known.get(key)?.historical&&!candidate.historical)known.set(key,candidate);
   }
   return [...data.dependencies, ...known.values(),...planMapConnections(data)];
 }
@@ -42,6 +45,7 @@ export function enteAccountWorkStatus(data:Dataset,rootRef:string,language:Langu
   return {tone:'needs-work',label:language==='ja'?pending?'復旧の結果を確認':'Accountの作業を再開':pending?'Check the recovery result':'Resume Account work',reason:language==='ja'?pending?'送信した変更・復旧の結果は未確認':'変更・復旧の作業が途中です。記録した手順から続けられます':pending?'The submitted change or recovery is not confirmed':'Change or recovery work is unfinished; resume its saved step'};
 }
 export function typedMapStatus(data: Dataset, node: MapItem, language: Language) {
+  const standard=standardMapStatus(data,node.id,language);if(standard)return standard;
   const line = lineMapStatus(data,node.id,language);if(line)return line;
   const yes = language === 'ja';
   const entity = data.version === 2 ? data.securityModel.entities.find(e => e.id === node.id) : undefined;

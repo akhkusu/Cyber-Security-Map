@@ -1,3 +1,5 @@
+import {withStandardContext} from '../e2e/standard-fixture';
+import {standardPasswordMetadata} from './passwordContext';
 import {describe,it,expect} from 'vitest';
 import {makeAsset,newDataset,DataUpgradeConflict} from './models';
 import {beginRecipe,completeStep,currentTask,guidePresentation,move,taskCursor} from './guideEngine';
@@ -6,9 +8,10 @@ import {standardPasswordScope,hasSavedPasswordCandidate} from './passwordContext
 import {createEncryptedVault,decryptVault} from './crypto';
 import {bitwardenRegion,bitwardenServerCheck,bitwardenServerHelp,bitwardenWebURL,chooseBitwardenServer,openBitwardenServerCheck,updateBitwardenServerCheck} from './bitwardenServer';
 function fixture(region?:string){
- const d=newDataset('ja'),mail={...makeAsset({kind:'account',type:'Primary email',name:'PRIVATE MAIL',importance:'critical'}),id:'mail',provider:'google' as const,purpose:'personal' as const},manager={...makeAsset({kind:'account',type:'Password manager',name:'PRIVATE MANAGER',importance:'critical'}),id:'manager',provider:'bitwarden' as const,purpose:'personal' as const};
+ let d=newDataset('ja');const mail={...makeAsset({kind:'account',type:'Primary email',name:'PRIVATE MAIL',importance:'critical'}),id:'mail',provider:'google' as const,purpose:'personal' as const},manager={...makeAsset({kind:'account',type:'Password manager',name:'PRIVATE MANAGER',importance:'critical'}),id:'manager',provider:'bitwarden' as const,purpose:'personal' as const};
  mail.controls.mfa='verified';mail.controls.recovery='verified';manager.controls.mfa='verified';manager.controls.recovery='verified';d.assets=[mail,manager];d.guide.accountId='mail';d.guide.managerId='manager';d.guide.answers['manager:platform']='ios';if(region)d.guide.answers['manager:region']=region;
- d.guide.steps[taskCursor('mail','password','save-candidate')]={status:'done',updatedAt:'2026-01-01',managerRef:'manager',managerScope:'bitwarden:us',opaque:{keep:true}};
+ if(region==='us'||region==='eu')d=withStandardContext(d,'manager');
+ d.guide.steps[taskCursor('mail','password','save-candidate')]={status:'done',updatedAt:'2026-01-01',...standardPasswordMetadata(d,'mail','save-candidate'),managerRef:'manager',managerScope:'bitwarden:us',standardPasswordAttemptV1:'fixture-candidate',opaque:{keep:true}};
  return move(d,taskCursor('mail','password','apply'));
 }
 describe('Bitwarden account server identity',()=>{
@@ -26,7 +29,7 @@ describe('Bitwarden account server identity',()=>{
  });
  it('returns to the exact interrupted step and preserves old controls, unknown fields and all confirmations',()=>{
   const d=fixture(),before=structuredClone(d),started=updateBitwardenServerCheck(d,'manager',{where:'ios',stage:'read'}),result=chooseBitwardenServer(started,'manager','us');
-  expect(result.guide.cursor).toBe(before.guide.cursor);expect(result.guide.steps).toEqual(before.guide.steps);expect(result.actions).toEqual(before.actions);expect(result.assets.map(a=>a.controls)).toEqual(before.assets.map(a=>a.controls));expect(result.assets[1].id).toBe('manager');expect(result.assets[1].bitwardenServerV1).toMatchObject({version:1,region:'us',evidence:'user-confirmed'});expect(currentTask(result)?.redirectTo).toBeUndefined();expect(d).toEqual(before);
+  expect(result.guide.cursor).toBe(before.guide.cursor);expect(result.guide.steps).toEqual(before.guide.steps);expect(result.actions).toEqual(before.actions);expect(result.assets.map(a=>a.controls)).toEqual(before.assets.map(a=>a.controls));expect(result.assets[1].id).toBe('manager');expect(result.assets[1].bitwardenServerV1).toMatchObject({version:1,region:'us',evidence:'user-confirmed'});expect(currentTask(result)?.redirectTo).toBe('standard-context/manager/web/write/verify');expect(d).toEqual(before);
  });
  it('keeps the return point even when a direct completion caller opens the missing prerequisite',()=>{
   const d=fixture(),next=completeStep(d);expect(next.guide.cursor).toBe('standard-server/manager');expect(bitwardenServerCheck(next,'manager').returnCursor).toBe(d.guide.cursor);expect(next.guide.steps).toEqual(d.guide.steps);expect(chooseBitwardenServer(next,'manager','us').guide.cursor).toBe(d.guide.cursor);
@@ -38,7 +41,7 @@ describe('Bitwarden account server identity',()=>{
   const d=openBitwardenServerCheck(fixture('us'),'manager'),next=chooseBitwardenServer(d,'manager','eu');expect(bitwardenServerCheck(next,'manager')).toMatchObject({stage:'different',selected:'eu'});expect(bitwardenRegion(next,'manager')).toBe('us');expect(next.assets).toEqual(d.assets);expect(next.guide.steps).toEqual(d.guide.steps);
  });
  it('corrects only this same account’s metadata, without reusing a candidate from another server',()=>{
-  const d=openBitwardenServerCheck(fixture('us'),'manager'),next=chooseBitwardenServer(chooseBitwardenServer(d,'manager','eu'),'manager','eu','correct');expect(next.assets).toHaveLength(d.assets.length);expect(next.guide.managerId).toBe('manager');expect(next.guide.steps).toEqual(d.guide.steps);expect(hasSavedPasswordCandidate(next,'mail')).toBe(false);expect(currentTask(next)?.redirectTo).toBe(taskCursor('mail','password','save-candidate'));expect(next.assets[1].controls.mfa).toBe('verified');
+  const d=openBitwardenServerCheck(fixture('us'),'manager'),next=chooseBitwardenServer(chooseBitwardenServer(d,'manager','eu'),'manager','eu','correct');expect(next.assets).toHaveLength(d.assets.length);expect(next.guide.managerId).toBe('manager');expect(next.guide.steps).toEqual(d.guide.steps);expect(hasSavedPasswordCandidate(next,'mail')).toBe(false);expect(currentTask(next)?.redirectTo).toBe('standard-context/manager/web/write/verify');expect(currentTask(withStandardContext(next,'manager'))?.redirectTo).toBe(taskCursor('mail','password','save-candidate'));expect(next.assets[1].controls.mfa).toBe('verified');
  });
  it('keeps a separate account separate, including protection and saved candidates',()=>{
   const d=openBitwardenServerCheck(fixture('us'),'manager'),next=chooseBitwardenServer(chooseBitwardenServer(d,'manager','eu'),'manager','eu','separate'),id=next.guide.managerId!;expect(id).not.toBe('manager');expect(next.assets.find(a=>a.id==='manager')).toEqual(d.assets[1]);expect(next.assets.find(a=>a.id===id)?.controls.mfa).toBe('unknown');expect(bitwardenRegion(next,id)).toBe('eu');expect(next.guide.cursor).toBe(`platform/${id}/manager`);expect(next.guide.steps).toEqual(d.guide.steps);expect(hasSavedPasswordCandidate(next,'mail')).toBe(false);
@@ -61,6 +64,6 @@ describe('Bitwarden account server identity',()=>{
   d=move(d,taskCursor('manager','manager','auth-open'));d=updateBitwardenServerCheck(d,'manager',{where:'login',stage:'read'});expect(bitwardenServerCheck(d,'manager')).toMatchObject({where:'login',stage:'read'});d=move(d,original);expect(bitwardenServerCheck(d,'manager')).toMatchObject({where:'ios',stage:'choose'});expect(d.guide.steps).toEqual(fixture().guide.steps);
  });
  it('preserves unknown check/store fields when explicitly reopening a check',()=>{let d=fixture('us');d.guide.bitwardenServerChecksV1={version:1,opaque:'store value',checks:[{...bitwardenServerCheck(d,'manager'),opaque:'check value'}]};d=openBitwardenServerCheck(d,'manager');expect(bitwardenServerCheck(d,'manager').opaque).toBe('check value');expect(d.guide.bitwardenServerChecksV1).toMatchObject({opaque:'store value'});});
- it('uses the account’s confirmed server when another guide has no local region answer',()=>{const d=fixture();d.assets[1].bitwardenServerV1={version:1,region:'eu',evidence:'user-confirmed',checkedAt:'2026-01-01'};expect(bitwardenRegion(d,'manager')).toBe('eu');expect(currentTask(d)?.redirectTo).toBe(taskCursor('mail','password','save-candidate'));});
+ it('uses the account’s confirmed server when another guide has no local region answer',()=>{const d=fixture();d.assets[1].bitwardenServerV1={version:1,region:'eu',evidence:'user-confirmed',checkedAt:'2026-01-01'};expect(bitwardenRegion(d,'manager')).toBe('eu');expect(currentTask(d)?.redirectTo).toBe('standard-context/manager/web/write/verify');});
  it('keeps a server confirmed in the earlier key settings without assuming an explicit unknown answer is US',()=>{const d=fixture();d.assets[1].hardwareKeyServer='eu';expect(bitwardenRegion(d,'manager')).toBe('eu');d.guide.answers['manager:region']='unknown';expect(bitwardenRegion(d,'manager')).toBeUndefined();});
 });

@@ -1,3 +1,4 @@
+import {withStandardContext} from '../e2e/standard-fixture';
 import {describe,it,expect} from 'vitest';
 import {DataUpgradeConflict,makeAsset,newDataset,currentDatasetSchema} from './models';
 import {createEncryptedVault,decryptVault} from './crypto';
@@ -5,7 +6,7 @@ import {beginRecipe,completeStep,currentTask,guidePresentation,helpPrompt,move,t
 import {allowStandardManagerSettings,saveStandardManagerIdentity,saveStandardManagerPurpose,selectStandardManager,standardManagerAccounts,standardManagerAddress,standardManagerIdentity} from './standardManagerAccounts';
 const details=(address='',label='')=>({address,label});
 function ready(){
- let d=newDataset('ja');const mail={...makeAsset({kind:'account',type:'Primary email',name:'My email',importance:'critical'}),id:'mail',provider:'google' as const,purpose:'personal' as const};mail.controls.mfa='verified';mail.controls.recovery='verified';d.assets=[mail];d.guide.accountId='mail';d=saveStandardManagerIdentity(d,'bitwarden',details('personal@example.com','My Bitwarden')) as typeof d;const id=d.guide.managerId!;d=saveStandardManagerPurpose(d,id,'personal') as typeof d;d.assets.find(a=>a.id===id)!.controls.mfa='verified';d.guide.answers[`${id}:region`]='us';d.guide.steps[taskCursor('mail','password','save-current')]={status:'done',updatedAt:'2026-01-01',opaque:{keep:true}};return move(d,taskCursor('mail','password','find-current'));
+ let d=newDataset('ja');const mail={...makeAsset({kind:'account',type:'Primary email',name:'My email',importance:'critical'}),id:'mail',provider:'google' as const,purpose:'personal' as const};mail.controls.mfa='verified';mail.controls.recovery='verified';d.assets=[mail];d.guide.accountId='mail';d=saveStandardManagerIdentity(d,'bitwarden',details('personal@example.com','My Bitwarden')) as typeof d;const id=d.guide.managerId!;d=saveStandardManagerPurpose(d,id,'personal') as typeof d;d.assets.find(a=>a.id===id)!.controls.mfa='verified';d.assets.find(a=>a.id===id)!.controls.recovery='verified';d.guide.answers[`${id}:region`]='us';d.guide.steps[taskCursor('mail','password','save-current')]={status:'done',updatedAt:'2026-01-01',opaque:{keep:true}};return move(withStandardContext(d,id),taskCursor('mail','password','find-current'));
 }
 describe('standard manager account identity',()=>{
  for(const product of ['bitwarden','1password'] as const){

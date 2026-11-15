@@ -1,3 +1,4 @@
+import {standardPhoneReady} from './standardPhone';
 import {phoneProductsReady} from './lineSchemas';
 import {enteMoveReady} from './enteEngine';
 import {twofasMoveReady} from './twofasSchemas';
@@ -41,6 +42,7 @@ function phoneNativeRootCopy(data: Dataset, step: PhoneStep): boolean | undefine
   return nativeRootCopyReady(data, nativeVault(data, app?.vaultRef)?.authenticationAccountRef);
 }
 export function phoneActionConfirmed(data: Dataset, workflow: PhoneWorkflow, step: PhoneStep): boolean {
+  if(step.standardAccountRef)return standardPhoneReady(data,workflow.id,step.standardAccountRef);
   return phoneNativeRootCopy(data, step) ?? (phoneRecord(workflow, step)?.status === 'confirmed');
 }
 function advance(data: CurrentDataset, workflow: PhoneWorkflow, previousId: string): CurrentDataset {
@@ -125,6 +127,7 @@ export function confirmPhoneStep(data: Dataset, workflowId: string, now = new Da
   if (!workflow) return data;
   const step = currentPhoneStep(data, workflow);
   if (!['action', 'gate'].includes(step.kind)) return data;
+  if(step.standardAccountRef&&!standardPhoneReady(data,workflow.id,step.standardAccountRef))return data;
   if(step.productPhoneRef&&!phoneProductsReady(data,step.productPhoneRef))return data;
   if(step.enteSourceRef&&!enteMoveReady(data,workflow.id,step.enteSourceRef,workflow.newDeviceRef??''))return data;
   if(step.twofasSourceRef&&!twofasMoveReady(data,workflow.id,step.twofasSourceRef,workflow.newDeviceRef??''))return data;

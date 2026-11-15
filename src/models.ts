@@ -1,3 +1,4 @@
+import { standardManagerIssues } from './standardManagerSchemas';
 import { z } from 'zod';
 import { lineIssues } from './lineValidation';
 import {lineAccessIssues} from './lineAccessValidation';
@@ -118,6 +119,7 @@ export const currentDatasetSchema = z.object({
   securityModel: securityModelSchema.default(emptySecurityModel),
   deviceWorkflows: z.array(phoneWorkflowSchema).default([]),
 }).passthrough().superRefine((data, context) => {
+  for(const message of standardManagerIssues(data,value=>!!value&&typeof value==='object'&&guideSchema.safeParse(value).success))context.addIssue({code:'custom',path:['securityModel','standardManagersV1'],message});
   for(const message of lineIssues(data))context.addIssue({code:'custom',path:['securityModel','linePhoneV1'],message});
   for(const message of lineAccessIssues(data))context.addIssue({code:'custom',path:['securityModel','lineAccessV1'],message});
   for(const message of enteIssues(data))context.addIssue({code:'custom',path:['securityModel','enteV1'],message});

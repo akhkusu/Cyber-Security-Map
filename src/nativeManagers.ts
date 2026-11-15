@@ -1,3 +1,8 @@
+import {standardMasterResume} from './standardMaster';
+import { isStandardManager } from './standardManagerAccounts';
+import { standardContextReady } from './standardContexts';
+import { onePasswordAccount } from './onePasswordAccount';
+import { onePasswordMethodReady } from './onePasswordRecipes';
 import { recordedUnavailable } from './recordAvailability';
 import { nativeRootCopyReady } from './nativeRootCopy';
 import type { Asset, CurrentDataset, Dataset, Language } from './models';
@@ -25,6 +30,9 @@ export const addNativeRoot = (data: Dataset, vaultId: string, purpose: 'personal
 export function managerReady(data: Dataset, vaultId = data.guide.managerId, installationId?: string, options: { allowPendingRootCopy?: boolean } = {}): boolean {
   if(recordedUnavailable(data,[vaultId]))return false;
   if (cloudVault(data, vaultId)) return cloudManagerReady(data, vaultId!, installationId);
+  const standard=data.assets.find(a=>a.id===vaultId);
+  if(isStandardManager(standard)&&standardMasterResume(data,standard.id))return false;
+  if(isStandardManager(standard))return standard.provider==='1password'&&onePasswordAccount(data,standard.id)?.method!=='password'?onePasswordMethodReady(data,standard.id):standardContextReady(data,standard.id)&&['mfa','recovery'].every(c=>['implemented','verified'].includes(standard.controls[c]));
   const vault = nativeVault(data, vaultId);
   if (!vault) return ['implemented', 'verified'].includes(data.assets.find(a => a.id === vaultId)?.controls.mfa ?? 'unknown');
   const installation = installationId ? nativeInstallation(data, installationId) : selectedNativeInstallation(data, vault.id);

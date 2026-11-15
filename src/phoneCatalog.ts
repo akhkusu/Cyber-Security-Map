@@ -1,3 +1,4 @@
+import {isStandardManager} from './standardManagerAccounts';
 import {hasLineOnPhone} from './lineData';
 import {phoneInventory,phoneProductsReady} from './lineSchemas';
 import {entePhoneSignInRecorded} from './enteEngine';
@@ -55,6 +56,7 @@ export type PhoneStep = {
   cloudQuestion?: { kind: 'use' | 'destination' | 'version'; vaultRef: string };
   access?: { targetRef: string; purpose: 'sign-in' | 'decrypt' }; physicalEffect?: boolean;
   requires?: string[];
+  standardAccountRef?: string;
   twofasSourceRef?: string;
   enteSourceRef?: string;
   productPhoneRef?: string;
@@ -146,12 +148,12 @@ function basePhoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] {
     }
   }
   if (['other', 'unsure'].includes(answers.authenticator)) steps.push(blocked('other-authenticator', c('This authenticator needs its own transfer steps', '認証アプリごとの移行手順が必要です'), c('Restore conditions differ between products and operating systems. This recipe is not available yet. Keep the previous phone; do not mark its codes as transferred or continue to erasure.', '製品とOSにより復元の条件が異なります。この組み合わせの手順はまだ準備中です。旧端末を残し、コードを移行済みとしたり、消去へ進んだりしないでください。'), [old.id, fresh.id]));
-  const authenticatorMoves = authenticatorMigrationSteps(data, workflow, accountSteps); steps.push(...authenticatorMoves.steps); if (!authenticatorMoves.ready) return steps;
+  const authenticatorMoves = authenticatorMigrationSteps(data, workflow, (account,fresh)=>accountSteps(account,fresh,data,workflow)); steps.push(...authenticatorMoves.steps); if (!authenticatorMoves.ready) return steps;
   const cloudMoves = cloudPhoneSteps(data, workflow); steps.push(...cloudMoves.steps); if (!cloudMoves.ready) return steps;
   for (const account of data.assets.filter(a => a.kind === 'account' && a.provider !== 'line')) {
     const checkedHere = entePhoneSignInRecorded(data,workflow.id,account.id,fresh.id)||steps.some(s => (s.cloudContext?.completedAccountRef === account.id && s.cloudContext.context !== 'normal') || (s.access?.targetRef === account.id && s.access.purpose === 'sign-in' && (s.authenticatorEffect?.kind === 'code' || s.id.startsWith('auth:'))));
-    if (checkedHere) {
-      for (const remaining of accountSteps(account, fresh).filter(s => s.access?.purpose === 'decrypt')) if (!steps.some(s => s.access?.targetRef === account.id && s.access.purpose === 'decrypt')) steps.push(remaining);
+    if (checkedHere && !isStandardManager(account)) {
+      for (const remaining of accountSteps(account, fresh, data, workflow).filter(s => s.access?.purpose === 'decrypt')) if (!steps.some(s => s.access?.targetRef === account.id && s.access.purpose === 'decrypt')) steps.push(remaining);
       continue;
     }
     const key = `use:${account.id}`;
@@ -162,7 +164,8 @@ function basePhoneSteps(data: Dataset, workflow: PhoneWorkflow): PhoneStep[] {
       if (!answers[`auth-code:${account.id}`]) return steps;
     }
     const useCode = account.provider !== 'apple' && answers[`auth-code:${account.id}`] === 'yes' && googleTransfer;
-    if (answers[key] === 'yes') steps.push(...accountSteps(account, fresh).map(s => useCode && s.id === `signin:${account.id}` ? { ...s, action: c(`${s.action?.en} When the service asks for an authenticator code, enter this account’s current code from the NEW phone’s Google Authenticator. If you cannot choose that method, keep this task unfinished.`, `${s.action?.ja} 認証コードを求められたら、新端末のGoogle 認証システムにある今回のアカウントの現在のコードを入力してください。その方法を選べなければ未完了で残します。`), expected: c('The official service accepts the authenticator code from the new phone and completes this exact account’s sign-in.', '正規のサービスが新端末の認証コードを受け付け、今回のアカウントのログインが完了すること。'), variant: 'new-totp-code', sources: [...s.sources, 'googleAuth', 'googleAuthIos'] } : s));
+    if (answers[key] === 'yes') steps.push(...accountSteps(account, fresh, data, workflow).map(s => useCode && s.id === `signin:${account.id}` ? { ...s, action: c(`${s.action?.en} When the service asks for an authenticator code, enter this account’s current code from the NEW phone’s Google Authenticator. If you cannot choose that method, keep this task unfinished.`, `${s.action?.ja} 認証コードを求められたら、新端末のGoogle 認証システムにある今回のアカウントの現在のコードを入力してください。その方法を選べなければ未完了で残します。`), expected: c('The official service accepts the authenticator code from the new phone and completes this exact account’s sign-in.', '正規のサービスが新端末の認証コードを受け付け、今回のアカウントのログインが完了すること。'), variant: 'new-totp-code', sources: [...s.sources, 'googleAuth', 'googleAuthIos'] } : s));
+    else if(isStandardManager(account))steps.push(blocked(`standard-elsewhere:${account.id}`,c('Check the actual retained manager location','今後使うマネージャーの利用場所を確認する'),c('The generic account check cannot verify an unidentified manager app or vault. Keep this transfer unfinished and the old phone available. Use the supported new-phone route to check the exact app, vault and saved password.','一般的なアカウントの確認だけでは、未特定のマネージャーのアプリ・保管庫を確認できません。この移行は未完了で残し、旧端末を保持してください。対応する新端末の経路で、実際のアプリ・保管庫・保存パスワードを確認します。'),[account.id,old.id]));
     else if (!steps.some(s => s.cloudContext?.completedAccountRef === account.id && s.cloudContext.context === 'normal')) steps.push(action(`elsewhere:${account.id}`, c('Check access somewhere other than the old phone', '旧端末以外で利用できるか確認する'), c('Your other device · official service', '別の利用端末 · 正規のサービス'), c(useCode ? 'On the device you will keep, sign in to the official service using this account’s code from Google Authenticator on the new phone. Confirm the service accepts it. Keep working sign-in and recovery outside the old phone.' : 'On the device you plan to keep, open this account and confirm its important data is accessible. Keep a usable sign-in and recovery method outside the old phone.', useCode ? '今後使う別の端末で正規のサービスへログインし、新端末のGoogle 認証システムにある今回のコードを入力してください。サービスが受け付けたことを確認し、使えるログイン・復旧手段を旧端末の外に残します。' : '今後使う別の端末で、このアカウントを開き、必要な情報を利用できるか確かめてください。旧端末の外に、使えるログイン・復旧手段を残します。'), c(useCode ? 'The service accepts this account’s code from the new phone and completes sign-in on the device you will keep.' : 'You can still use this account after handing over the old phone.', useCode ? '今後使う端末の正規のサービスが、新端末の今回の認証コードを受け付け、ログインが完了すること。' : '旧端末を手放した後も、このアカウントを利用できること。'), useCode ? [account.id, old.id, fresh.id] : [account.id, old.id], useCode ? ['googleAuth', 'googleAuthIos'] : [], { variant: useCode ? 'new-totp-code' : '' }));
   }
   if (data.version === 2) for (const candidate of data.securityModel.entities.filter(e => e.kind === 'vault' && data.securityModel.entities.some(i => i.kind === 'installation' && i.vaultRef === e.id && i.deviceRef === old.id && i.controls?.opened === 'verified'))) {
@@ -291,7 +294,8 @@ function transferSteps(old: Asset, fresh: Asset): PhoneStep[] {
     action('android-copy-wait', c('Copy the selected content', '選んだ項目をコピーする'), place, c('Select the data to transfer on Android and choose Copy. Keep the phones connected until copying finishes. App data, cloud-only files and authentication may need separate work.', 'Androidで移す項目を選び「コピー」を押してください。完了まで2台の接続を保ちます。アプリ内データ・クラウド上だけのファイル・認証は、別の作業が必要な場合があります。'), c('The copy has finished and Android setup reaches the Home screen.', 'コピーが完了し、新Androidのホーム画面を開けること。'), refs, [oldIos ? 'fromIphone' : 'androidCopy']),
   ];
 }
-function accountSteps(account: Asset, fresh: Asset): PhoneStep[] {
+function accountSteps(account: Asset, fresh: Asset, data?:Dataset, workflow?:PhoneWorkflow): PhoneStep[] {
+  if(data&&workflow&&isStandardManager(account))return [action(`standard-account:${account.id}`,c('Check the actual vault and app on the new phone','新端末の実際の保管庫・アプリを確認する'),c(`New phone · ${fresh.name}`,`新端末 · ${fresh.name}`),c('Keep this account and the previous phone. Continue the dedicated guide to identify the vault, app, sign-in method, an actual saved-password login and recovery outside the old phone.','今回のアカウントと旧端末を残し、専用のガイドで、実際の保管庫・アプリ・ログイン方法・保存パスワードの実利用と、旧端末の外にある復旧情報を確認します。'),c('Only the actual new phone’s completed checks can satisfy this transfer.','実際の新端末で完了した確認だけを、この移行の結果に使います。'),[account.id,fresh.id],account.provider==='bitwarden'?['bwUse']:['opSignin'],{standardAccountRef:account.id})];
   const refs = [account.id, fresh.id], manager = ['bitwarden', '1password'].includes(account.provider ?? '') || account.services.includes('manager') || account.type === 'Password manager';
   if (account.purpose === 'work') return [blocked(`account:${account.id}`, c('Check your work account’s enrollment requirements', '仕事用アカウントの再登録条件を確認する'), c('Your administrator may require device registration, a managed app, certificate or a new authenticator registration. This personal-account recipe cannot confirm those requirements.', '端末登録・管理アプリ・証明書・認証アプリの再登録などを管理者が指定している場合があります。個人アカウント向けの手順では、これらを完了扱いにしません。'), refs)];
   if (account.provider === 'nord') return [action(`signin:${account.id}`, c('Sign in to the existing Nord Account', '既存のNord Accountへログインする'), c(`New phone · ${fresh.name} · Nord Account`, `新端末 · ${fresh.name} · Nord Account`), c('Open Nord Account and use the exact existing account, including its configured MFA. This checks account sign-in; it does not unlock or verify the NordPass vault. Never replace the vault or use Reset account.', 'Nord Accountを開き、設定済みのMFAを含め、今回の既存アカウントでログインしてください。これはアカウントのログイン確認で、NordPassの保管庫の解除・確認ではありません。保管庫の置換や「Reset account」は使いません。'), c('The correct Nord Account accepts sign-in on the new phone.', '新端末で正しいNord Accountのログインが受け付けられること。'), refs, ['nordAccount', 'nordMfa'], { url: 'https://nordaccount.com/', access: { targetRef: account.id, purpose: 'sign-in' }, button: c('I could sign in', 'ログインできました') })];

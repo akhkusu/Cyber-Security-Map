@@ -7,9 +7,9 @@ import { lineAccessStore, lineAccessStoreSchema, lineAccessProfile, lineKeyOpera
 export function writableLineAccess(data:Dataset):CurrentDataset{
   const next=upgradeDataset(data),m=next.securityModel;
   if(Object.hasOwn(m,'lineAccessV1')&&(m.revision<14||!lineAccessStoreSchema.safeParse(m.lineAccessV1).success))throw new DataUpgradeConflict();
-  return {...next,securityModel:{...m,revision:14}};
+  return {...next,securityModel:{...m,revision:m.revision>=14?m.revision:14}};
 }
-export const putLineAccess=(data:CurrentDataset,s:LineAccessStore):CurrentDataset=>({...data,securityModel:{...data.securityModel,revision:14,lineAccessV1:s}});
+export const putLineAccess=(data:CurrentDataset,s:LineAccessStore):CurrentDataset=>({...data,securityModel:{...data.securityModel,revision:data.securityModel.revision>=14?data.securityModel.revision:14,lineAccessV1:s}});
 export function startLineAccess(data:Dataset,taskId:string,at=new Date().toISOString()):CurrentDataset{
   let next=writableLineAccess(data);if(!lineTask(next,taskId))throw Error('missing-line-task');
   const s=lineAccessStore(next)??lineAccessStoreSchema.parse({version:1});if(s.profiles.some(p=>p.lineTaskRef===taskId))return next;

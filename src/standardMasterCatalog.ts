@@ -1,0 +1,73 @@
+import type { Copy, GuideStep, SourceId } from './guideCatalog';
+import { privatePassphraseStep } from './passphraseCatalog';
+
+const c = (en: string, ja: string): Copy => ({ en, ja });
+/** Password-account paths only. SSO and passkey accounts keep their existing method. */
+export function standardMasterSteps(bw: boolean, place: Copy, site?: string): GuideStep[] {
+  const sources: SourceId[] = [bw ? 'bwMaster' : 'opChange'];
+  const step = (id: string, title: Copy, action: Copy, expected: Copy, extra: Partial<GuideStep> = {}): GuideStep =>
+    ({ id, title, place, action, expected, sources, ...extra });
+  const next = (id: string) => [{ label: c('I checked this', '確認しました'), next: id }];
+  return [
+    step('master-review', c('Keep a strong existing password?', '現在の強いパスワードを維持しますか？'),
+      c('Keep a sufficiently long random password used only for this account if it has not been exposed. A routine review does not require a change. Biometrics, a PIN or an existing session do not confirm that you know the current password.', 'このアカウント専用の、十分に長いランダムなパスワードで、漏えいの心配がなければ維持できます。点検のためだけの変更は不要です。生体認証・PIN・開いたままの画面だけでは、現在のパスワードを使えるか確認できません。'),
+      c('Choose whether to keep the working password or prepare a change.', '現在使えるパスワードを維持するか、変更の準備をするか選びます。'),
+      { question: true, rememberChoice: true, choices: [{ label: c('Keep my strong, unique password', '専用の強いパスワードを維持する'), next: 'paper' }, { label: c('It is weak, reused or exposed', '弱い・使い回し・漏えいの心配がある'), next: 'master-current-copy' }] }),
+    step('master-current-copy', c('Retrieve the current password first', '変更前のパスワードの控えを取り出す'),
+      c('Keep your working app open. Retrieve this account’s current password from its private independent copy, outside this vault. Do not change anything if you cannot read it. Use the help or defer option while preserving the working app.', '今使えるアプリは残してください。このアカウントの現在のパスワードを、保管庫の外にある自分専用の控えから取り出します。読めない場合は変更せず、「うまくいかない」または後回しを選び、使えるアプリを残してください。'),
+      c('The current value for this exact account is readable outside its vault.', '今回のアカウントの現在値を、保管庫の外から読めること。')),
+    step('master-emergency', c('Retrieve the account’s emergency information', 'このアカウントの緊急用情報を取り出す'),
+      c(bw ? 'Have this account’s confirmed server, registration email and existing two-step login method available outside the vault. A two-step recovery code cannot replace a forgotten master password.' : 'Retrieve this account’s Emergency Kit and Secret Key outside 1Password. Keep the existing additional verification method available. The Kit, account recovery code and authenticator backup have different roles.', bw ? '確認したサーバー・登録メール・既存の2段階ログイン手段を、保管庫を開かずに利用できる状態にしてください。2段階ログインの復旧コードは、忘れたマスターパスワードの代わりにはなりません。' : 'このアカウントのEmergency KitとSecret Keyを、1Passwordの外から取り出してください。既存の追加認証も使える状態で残します。Kit・アカウントの復旧コード・認証アプリの予備は、それぞれ役割が違います。'),
+      c('The required emergency information and verification method are accessible.', '必要な緊急用情報と認証手段を取り出せること。'), { sources: [bw ? 'bwRecovery' : 'opKit'] }),
+    step('master-email', c('Check access to the registered email', '登録メールを使えるか確認する'),
+      c('Open the mailbox registered to this exact manager account and confirm you can receive mail. Keep its access available independently of the vault you are changing. This answer does not automatically link any recorded email account.', '今回のマネージャーに登録したメールを開き、受信できることを確認してください。変更する保管庫を開けなくても、そのメールへアクセスできる状態を残します。この回答だけでは、登録済みのメールとの関係は追加しません。'),
+      c('You can access the correct mailbox without relying solely on this vault.', '今回の登録メールを、変更する保管庫だけに頼らず使えること。')),
+    privatePassphraseStep('master-candidate', c(bw ? 'the replacement Bitwarden master password' : 'the replacement 1Password account password', bw ? '変更後のBitwardenのマスター' : '変更後の1Passwordのアカウントパスワード'), place, bw ? 'bwMaster' : 'opMaster'),
+    step('master-candidate-paper', c('Keep the new candidate on private paper', '新しい候補を紙へ控える'),
+      c('Write the candidate on private paper labelled for this account and as a pending change. Keep the current password copy too. Store it where only you can access it; do not save the only copy inside the vault you will change.', '新しい候補を自分専用の紙へ控え、今回のアカウント用・変更前の候補だと分かるようにしてください。現在の控えも残します。自分だけが取り出せる場所で保管し、変更する保管庫の中だけに保存しないでください。'),
+      c('The current and proposed values are distinguishable and privately retrievable.', '現在の値と変更予定の値を区別して、私的に取り出せること。')),
+    step('master-candidate-read', c('Read the candidate back from its copy', '控えから新しい候補を読み直す'),
+      c('Without relying on the generator or a change form, retrieve and read the same candidate from your paper. If it is unreadable or different, correct the copy before opening the change settings.', '生成画面や変更フォームに頼らず、紙から同じ候補を取り出して読み直してください。読めない・一致しない場合は、変更画面へ進む前に控えを直します。'),
+      c('The same candidate is retrievable independently of the manager.', 'マネージャーを開かなくても、同じ候補を取り出せること。')),
+    step('master-settings', c('Open the account’s security settings', 'このアカウントの設定を開く'),
+      c(bw ? 'On the confirmed Bitwarden Web server, open Settings → Security for this account. Do not rotate the encryption key or delete the account.' : 'In this account’s usual 1Password Web sign-in, select your name → Manage Account. Check that this is the intended account. SSO and passkey accounts need their own route; do not create an account password for them.', bw ? '確認したサーバーのBitwarden Web版で、今回のアカウントの「Settings」→「Security」を開いてください。暗号鍵の変更やアカウントの削除は行いません。' : '普段使うログイン先の1Password Web版で、今回のアカウントの自分の名前→「Manage Account」を開いてください。SSO・パスキーのアカウントには、この手順でパスワードを作りません。'),
+      c('The correct account’s settings are displayed.', '今回のアカウントの設定が表示されること。'), { url: site }),
+    step('master-tab', c('Open the password-change form', 'パスワードの変更画面を開く'),
+      c(bw ? 'Select the Master password tab.' : 'Select Change Password.', bw ? '「Master password」タブを選んでください。' : '「Change Password」を選んでください。'),
+      c('The current and new password fields are displayed on the official service.', '正規サービス側で、現在値と新しい値の入力欄が表示されること。')),
+    step('master-current', c('Enter the current password on the official service', '現在値を正規サービス側へ入力する'),
+      c('Enter the current password only in this account’s official change form. Keep its independent copy. Do not enter it in this app.', '今回の正規の変更画面にだけ、現在のパスワードを入力してください。現在値の独立した控えは残し、このアプリには入力しません。'),
+      c('The current password is entered on the intended official account.', '今回の正規アカウントの画面に現在値を入力したこと。')),
+    step('master-new', c('Enter the candidate from your paper', '紙から新しい候補を入力する'),
+      c('Read the candidate from your paper and enter it in the new-password and confirmation fields. Keep the candidate and emergency information retrievable before submitting.', '紙から候補を読み、新しいパスワードと確認欄へ同じ値を入力してください。確定する前に、候補と緊急用情報を取り出せる状態を残します。'),
+      c('Both new-password fields contain the candidate you can retrieve.', '取り出せる候補を、新しい値の両欄に入力したこと。')),
+    step('master-submit', c('Confirm the change on the official service', '正規サービス側で変更を確定する'),
+      c(bw ? 'Select Change master password. The Web vault signs you out after a successful change. Keep the new copy and verification method available. If already submitted, check the actual result instead of submitting again.' : 'Confirm Change Password on the official account. Keep the new copy, Secret Key and existing verification method available. If already submitted, check the actual result instead of submitting again.', bw ? '「Change master password」で確定します。成功するとWeb版から自動ログアウトします。新しい控えと認証手段を手元に残してください。確定済みなら再実行せず、実際の結果を確認します。' : '正規アカウント側の「Change Password」で確定します。新しい控え・Secret Key・既存の認証手段を残してください。確定済みなら再実行せず、実際の結果を確認します。'),
+      c('Record only a change the official service actually accepted.', '正規サービスが実際に受け付けた場合だけ記録します。'),
+      { rememberChoice: true, choices: [{ label: c('The service accepted the change', 'サービスが変更を受け付けました'), next: 'master-change-copy' }, { label: c('Rejected / I cannot confirm the result', '拒否された・結果が分からない'), next: 'master-unconfirmed', record: false }] }),
+    step('master-unconfirmed', c('Keep this change unfinished', '変更は未完了で残す'),
+      c('Keep both copies, your emergency information and any working app. Check the service’s actual result. Do not discard either value or repeatedly submit an uncertain change. Use help or defer if you cannot confirm it.', '両方の控え・緊急用情報・使えるアプリを残し、サービス側の実際の結果を確認してください。結果が分からないまま控えを捨てたり、変更を繰り返したりしません。確認できなければ「うまくいかない」または後回しを選んでください。'),
+      c('Return to record the actual result only after checking it.', '実際の結果を確認してから、結果の記録へ戻ります。'), { choices: [{ label: c('Review the actual result', '実際の結果を確認する'), next: 'master-submit', record: false }] }),
+    step('master-change-copy', c('Update the permanent password copy', '現在使用中の控えを更新する'),
+      c('Update this account’s private permanent copy to the accepted new value. If keeping the candidate paper, mark it as current. Keep the older copy separately until the new password works.', '今回のアカウントの恒久的な控えを、受け付けられた新しい値へ更新してください。候補の紙を使う場合は「現在使用中」と分かるようにします。新しい値で使えるまでは、古い控えを分けて残します。'),
+      c('The accepted new value is readable from a private copy outside the vault.', '受け付けられた新しい値を、保管庫の外にある私的な控えから読めること。'), { choices: next(bw ? 'master-change-test' : 'master-change-kit') }),
+    ...(!bw ? [step('master-change-kit', c('Update the Emergency Kit', 'Emergency Kitを更新する'),
+      c('In this same account, save and print the Emergency Kit and write the new account password on it. Check the account and Secret Key. Keep it in a private locked location outside 1Password.', '同じアカウントのEmergency Kitを保存・印刷し、新しいアカウントパスワードを記入してください。対象アカウントとSecret Keyを確認し、1Passwordの外の自分専用の施錠できる場所へ保管します。'),
+      c('The Kit matches this account and its accepted new password.', '今回のアカウントと、受け付けられた新しいパスワードにKitが一致すること。'), { sources: ['opKit'] })] : []),
+    step('master-change-test', c('Sign in with the new password', '新しいパスワードでログインする'),
+      c('Open this exact account’s official sign-in in a separate private window. Enter the new password from its copy and complete any existing verification. For 1Password use this account’s Secret Key when requested. Open the intended vault. A PIN, biometrics, passkey or old session alone does not confirm this password. After successful use, discard only clearly obsolete temporary copies and keep permanent recovery information.', '別のプライベート画面で、今回のアカウントの正規ログインを開いてください。控えから新しいパスワードを入力し、求められた既存の認証を行って、意図した保管庫を開きます。1Passwordで求められた場合は、このアカウントのSecret Keyを使います。PIN・生体認証・パスキー・以前のログインだけでは、このパスワードの確認になりません。成功後に、不要になった一時控えだけを整理し、恒久的な復旧情報は残します。'),
+      c('This account accepts the new password and you can read the intended vault.', '今回のアカウントが新しいパスワードを受け付け、意図した保管庫を読めること。'),
+      { privateScreen: true, choices: [{ label: c('The new password worked', '新しいパスワードで開けました'), next: bw ? 'auth-ready' : 'recovery' }, { label: c('I used another method / it did not work', '別の方法を使った・開けなかった'), next: 'master-change-unverified', record: false }] }),
+    step('master-change-unverified', c('The new password is not confirmed yet', '新しいパスワードの利用は未確認です'),
+      c('Keep the accepted new value and both copies. Check the account, sign-in address and verification method. Do not change the password again to test it. Only discard an obsolete temporary copy after successful use; retain permanent recovery information.', '受け付けられた新しい値と両方の控えを残し、アカウント・ログイン先・認証手段を確認してください。動作確認のために、もう一度パスワードを変更しません。不要な一時控えは成功後だけ整理し、恒久的な復旧情報は残します。'),
+      c('Retry using the accepted password without making another change.', '受け付けられた値を使い、変更を繰り返さずに確認します。'), { choices: [{ label: c('Try the new password again', '新しいパスワードの利用を再確認する'), next: 'master-change-test', record: false }] }),
+    step('master-method-unsupported', c('Keep your existing sign-in method', '現在のログイン方法を残してください'),
+      c('SSO, existing passkey beta accounts and older local vaults need different setup and recovery instructions. This password-account guide does not cover them. If the current password is unknown, preserve the working app and retrieve the account’s recovery instructions before changing anything. Keep the working app and method, and defer this task or choose another task.', 'SSO・既存のパスキーベータ・旧ローカル保管庫は、設定と復旧の手順が異なります。このパスワード方式のガイドでは未対応です。現在のパスワードが不明な場合も、変更せず使えるアプリを残して、そのアカウントの復旧手順を確認してください。使えるアプリと方法を残し、この作業を後回しにするか、別の対策を選んでください。'),
+      c('No password change, MFA or recovery completion is recorded.', 'パスワード変更・MFA・復旧の完了は記録しません。'),
+      { choices: [{ label: c('Review my sign-in method', 'ログイン方法を確認し直す'), next: 'existing-signin', record: false }] }),
+    step('master-context-changed', c('Check which server received the change', '変更したサーバーを確認してください'),
+      c('This saved change belongs to a different or unconfirmed server. Keep its records and both password copies. Review the Bitwarden server below. Resume on the server where the change was accepted; for a different account, choose a separate account. Do not repeat the password change.', '変更を受け付けた記録と、現在のサーバーが一致していません。記録と両方の控えを残し、下のボタンでBitwardenのサーバーを確認してください。変更が受け付けられたサーバーで再開し、別のアカウントなら別の項目を選びます。パスワードの変更は繰り返しません。'),
+      c('Resume only after identifying the account and server that accepted the change.', '変更を受け付けたアカウントとサーバーを確認してから再開します。'),
+      { choices: [{ label: c('Review the saved result', '記録した結果を確認する'), next: 'master-submit', record: false }] }),
+  ];
+}

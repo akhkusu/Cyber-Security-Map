@@ -1,11 +1,12 @@
+import {withStandardContext} from '../e2e/standard-fixture';
 import {describe,it,expect} from 'vitest';
 import {newDataset,makeAsset} from './models';
 import {beginRecipe,completeStep,currentTask,move,taskCursor,undoStep} from './guideEngine';
 import {createEncryptedVault,decryptVault} from './crypto';
 function fixture(product:'bitwarden'|'1password'){
   let d=newDataset('ja');const account={...makeAsset({kind:'account',type:'Primary email',name:'Mail',importance:'critical'}),provider:'google' as const,purpose:'personal' as const};account.controls.uniquePassword='unknown';account.controls.mfa='verified';account.controls.recovery='verified';
-  const manager={...makeAsset({kind:'account',type:'Password manager',name:product,importance:'critical'}),provider:product,purpose:'personal' as const};manager.controls.mfa='verified';
-  d={...d,assets:[account,manager],guide:{...d.guide,accountId:account.id,managerId:manager.id}};d.guide.answers[`${manager.id}:platform`]='windows';if(product==='bitwarden')d.guide.answers[`${manager.id}:region`]='us';return beginRecipe(d,account.id,'password');
+  const manager={...makeAsset({kind:'account',type:'Password manager',name:product,importance:'critical'}),provider:product,purpose:'personal' as const};manager.controls.mfa='verified';manager.controls.recovery='verified';
+  d={...d,assets:[account,manager],guide:{...d.guide,accountId:account.id,managerId:manager.id}};d.guide.answers[`${manager.id}:platform`]='windows';if(product==='bitwarden')d.guide.answers[`${manager.id}:region`]='us';d=withStandardContext(d,manager.id,product==='1password'?'app':'web');return beginRecipe(d,account.id,'password');
 }
 for(const product of ['bitwarden','1password'] as const)describe(`${product}: existing passwords and actual saved-password use`,()=>{
  it('finds an existing login and keeps a strong unique password without generating or replacing it',()=>{
@@ -32,14 +33,14 @@ for(const product of ['bitwarden','1password'] as const)describe(`${product}: ex
   d=completeStep(move(d,taskCursor(id,'password','save-candidate')));expect(d.guide.steps[taskCursor(id,'password','save-candidate')]?.managerRef).toBe(manager);expect(currentTask(d)?.redirectTo).toBeUndefined();d=completeStep(d);d=completeStep(d);expect(currentTask(d)?.step.id).toBe('test');d=completeStep(d,'cleanup');expect(d.assets[0].controls.uniquePassword).toBe('verified');expect(currentTask(d)?.step.id).toBe('cleanup');d=completeStep(d);expect(d.guide.cursor).toBe('device-select');expect(d.actions.filter(a=>a.controlId==='uniquePassword')).toHaveLength(1);
  });
  it('does not reuse a candidate from a different manager or Bitwarden region',()=>{
-  let d=fixture(product);const id=d.guide.accountId!,manager=d.guide.managerId!;d=completeStep(move(d,taskCursor(id,'password','save-candidate')));const nextManager={...d.assets[1],id:'another-manager'};d={...d,assets:[...d.assets,nextManager],guide:{...d.guide,managerId:nextManager.id,answers:{...d.guide.answers,[`${nextManager.id}:platform`]:'windows',[`${nextManager.id}:region`]:'us'}}};expect(currentTask(d)?.redirectTo).toBe(taskCursor(id,'password','save-candidate'));
-  if(product==='bitwarden'){d={...d,guide:{...d.guide,managerId:manager,answers:{...d.guide.answers,[`${manager}:region`]:'eu'}}};expect(currentTask(d)?.redirectTo).toBe(taskCursor(id,'password','save-candidate'));expect(currentTask(move(d,taskCursor(id,'password','find-current')))?.step.url).toBe('https://vault.bitwarden.eu/');}
+  let d=fixture(product);const id=d.guide.accountId!,manager=d.guide.managerId!;d=completeStep(move(d,taskCursor(id,'password','save-candidate')));const nextManager={...d.assets[1],id:'another-manager'};d={...d,assets:[...d.assets,nextManager],guide:{...d.guide,managerId:nextManager.id,answers:{...d.guide.answers,[`${nextManager.id}:platform`]:'windows',[`${nextManager.id}:region`]:'us'}}};expect(currentTask(d)?.redirectTo).toContain('standard-context/');d=withStandardContext(d,nextManager.id,product==='1password'?'app':'web');expect(currentTask(d)?.redirectTo).toBe(taskCursor(id,'password','save-candidate'));
+  if(product==='bitwarden'){d={...d,guide:{...d.guide,managerId:manager,answers:{...d.guide.answers,[`${manager}:region`]:'eu'}}};expect(currentTask(d)?.redirectTo).toContain('standard-context/');d=withStandardContext(d,manager,'web');expect(currentTask(d)?.redirectTo).toBe(taskCursor(id,'password','save-candidate'));expect(currentTask(move(d,taskCursor(id,'password','find-current')))?.step.url).toBe('https://vault.bitwarden.eu/');}
  });
  it('rejects an unknown destination without completing a control',()=>{const d=fixture(product),test=move(d,taskCursor(d.guide.accountId!,'password','test'));expect(completeStep(test,'missing-target')).toBe(test);expect(completeStep(test)).toBe(test);});
 });
 
-it('asks a legacy 1Password record for the missing device without resetting its existing work',()=>{
- let d=fixture('1password');const id=d.guide.accountId!,manager=d.guide.managerId!,cursor=d.guide.cursor;delete d.guide.answers[`${manager}:platform`];const before=structuredClone(d.guide.steps);expect(currentTask(d)?.redirectTo).toBe(`password-manager-device/${manager}/${id}`);d.guide.answers[`${manager}:platform`]='macos';expect(currentTask(d)?.redirectTo).toBeUndefined();expect(currentTask(d)?.step.sources).toContain('opUseMac');expect(d.guide.cursor).toBe(cursor);expect(d.guide.steps).toEqual(before);
+it('uses the actual typed 1Password device when an old platform answer is missing or contradictory',()=>{
+ let d=fixture('1password');const manager=d.guide.managerId!,cursor=d.guide.cursor;delete d.guide.answers[`${manager}:platform`];const before=structuredClone(d.guide.steps);expect(currentTask(d)?.redirectTo).toBeUndefined();d.guide.answers[`${manager}:platform`]='macos';expect(currentTask(d)?.redirectTo).toBeUndefined();expect(currentTask(d)?.step.sources).toContain('opUseWindows');expect(d.guide.cursor).toBe(cursor);expect(d.guide.steps).toEqual(before);
 });
 
 it('keeps an unsupported legacy manager instead of presenting it as a different product',()=>{

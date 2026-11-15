@@ -1,3 +1,6 @@
+import {selectedStandardContext} from './standardContexts';
+import { ONEPASSWORD_SOURCES } from './onePasswordSources';
+import { standardMasterSteps } from './standardMasterCatalog';
 import {hasSavedPasswordCandidate} from './passwordContext';
 import {bitwardenWebURL} from './bitwardenServer';
 import {mailRecoveryPreparation,microsoftRecoveryRecipe} from './mailRecoveryPreparation';
@@ -14,6 +17,7 @@ export const say = (copy: Copy, language: Language) => copy[language];
 export type Source = { title: string; url: string; checked: string; scope: string; reviewMethod: 'official-documentation' | 'official-search-excerpt' };
 const source = (title: string, url: string, scope: string): Source => ({ title, url, scope, checked: '2026-11-13', reviewMethod: 'official-documentation' });
 export const SOURCES = {
+  ...ONEPASSWORD_SOURCES,
   ...PRIVATE_BROWSER_SOURCES,
   ...ENTE_SOURCES,
   ...TWOFAS_SOURCES,
@@ -88,6 +92,7 @@ export const SOURCES = {
   bwMfa: source('Bitwarden · Authenticator two-step login', 'https://bitwarden.com/help/setup-two-step-login-authenticator/', 'Web app / standalone authenticator'),
   bwRecovery: source('Bitwarden · Recovery code', 'https://bitwarden.com/help/two-step-recovery-code/', 'Web app'),
   opStart: source('1Password · Get started', 'https://support.1password.com/explore/get-started/', 'Individual / family account'),
+  opChange: { ...source('1Password · Change account password', 'https://support.1password.com/change-account-password/', 'Password accounts / Web / Emergency Kit update'), checked: '2026-11-14' },
   opMaster: source('1Password · Choose an account password', 'https://support.1password.com/strong-account-password/', 'Account password'),
   opKit: source('1Password · Emergency Kit', 'https://support.1password.com/emergency-kit/', 'Web account management'),
   opRecovery: source('1Password · Recovery codes', 'https://support.1password.com/recovery-codes/', 'Individual / family account'),
@@ -202,7 +207,14 @@ export function managerRecipe(product: Asset['provider'], platform: string, regi
   const steps: GuideStep[] = [
     step('install', c('Install your password manager', 'パスワードマネージャーをインストールする'), c(PLATFORMS[platform as Platform] ?? 'Web', PLATFORMS[platform as Platform] ?? 'Web'), c('Open the official downloads page and install the app for the device selected above. If installed already, open it.', '公式ダウンロード画面から、選んだ端末向けのアプリをインストールしてください。導入済みなら開いてください。'), c('The official app is installed and opens.', '公式のアプリを起動できること。'), sources, { url: bw ? 'https://bitwarden.com/download/' : 'https://1password.com/downloads/' }),
     step('existing', c('Do you already have an account?', 'この製品のアカウントはありますか？'), place, c('Use your existing account if you have one. You do not need to create it again.', 'アカウントがある場合は、そのアカウントを使います。作り直す必要はありません。'), c('Choose the option that applies to you.', '当てはまるものを選んでください。'), sources, { choices: [{ label: c('I already have one', 'すでに持っている'), next: 'existing-signin' }, { label: c('Create a new account', '初めて作る'), next: 'master' }] }),
-    step('existing-signin', c('Sign in to your existing account', '既存のアカウントでサインインする'), place, c('Sign in using your existing account. Keep its current password if it is unique and strong. Otherwise use the account’s password-change settings before continuing.', '既存のアカウントでサインインしてください。固有で十分に強いパスワードならそのまま使えます。使い回しや弱いものなら、製品のパスワード変更画面で変更してから進んでください。'), c('You can open your vault with a unique, strong password.', '固有の強いパスワードで保管庫を開けること。'), [bw ? 'bwMaster' : 'opMaster'], { url: site, choices: [{ label: checked, next: 'paper' }] }),
+    step('existing-signin', c('Sign in to your existing account', '既存のアカウントでサインインする'), place,
+      c('Use the current password to open the intended account and vault. Keep the working app open. If you only use a PIN, biometrics or an existing session, first check whether you can use the current account password. Do not change it at this step.', '現在のパスワードで、今回のアカウントと保管庫を開いてください。使えるアプリは残します。PIN・生体認証・開いたままの画面だけを使っている場合は、現在のアカウントパスワードを使えるか先に確認します。この手順では変更しません。'),
+      c('Confirm the method you actually used for this account.', '今回のアカウントで実際に使えた方法を選んでください。'), [bw ? 'bwMaster' : 'opMaster'], { url: site, rememberChoice: true, choices: [
+        { label: c('I opened it with the current password', '現在のパスワードで開けました'), next: 'master-review' },
+        { label: c('I cannot use the current password', '現在のパスワードを使えるか分からない'), next: 'master-method-unsupported', record: false },
+        ...(!bw ? [{ label: c('I use SSO, a passkey or an older local vault', 'SSO・パスキー・旧ローカル保管庫を使っている'), next: 'master-method-unsupported', record: false as const }] : []),
+      ] }),
+    ...standardMasterSteps(bw, place, site),
     { ...privatePassphraseStep('master', c(bw ? 'your Bitwarden master password' : 'your 1Password account password', bw ? 'Bitwardenのマスター' : '1Passwordのアカウントパスワード'), place, bw ? 'bwMaster' : 'opMaster'), title: c('Prepare a unique master passphrase', '専用のマスターパスフレーズを用意する'), sources: ['effDice', bw ? 'bwMaster' : 'opMaster', bw ? 'bwPhrase' : 'opLength'] },
     step('create', c('Create the account', 'アカウントを作る'), place,
       c(bw ? 'Select Sign Up, choose the correct server, verify your email, and set the passphrase you prepared. Enter it only on Bitwarden.' : 'Create your individual or family account on 1Password. Use your prepared account password and save your Emergency Kit when offered. Check the plan and price before accepting a subscription.', bw ? '「Sign Up」でサーバーを選び、メールを確認して、用意したフレーズを設定してください。入力先はBitwardenだけです。' : '1Passwordで個人用または家族用のアカウントを作り、用意したパスワードを設定してください。Emergency Kitも保存します。契約前に料金とプランを確認してください。'),
@@ -243,7 +255,8 @@ export function passwordRecipe(product: Asset['provider'], email: Asset, platfor
   };
   const custom = isExtendedMail(email.provider) ? extraPassword[email.provider] : undefined;
   const s: SourceId = custom?.source ?? (apple ? 'applePassword' : google ? 'googlePassword' : 'microsoftPassword');
-  const managerPlatform=data?.guide.answers[`${data.guide.managerId}:platform`]??platform;
+  const selected=data?.guide.managerId?selectedStandardContext(data,data.guide.managerId):undefined;
+  const managerPlatform=(selected?data?.assets.find(a=>a.id===selected.app.deviceRef)?.operatingSystem:undefined)??data?.guide.answers[`${data.guide.managerId}:platform`]??platform;
   const opSource: SourceId = managerPlatform === 'ios' ? 'opUseIos' : managerPlatform === 'android' ? 'opUseAndroid' : managerPlatform === 'macos' ? 'opUseMac' : managerPlatform === 'windows' ? 'opUseWindows' : 'opUse';
   const place = c(bw?'Bitwarden web vault / official account settings':'1Password app / official account settings',bw?'BitwardenのWeb保管庫と公式アカウント設定':'1Passwordアプリと公式アカウント設定');
   const site=bw?bitwardenWebURL(region):undefined;

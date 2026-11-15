@@ -1,3 +1,4 @@
+import { invalidateStandardAccount } from './standardInvalidation';
 import {z} from 'zod';
 import {DataUpgradeConflict,makeAsset,type Dataset,type Language} from './models';
 import {BITWARDEN_SERVER_SOURCES,BITWARDEN_SERVER_SCREENS} from './bitwardenServerCatalog';
@@ -59,8 +60,9 @@ export function chooseBitwardenServer(data:Dataset,accountRef:string,region:Bitw
   const account={...makeAsset({kind:'account',type:'Password manager',name:`Bitwarden · ${data.assets.filter(a=>a.provider==='bitwarden').length+1}`,importance:'critical'}),provider:'bitwarden' as const,purpose:'personal' as const,services:['manager' as const],bitwardenServerV1:{version:1,region,evidence,checkedAt:at}};
   return {...data,assets:[...data.assets,account],guide:{...data.guide,managerId:account.id,cursor:`platform/${account.id}/manager`,history:[...data.guide.history,check.returnCursor].slice(-200),answers:{...data.guide.answers,[`${account.id}:region`]:region}}};
  }
- const next=putCheck(data,{...check,stage:'choose',selected:region});
- return {...next,assets:data.assets.map(a=>a.id===accountRef?{...a,bitwardenServerV1:{...(previous.success?previous.data:{}),version:1,region,evidence,checkedAt:at}}:a),guide:{...next.guide,cursor:check.returnCursor,answers:{...data.guide.answers,[`${accountRef}:region`]:region}}};
+ const base=old&&old!==region?invalidateStandardAccount(data,accountRef):data;
+ const next=putCheck(base,{...check,stage:'choose',selected:region});
+ return {...next,assets:next.assets.map(a=>a.id===accountRef?{...a,bitwardenServerV1:{...(previous.success?previous.data:{}),version:1,region,evidence,checkedAt:at}}:a),guide:{...next.guide,cursor:check.returnCursor,answers:{...data.guide.answers,[`${accountRef}:region`]:region}}};
 }
 export function confirmBitwardenServerUse(data:Dataset,accountRef:string,at:string):Dataset{
  writable(data,accountRef);const region=bitwardenRegion(data,accountRef);if(!region)return data;
