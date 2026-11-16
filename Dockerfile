@@ -17,6 +17,21 @@ COPY --chown=node:node public ./public
 FROM source AS checks
 RUN --network=none npm run lint && npm test && npm run build
 
+FROM dependencies AS browser-dependencies
+USER root
+RUN npx --no-install playwright install --with-deps chromium \
+    && mv /root/.cache/ms-playwright /opt/playwright \
+    && chmod -R a+rX /opt/playwright
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+USER node
+
+FROM browser-dependencies AS browser-tests
+COPY --chown=node:node index.html tsconfig.json vite.config.ts vitest.config.ts playwright.config.ts ./
+COPY --chown=node:node src ./src
+COPY --chown=node:node public ./public
+COPY --chown=node:node e2e ./e2e
+CMD ["npm", "run", "test:e2e"]
+
 FROM source AS build
 RUN --network=none npm run build
 

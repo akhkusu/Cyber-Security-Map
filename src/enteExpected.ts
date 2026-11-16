@@ -1,0 +1,63 @@
+import { c, type Copy } from './guideCatalog';
+
+// Observable results belong to the operation data, not to the renderer.
+const results: Record<string, Copy> = {
+  open: c('The intended Ente Auth app is open, with existing codes and sessions kept.', '正しいEnte Authが開き、既存のコードとログインが残っていること。'),
+  'new-mail': c('You can open the chosen mailbox and retrieve a backup method outside this Auth app.', '使うメールを開け、このAuthの外にある予備手段も取り出せること。'),
+  'new-password': c('You have at least six independently random words and a safely stored, retrievable reminder.', '独立してランダムに選んだ6語以上の語句と、安全に保管して取り出せる控えがあること。'),
+  'sign-up': c('The new Account is created in Ente and remains signed in.', '新しく作った正しいAccountで、Enteへのログインが済んでいること。'),
+  'sign-in': c('The intended existing Account is signed in without deleting its data or another session.', '今回の既存Accountでログインでき、データやほかのログインが残っていること。'),
+  storage: c('The actual Account or without-Account mode matches your choice, and its code list opens.', '実際のAccountまたはAccountなしの状態が選択と合い、コード一覧を開けること。'),
+  security: c('Security settings are open; Email verification has been kept as it was.', 'セキュリティの設定が開き、Email verificationの状態を保っていること。'),
+  'lock-open': c('The App lock settings are open after the requested local authentication.', '求められた端末の本人確認を済ませ、アプリロックの設定が開いていること。'),
+  'lock-set': c('App lock is on and Device lock is the selected method.', 'アプリロックがオンで、デバイスロックが選ばれていること。'),
+  'auto-lock': c('Auto lock shows Immediately, while your chosen lock method remains selected.', '自動ロックが「すぐに」で、使うロック方式が保たれていること。'),
+  'lock-test': c('After reopening, the app asks for its lock and your current method opens the code list.', '開き直すとロックされ、現在の解除方法でコード一覧を開けること。'),
+  'file-access': c('The exact off-phone encrypted JSON and its separate current passphrase are retrievable.', '今回の端末外の暗号化JSONと、別に保管した現在の語句を取り出せること。'),
+  'file-phrase': c('A separate file passphrase has at least six independently random words, with no example copied.', '完成例のコピーではなく、独立してランダムに選んだ6語以上のファイル専用の語句があること。'),
+  'file-note': c('The exact phrase is on a safe paper reminder you can retrieve without this phone; the only file is kept elsewhere.', '正確な語句の紙の控えをスマホなしで取り出せ、唯一のファイルとは別に保管できていること。'),
+  'file-secret-check': c('You have retrieved the exact existing phrase for the chosen file or future backup setting.', '選んだファイル・今後のバックアップ設定に使う、正しい既存の語句を取り出せること。'),
+  'data-open': c('Data settings are open in the intended Ente Auth app.', '今回のEnte Authで、データの設定が開いていること。'),
+  'automatic-open': c('Local backup settings are open and an existing enabled setting has been preserved.', 'ローカルバックアップの設定が開き、すでに有効な設定は保たれていること。'),
+  'automatic-enable': c('Automatic backups are on and future files use the exact passphrase you prepared or retrieved.', '自動バックアップがオンで、今後のファイルに用意・確認した正しい語句を使う設定になっていること。'),
+  'automatic-folder': c('The actual backup folder is selected and the app has permission to write there.', '実際のバックアップフォルダーが選ばれ、アプリから書き込む許可があること。'),
+  'file-save': c('This new encrypted JSON exists at the selected location and can be identified.', '今回作った暗号化JSONが、選んだ保存先にあり、見分けられること。'),
+  'export-open': c('The export options are displayed for the intended code list.', '今回のコード一覧の、書き出し方式を選ぶ画面が表示されること。'),
+  'export-encrypted': c('Encrypted is selected and the export-password prompt is displayed.', '暗号化する方式が選ばれ、書き出し用のパスワード欄が表示されること。'),
+  'export-password': c('The exact file passphrase has been submitted in Ente and the export proceeds.', '正確なファイル用の語句をEnteだけへ入力し、書き出しが進むこと。'),
+  'export-auth': c('The requested device or app authentication succeeds and the save/share dialog opens.', '端末・アプリの本人確認が通り、保存・共有する画面へ進むこと。'),
+  'file-copy': c('The encrypted JSON and a separately kept passphrase are retrievable without this phone; the permanent copy is outside automatic retention.', 'スマホなしで暗号化JSONと別保管の語句を取り出せ、自動整理の対象外にファイルを残していること。'),
+  'old-open': c('The old code list is readable and the old phone and registrations remain available.', '旧端末のコード一覧が読め、端末とすべての登録を利用できる状態で残していること。'),
+  'sync-read': c('The same actual Account is open on the destination and all intended entries are readable.', '移行先で実際に同じAccountを開き、今回の対象項目を読めること。'),
+  'restore-file-record': c('You can retrieve your existing encrypted export and its current passphrase independently of Ente and the old phone.', 'Enteや旧端末に入れなくても、本人の既存の暗号化ファイルと現在の語句を取り出せること。'),
+  'file-access-move': c('The exact encrypted Ente file and its existing decryption phrase are available.', '今回のEnteの暗号化ファイルと、それを解除する現在の語句が使えること。'),
+  'restore-file-receive': c('The system file picker can select this exact encrypted JSON from the chosen location.', 'OSのファイル選択画面から、今回の暗号化JSONを指定できること。'),
+  'import-open': c('Import codes is open in the destination Ente Auth app.', '移行・復元先のEnte Authで、コード取り込みの画面が開いていること。'),
+  'import-file': c('Ente encrypted export is selected with the intended encrypted JSON, and Ente asks for its decryption password.', 'Enteの暗号化書き出しと正しいJSONを選び、解除用パスワードを求められること。'),
+  'import-decrypt': c('Ente imports the intended entries without an error; previous unique codes remain.', 'Enteが対象項目をエラーなく取り込み、以前からの固有コードも残っていること。'),
+  items: c('You can identify each intended actual account, including entries added to this app earlier.', '以前からの項目も含め、今回対象にする実際のAccountを一つずつ見分けられること。'),
+  cleanup: c('Temporary received copies are removed while the independent backup, its phrase and working codes remain.', '受信した一時コピーだけを整理し、独立したバックアップ・語句・使えるコードは残っていること。'),
+  'destination-backup-check': c('Every destination entry is the same copied registration covered by this file; there are no other, new or changed codes.', '移行・復元先の全項目がこのファイルに含まれる同じ登録のコピーで、別・新規・変更したコードがないこと。'),
+  'root-password-note': c('The exact current Account password is safely recorded outside Ente and this phone, without changing it.', '現在のAccountパスワードを変更せず、Enteやこのスマホの外へ正確に控え、安全に保管できていること。'),
+  'root-password-retrieve': c('You can retrieve the current Account password from its independent reminder.', '独立した控えから、現在の正しいAccountパスワードを取り出せること。'),
+  'root-key-open': c('The intended Account’s Recovery key is visible after the requested authentication.', '本人確認の後に、今回の正しいAccountの復旧キーが表示されること。'),
+  'root-key-note': c('All 24 words in order match a safely stored paper copy retrievable without Ente or this phone.', '24語と順序を照合した紙の控えを、Ente・このスマホなしで安全に取り出せること。'),
+  'root-email-setting': c('You can read the current Email verification on/off state without changing it.', 'Email verificationの現在のオン・オフを、変更せずに読めること。'),
+  'root-mail-independent': c('A working email authentication or recovery method is retrievable outside this Auth app.', 'このAuthアプリの外から、メールに使える予備の認証・復旧手段を取り出せること。'),
+  'root-mail-match': c('The address shown for this Ente Account belongs to the exact recorded mailbox you selected.', 'Ente Accountの表示するメールと、選んだ記録の実際のメールが同じ本人情報であること。'),
+  'root-passkey-open': c('Ente has opened its own passkey-management page for this exact Account.', 'Ente自身が、今回の正しいAccountのパスキー管理画面を開いたこと。'),
+  'root-passkey-impact': c('The working session and independent Recovery key remain available before adding a preferred passkey.', 'パスキーを優先する設定に変える前に、現在のログインと独立した復旧キーを使える状態で残していること。'),
+  'root-passkey-name': c('An identifying name has been entered on Ente’s Accounts page.', 'Ente Accountsの画面で、今回の登録を見分ける名前が入っていること。'),
+  'root-passkey-add': c('The browser or OS has opened the passkey-creation prompt.', 'ブラウザー・OSが、パスキーを登録する画面を開いたこと。'),
+  'root-passkey-create': c('Registration succeeds in the actual chosen store or physical key.', '実際に選んだ保存先・物理キーで、登録の操作が成功したこと。'),
+  'root-passkey-list': c('This exact existing or new registration appears in Ente’s passkey list.', '今回の正しい既存・新規登録を、Enteのパスキー一覧で確認できること。'),
+  'root-login-open': c('A fresh sign-in for this exact Account has reached its additional-authentication prompt.', '今回の正しいAccountの新しいログインで、追加認証を求める画面へ進めること。'),
+  'root-factor-use': c('Ente accepts this exact selected additional factor, without falling back to another method.', '別方式で代用せず、今回選んだ正しい追加認証がEnteで受け付けられたこと。'),
+  'root-data-read': c('The current Account password opens the intended code list in that new session.', 'その新しいログインで、現在のAccountパスワードにより正しいコード一覧を開けること。'),
+};
+
+export function enteExpected(id: string): Copy | undefined {
+  if (id.startsWith('code-open:')) return c('The official service is asking for this exact account’s authenticator code in a fresh sign-in.', '正規サービスの新しいログインで、この正しいAccountの認証アプリのコードを求められること。');
+  if (id.startsWith('code:')) return c('The current destination code is accepted and this exact account completes sign-in; vault decryption is a separate check.', '移行・復元先の現在のコードが受け付けられ、正しいAccountのログインが完了すること。保管庫の復号は別に確認します。');
+  return results[id] ?? (id.startsWith('new-') ? results[id.slice(4)] : undefined);
+}

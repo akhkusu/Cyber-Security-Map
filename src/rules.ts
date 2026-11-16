@@ -50,7 +50,7 @@ export function buildFindings(assets: Asset[], language: Language, dependencies:
     const priority = score >= 3 ? 'high' : score >= 2 ? 'medium' : 'low';
     const [title, why, how] = copy[language];
     const knowledgeRefs = control === 'updates' ? [] : [];
-    const dependencyReason = dependencyCount ? language === 'ja' ? `、${dependencyCount}件の資産の復旧先にも使われている` : ` and is a recovery method for ${dependencyCount} other asset${dependencyCount === 1 ? '' : 's'}` : '';
+    const dependencyReason = dependencyCount ? language === 'ja' ? `、${dependencyCount}件の項目の復旧先にも使われている` : ` and is a recovery method for ${dependencyCount} other item${dependencyCount === 1 ? '' : 's'}` : '';
     findings.push({
       id: `${asset.id}:${control}`, source: 'asset', assetId: asset.id, assetName: asset.name, kind: asset.kind, controlId: control, state, priority,
       effortMinutes: 10, title, shortDescription: title, why, threatScenario: why, mitigationMechanism: how,
@@ -90,8 +90,8 @@ export function buildGuidedFindings(data: Dataset, language: Language): Finding[
       const priority = score >= 3 ? 'high' : score >= 2 ? 'medium' : 'low';
       const title = answer ? localized(control.action, language) : language === 'ja' ? `${localized(control.title, language)}を確認する` : `Check ${localized(control.title, language).toLowerCase()}`;
       const reason = language === 'ja'
-        ? `重要度「${asset ? importanceText(asset, language) : '一般'}」${dependentCount ? `、復旧に依存する資産${dependentCount}件` : ''}${concernMatch ? '、選択した関心領域' : ''}と、評価状態「${needsWork ? '本人が未設定と回答' : answer ? 'わからない' : '未評価'}」をもとにした作業順です。侵害確率や安全度ではありません。`
-        : `Task order reflects ${asset ? `the selected ${importanceText(asset, language)} importance` : 'a general check'}${dependentCount ? ` and ${dependentCount} recovery-dependent asset${dependentCount === 1 ? '' : 's'}` : ''}${concernMatch ? ' and a concern you selected' : ''}. Evidence is ${needsWork ? 'user-reported as not enabled' : answer ? 'unknown to you' : 'not assessed'}. This is not a compromise probability or security score.`;
+        ? `重要度「${asset ? importanceText(asset, language) : '一般'}」${dependentCount ? `、復旧に依存する項目${dependentCount}件` : ''}${concernMatch ? '、選択した関心領域' : ''}と、評価状態「${needsWork ? '本人が未設定と回答' : answer ? 'わからない' : '未評価'}」をもとにした作業順です。侵害確率や安全度ではありません。`
+        : `Task order reflects ${asset ? `the selected ${importanceText(asset, language)} importance` : 'a general check'}${dependentCount ? ` and ${dependentCount} recovery-dependent item${dependentCount === 1 ? '' : 's'}` : ''}${concernMatch ? ' and a concern you selected' : ''}. Evidence is ${needsWork ? 'user-reported as not enabled' : answer ? 'unknown to you' : 'not assessed'}. This is not a compromise probability or security score.`;
       const referenceSources = control.references ?? [];
       findings.push({
         id, source: 'assessment', assetId: asset?.id ?? '', assetName: asset?.name ?? (language === 'ja' ? '全般' : 'General'),
